@@ -1,0 +1,32 @@
+{
+    "compilerOptions": {
+      "composite": true,
+      "declaration": true,
+      "declarationMap": true,
+      "esModuleInterop": true,
+      "forceConsistentCasingInFileNames": true,
+      "lib": [
+        "es2021",
+        "es6",
+        "dom",
+        "Decorators.Legacy",
+        "ESNext"
+      ],
+      "module": "CommonJS",
+      "moduleResolution": "node",
+      "pretty": false,
+      "sourceMap": true,
+      "target": "ES6",
+      "outDir": "./dist",
+      "downlevelIteration": true,
+      "allowJs": true,
+      "skipLibCheck": true
+    },
+    "include": [
+      "src/**/*"
+    ],
+    "exclude": [
+      "node_modules",
+      "**/__tests__/*"
+    ]
+  }
