@@ -1,6 +1,6 @@
 import {and, desc, eq, inArray, sql} from "drizzle-orm";
 import postgreDb from "../../config/db";
-import { eventData, user } from "../../models/schema";
+import { eventData, user, userEvents } from "../../models/schema";
 import { generateAuthTokens } from "../../config/token";
 
 export class User {
@@ -20,7 +20,6 @@ export class User {
 
   static eventDetails = async(userId:any,eventId:any,data:any):Promise<any>=>{
     try{
-      //  console.log(userId,eventId,data, data.name, data.type)
         const result =  await postgreDb.insert(eventData).values({
             userId:userId,
             eventId:eventId,
@@ -28,7 +27,10 @@ export class User {
             type:data.type,
             eventDetails:data.eventDetails
         })
-        // console.log("varun Kate",result)
+        await postgreDb.insert(userEvents).values({
+          userId:userId,
+          eventId:eventId
+        }).onConflictDoNothing()
         return result;
     }catch(error){
         throw new Error(error)
