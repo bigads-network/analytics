@@ -30,6 +30,7 @@
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "pg": "^8.11.3",
+    "typescript": "^5.7.2",
     "uniqid": "^5.4.0",
     "winston": "^3.17.0",
     "zod": "^3.22.4"
