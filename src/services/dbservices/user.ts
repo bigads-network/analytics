@@ -18,22 +18,37 @@ export class User {
     }
   }
 
-  static eventDetails = async(userId:any,eventId:any,data:any):Promise<any>=>{
-    try{
-        const result =  await postgreDb.insert(eventData).values({
-            userId:userId,
-            eventId:eventId,
-            name:data.name,
-            type:data.type,
-            eventDetails:data.eventDetails
-        })
-        await postgreDb.insert(userEvents).values({
-          userId:userId,
-          eventId:eventId
-        }).onConflictDoNothing()
+  static eventDetails = async (
+    userId: any,
+    eventId: any,
+    data: any
+  ): Promise<any> => {
+    try {
+      await postgreDb.transaction(async (tx) => {
+        const result = await tx
+          .insert(eventData)
+          .values({
+            userId: userId,
+            eventId: eventId,
+            name: data.name,
+            type: data.type,
+            eventDetails: data.eventDetails,
+          })
+          .execute();
+
+        await tx
+          .insert(userEvents)
+          .values({
+            userId: userId,
+            eventId: eventId,
+          })
+          .onConflictDoNothing()
+          .execute();
+
         return result;
-    }catch(error){
-        throw new Error(error)
+      });
+    } catch (error) {
+      throw new Error(error);
     }
-  }
+  };
 }
