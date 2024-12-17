@@ -46,7 +46,7 @@ export class User {
       // Create RPC provider and wallet
       let rpcHttpProvider, wallet;
       try {
-        rpcHttpProvider = new ethers.providers.JsonRpcProvider("https://1rpc.io/matic");
+        rpcHttpProvider = new ethers.providers.JsonRpcProvider(providerUrl);
         console.log(rpcHttpProvider, "rpc url");
   
         wallet = new ethers.Wallet(privKey, rpcHttpProvider);
@@ -90,7 +90,7 @@ export class User {
         const saAddress = await smartAccount.getAccountAddress();
         console.log("SA Address", saAddress);
   
-        const data = await dbservices.User.saveDetails(userId,appId,deviceId,)
+        const data = await dbservices.User.saveDetails(userId,appId,deviceId,saAddress)
         if(!data) throw new Error("Error In inserting Data")
         // Generate token
         let token;
@@ -129,16 +129,13 @@ export class User {
       const eventId = this.generateId()
       const eventDetails = req.body
       const data = await dbservices.User.eventDetails(userId,eventId,eventDetails)
-
-      
       const smartAccountAddress = data[0].saAddress; // Replace with your logic to get the address
-      const providerUrl = "https://polygon-amoy.g.alchemy.com/v2/Xd8ZnMNV7j_YL-2K-Fr-VqUnXDG1k1_Z"; // Replace with your actual provider URL
       const provider = new ethers.providers.JsonRpcProvider(providerUrl);
       console.log("Provider connected:", provider);
   
       // const walletPrivateKey = "436196098217ec2ecdd0687ba282c1a5e39584e703dcf56a421fc9592de7c6f5"; // Private key of your wallet
       const wallet = new ethers.Wallet(privateKey, provider);
-      console.log("Wallet Address:", wallet.address);
+      // console.log("Wallet Address:", wallet.address);
       const gasPrice = await provider.getGasPrice();
       
       const tx = {

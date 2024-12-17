@@ -5,12 +5,13 @@ import { generateAuthTokens } from "../../config/token";
 
 export class User {
 
-  static saveDetails:any = async(userId:any,appId:any,deviceId:any):Promise<any>=>{
+  static saveDetails:any = async(userId:any,appId:any,deviceId:any,saAddress:any):Promise<any>=>{
     try{
         const result =  await postgreDb.insert(user).values({
             userId:userId,
             appId:appId,
             deviceId:deviceId
+            saAddress:saAddress
         }).returning({userId:user.userId})
         return result
     }catch(error:any){
