@@ -4,6 +4,7 @@ import cors from "cors"
 import passport from "passport";
 import { jwtStrategy } from "./config/token";
 import { envConfigs } from "./config/envconfig";
+import logger from "./config/logger";
 
 const app = express();
 
@@ -16,5 +17,5 @@ passport.use('jwt', jwtStrategy);
 app.use("/", router);
 
 app.listen(envConfigs.port, () => {
-  console.log(`Server started on ${envConfigs.port}`);
+  logger.info(`Server started on ${envConfigs.port}`);
 });

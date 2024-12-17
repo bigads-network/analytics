@@ -38,6 +38,7 @@ export const chainIdToChainName: any = {
   80002:polygonAmoy
 };
 
+export const providerUrl="https://api.zan.top/polygon-amoy"; // polygon
 
 export const chainIdToBundlerUrl:any ={
   137:'https://bundler.biconomy.io/api/v3/137/nJPK7B3ru.dd7f7861-190d-41bd-af80-6877f74b8f44',
