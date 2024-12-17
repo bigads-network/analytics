@@ -23,7 +23,6 @@ export class User {
     try {
       let { appId, deviceId, userId, chainId } = req.body;
   
-      // Generate userId if not provided
       if (!userId) {
         try {
           userId = this.generateId();
@@ -33,7 +32,6 @@ export class User {
         }
       }
   
-      // Generate private key
       let privKey;
       try {
         privKey = sha512_256(appId + deviceId + userId);
@@ -43,7 +41,6 @@ export class User {
         return res.status(500).json({ status: false, message: "Error generating private key" });
       }
   
-      // Create RPC provider and wallet
       let rpcHttpProvider, wallet;
       try {
         rpcHttpProvider = new ethers.providers.JsonRpcProvider(providerUrl);
@@ -56,7 +53,6 @@ export class User {
         return res.status(500).json({ status: false, message: "Error initializing wallet or RPC provider" });
       }
   
-      // Create account and wallet client
       let account, client, eoa, chainName;
       try {
         account = privateKeyToAccount(wallet.privateKey);
@@ -76,7 +72,6 @@ export class User {
         return res.status(500).json({ status: false, message: "Error creating wallet client or retrieving account" });
       }
   
-      // Create Smart Account
       try {
         const bundlerUrl: any = chainIdToBundlerUrl[chainId];
         console.log(bundlerUrl, "Bundler URL");
@@ -92,7 +87,6 @@ export class User {
   
         const data = await dbservices.User.saveDetails(userId,appId,deviceId,saAddress)
         if(!data) throw new Error("Error In inserting Data")
-        // Generate token
         let token;
         try {
           token = await generateAuthTokens({ userId: userId:data[0].userId});
@@ -102,7 +96,7 @@ export class User {
           return res.status(500).json({ status: false, message: "Error generating auth token" });
         }
   
-        // Respond success
+       
         return res.status(200).send({
           message: "Details Saved",
           data: { userId, appId, deviceId, saAddress },
@@ -129,31 +123,25 @@ export class User {
       const eventId = this.generateId()
       const eventDetails = req.body
       const data = await dbservices.User.eventDetails(userId,eventId,eventDetails)
-      const smartAccountAddress = data[0].saAddress; // Replace with your logic to get the address
+      const smartAccountAddress = data[0].saAddress; 
       const provider = new ethers.providers.JsonRpcProvider(providerUrl);
       console.log("Provider connected:", provider);
-  
-      // const walletPrivateKey = "436196098217ec2ecdd0687ba282c1a5e39584e703dcf56a421fc9592de7c6f5"; // Private key of your wallet
       const wallet = new ethers.Wallet(privateKey, provider);
-      // console.log("Wallet Address:", wallet.address);
       const gasPrice = await provider.getGasPrice();
       
       const tx = {
         to: smartAccountAddress,
-        value: ethers.utils.parseUnits("0"), // 0 value
-        gasLimit : 21000, // Minimum gas for a transaction
+        value: ethers.utils.parseUnits("0"), 
+        gasLimit : 21000, 
         gasPrice : gasPrice,
         data : JSON.stringify(data)
       };
   
       console.log("Transaction Object:", tx);
-
-  
-      // Send transaction
       const txResponse = await wallet.sendTransaction(tx);
       console.log("Transaction Response:", txResponse);
   
-      // Wait for confirmation
+   
       const txReceipt = await txResponse.wait();
       console.log("Transaction Receipt Hash:", txReceipt.transactionHash);
       console.log("Transaction Receipt Details:", txReceipt);
