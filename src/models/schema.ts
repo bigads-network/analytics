@@ -6,7 +6,7 @@ export const user: any = pgTable("users", {
   id: serial("id"),
   userId:varchar("user_id").unique(),
   appId:varchar("app_id"),
-  deviceId:varchar("device_id")
+  deviceId:varchar("device_id"),
   saAddress: varchar("sa_address")
 }, (table) => ({
   pk: primaryKey({ columns: [table.id] }),

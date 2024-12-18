@@ -10,7 +10,7 @@ export class User {
         const result =  await postgreDb.insert(user).values({
             userId:userId,
             appId:appId,
-            deviceId:deviceId
+            deviceId:deviceId,
             saAddress:saAddress
         }).returning({userId:user.userId})
         return result
