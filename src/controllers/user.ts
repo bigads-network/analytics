@@ -89,7 +89,7 @@ export class User {
         if(!data) throw new Error("Error In inserting Data")
         let token;
         try {
-          token = await generateAuthTokens({ userId: userId:data[0].userId});
+          token = await generateAuthTokens({ userId: data[0].userId});
           console.log({ token, userId, appId, deviceId, saAddress });
         } catch (error) {
           console.error("Error generating auth token:", error);
