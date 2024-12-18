@@ -1,4 +1,5 @@
 import * as dotenv from "dotenv";
+import { polygon, polygonAmoy } from "viem/chains";
 dotenv.config();
 import { z } from "zod";
 
@@ -29,5 +30,21 @@ export const envConfigs = {
   jwtsecret:envVars.JWT_SECRET,
   accessExpirationMinutes:envVars.EXPIREATION_MINUTE,
   db_url:envVars.DB_URL,
-  
 };
+
+export const chainIdToChainName: any = {
+  137: polygon,
+  80002:polygonAmoy
+};
+
+export const providerUrl="https://polygon-amoy.g.alchemy.com/v2/Xd8ZnMNV7j_YL-2K-Fr-VqUnXDG1k1_Z"; // polygon
+
+export const chainIdToBundlerUrl:any ={
+  137:'https://bundler.biconomy.io/api/v3/137/nJPK7B3ru.dd7f7861-190d-41bd-af80-6877f74b8f44',
+  80002:'https://bundler.biconomy.io/api/v3/80002/nJPK7B3ru.dd7f7861-190d-41bd-af80-6877f74b8f44'
+}
+
+
+
+
+

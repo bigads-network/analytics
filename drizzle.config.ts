@@ -12,6 +12,6 @@ export default ({
     // database: envConfigs.db.database,
     // port: envConfigs.db.port,
     // ssl: envConfigs.db.ssl ,
-    url:envConfigs.db_url
+    // url:envConfigs.db_url
   },
 });
