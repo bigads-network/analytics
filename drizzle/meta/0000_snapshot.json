@@ -1,5 +1,5 @@
 {
-  "id": "a10e79e6-3557-4387-b580-89a3130e2044",
+  "id": "3d3c4268-236d-452a-a1a0-46b8872edca8",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -47,10 +47,10 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "eventData_user_id_usersss_user_id_fk": {
-          "name": "eventData_user_id_usersss_user_id_fk",
+        "eventData_user_id_users_user_id_fk": {
+          "name": "eventData_user_id_users_user_id_fk",
           "tableFrom": "eventData",
-          "tableTo": "usersss",
+          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
@@ -61,14 +61,26 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "compositePrimaryKeys": {
+        "eventData_id_pk": {
+          "name": "eventData_id_pk",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "eventData_eventId_unique": {
+          "name": "eventData_eventId_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "eventId"
+          ]
+        }
+      }
     },
-    "public.usersss": {
-      "name": "usersss",
+    "public.users": {
+      "name": "users",
       "schema": "",
       "columns": {
         "id": {
@@ -94,38 +106,99 @@
           "type": "varchar",
           "primaryKey": false,
           "notNull": false
+        },
+        "sa_address": {
+          "name": "sa_address",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {
-        "usersss_id_pk": {
-          "name": "usersss_id_pk",
+        "users_id_pk": {
+          "name": "users_id_pk",
           "columns": [
             "id"
           ]
         }
       },
       "uniqueConstraints": {
-        "usersss_user_id_unique": {
-          "name": "usersss_user_id_unique",
+        "users_user_id_unique": {
+          "name": "users_user_id_unique",
           "nullsNotDistinct": false,
           "columns": [
             "user_id"
           ]
         }
+      }
+    },
+    "public.user_events": {
+      "name": "user_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "event_id": {
+          "name": "event_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        }
       },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "indexes": {},
+      "foreignKeys": {
+        "user_events_user_id_users_user_id_fk": {
+          "name": "user_events_user_id_users_user_id_fk",
+          "tableFrom": "user_events",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "user_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "user_events_event_id_eventData_eventId_fk": {
+          "name": "user_events_event_id_eventData_eventId_fk",
+          "tableFrom": "user_events",
+          "tableTo": "eventData",
+          "columnsFrom": [
+            "event_id"
+          ],
+          "columnsTo": [
+            "eventId"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "user_events_id_pk": {
+          "name": "user_events_id_pk",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {}
     }
   },
   "enums": {},
   "schemas": {},
-  "sequences": {},
-  "roles": {},
-  "policies": {},
-  "views": {},
   "_meta": {
     "columns": {},
     "schemas": {},
