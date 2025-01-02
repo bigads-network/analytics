@@ -1,4 +1,4 @@
-import {and, desc, eq, inArray, sql} from "drizzle-orm";
+import {and, count, countDistinct, desc, eq, inArray, sql} from "drizzle-orm";
 import postgreDb from "../../config/db";
 import { eventData, user, userEvents } from "../../models/schema";
 import { generateAuthTokens } from "../../config/token";
@@ -52,4 +52,25 @@ export class User {
       throw new Error(error);
     }
   };
+
+
+  static async getDta (): Promise<any> {
+    const alldata = await postgreDb.select().from(eventData).execute();
+
+    // Fetch counts for userId, transactionhash, and name
+    const dataCount = await postgreDb
+        .select({
+            user: countDistinct(eventData.userId).as('userCount'),
+            transactionhash: count(eventData.transactionhash).as('transactionHashCount'),
+            gamesPlayed: countDistinct(eventData.name).as('gamesPlayedCount'),
+        })
+        .from(eventData)
+        .execute();
+
+    // Return combined result
+    return {
+        alldata,
+        dataCount: dataCount[0], // `dataCount` is an array with a single object
+    };
+  }
 }

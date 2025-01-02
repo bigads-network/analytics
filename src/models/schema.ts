@@ -20,6 +20,10 @@ export const user: any = pgTable("users", {
     name: varchar("name"),
     type: varchar("type"),
     eventDetails: varchar("event_details"),
+    transactionhash: varchar("transaction_hash"),
+    amount: varchar("amount"),
+    from : varchar("from"),
+    to: varchar("to"),
   }, (table) => ({
     pk: primaryKey({ columns: [table.id] }),  
   }))

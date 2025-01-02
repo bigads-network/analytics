@@ -6,5 +6,7 @@ import { authenticateUser } from "../middleware";
 router.post("/saveuser",controllers.User.saveDetails)
 router.post("/saveevents",authenticateUser,controllers.User.eventDetails)
 // router.post("savequstion",controllers.User.saveQue)
+router.get("/data",controllers.User.getdata)
+
 
 export default router

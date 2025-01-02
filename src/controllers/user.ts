@@ -158,5 +158,20 @@ export class User {
   };
   
 
+  static getdata: any = async (req: Request, res: Response) => {
+    try{
+      const data = await dbservices.User.getDta()
+      return res.status(200).json({data:data})
+
+    }catch(error:any){
+      console.error("Error occurred:", error);
+      return res.status(500).json({
+        status: false,
+        message: error.message,
+        stack: error.stack,
+      });
+    }
+  }
+
 
 }
