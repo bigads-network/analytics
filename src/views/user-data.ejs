@@ -5,18 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>User Data</title>
   <style>
-    /* Reset */
+    /* Reset and Global Styles */
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
     }
 
-    /* Body styling */
     body {
       font-family: 'Arial', sans-serif;
-      background-color: #0d1117; /* Dark background */
-      color: #c9d1d9; /* Light gray text */
+      background-color: #0d1117;
+      color: #c9d1d9;
       display: flex;
       justify-content: center;
       align-items: center;
@@ -24,26 +23,55 @@
       margin: 0;
     }
 
-    /* Container for the dashboard */
+    /* Dashboard Container */
     .dashboard {
       width: 90%;
       max-width: 1200px;
-      background: #161b22; /* Card-like background */
+      background: #161b22;
       border-radius: 15px;
       overflow: hidden;
       box-shadow: 0px 8px 24px rgba(0, 0, 0, 0.7);
       padding: 20px;
+      position: relative; /* Added position relative */
     }
 
-    /* Title styling */
+    /* Title */
     .dashboard h1 {
       text-align: center;
       font-size: 2.5rem;
       margin-bottom: 20px;
-      color: #58a6ff; /* Highlighted accent color */
+      color: #58a6ff;
     }
 
-    /* Statistics Container */
+    /* Button Container (positioned on left and right of the title) */
+    .button-container {
+      display: flex;
+      justify-content: space-between; /* Align buttons on both ends */
+      position: absolute; /* Position buttons relative to the parent */
+      top: 20px; /* Place the buttons near the title */
+      left: 20px; /* Adjust button on the left */
+      right: 20px; /* Adjust button on the right */
+      z-index: 1;
+    }
+
+    button {
+      background-color: #58a6ff;
+      color: #0d1117;
+      border: none;
+      border-radius: 5px;
+      padding: 10px 20px;
+      font-size: 1rem;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background-color 0.3s ease, transform 0.2s ease;
+    }
+
+    button:hover {
+      background-color: #1f6feb;
+      transform: scale(1.05);
+    }
+
+    /* Statistics Section */
     .statistics {
       display: flex;
       justify-content: space-between;
@@ -81,11 +109,11 @@
     table {
       width: 100%;
       border-collapse: collapse;
-      background: #1f2736; /* Slightly lighter dark */
+      background: #1f2736;
       border-radius: 8px;
       overflow: hidden;
       box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.4);
-      table-layout: fixed; /* Fix column widths */
+      table-layout: fixed;
       margin-top: 30px;
     }
 
@@ -94,7 +122,7 @@
       text-align: left;
       white-space: nowrap;
       overflow: hidden;
-      text-overflow: ellipsis; /* Truncate text with ellipsis */
+      text-overflow: ellipsis;
     }
 
     th {
@@ -111,10 +139,10 @@
     }
 
     tr:hover {
-      background-color: #282e39; /* Row hover effect */
+      background-color: #282e39;
     }
 
-    /* Scrollable table body */
+    /* Scrollable Table Body */
     tbody {
       display: block;
       max-height: 400px;
@@ -127,10 +155,58 @@
       table-layout: fixed;
     }
 
-    /* Button styles */
-    .button-container {
-      text-align: center;
-      margin-top: 20px;
+    /* Modal Styles */
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      justify-content: center;
+      align-items: center;
+      z-index: 1000; /* Ensure modal is on top */
+    }
+
+    .modal-content {
+      background-color: #161b22;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.6);
+      width: 400px;
+      max-width: 100%;
+      position: relative;
+    }
+
+    .close {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      font-size: 1.5rem;
+      color: #c9d1d9;
+      cursor: pointer;
+    }
+
+    /* Form Styles */
+    form {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    label {
+      color: #c9d1d9;
+      font-size: 1rem;
+    }
+
+    input {
+      padding: 10px;
+      border-radius: 5px;
+      border: 1px solid #58a6ff;
+      background-color: #21262d;
+      color: #c9d1d9;
+      font-size: 1rem;
     }
 
     button {
@@ -138,9 +214,8 @@
       color: #0d1117;
       border: none;
       border-radius: 5px;
-      padding: 10px 20px;
-      font-size: 1rem;
-      font-weight: bold;
+      padding: 10px;
+      font-size: 1.1rem;
       cursor: pointer;
       transition: background-color 0.3s ease, transform 0.2s ease;
     }
@@ -149,6 +224,7 @@
       background-color: #1f6feb;
       transform: scale(1.05);
     }
+
 
     /* Responsive Design */
     @media (max-width: 768px) {
@@ -170,12 +246,26 @@
         flex: none;
         width: 100%;
       }
+
+      /* Adjust button container for smaller screens */
+      .button-container {
+        flex-direction: column;
+        top: auto;
+        left: 0;
+        right: 0;
+      }
     }
   </style>
 </head>
 <body>
   <div class="dashboard">
     <h1>User Dashboard</h1>
+
+    <!-- Button Container (Positioned Left and Right of the Title) -->
+    <div class="button-container">
+      <button id="registerUserBtn">Register User</button>
+      <button id="registerGameBtn">Register Game</button>
+    </div>
 
     <!-- Statistics Section -->
     <div class="statistics">
@@ -226,5 +316,114 @@
       </tbody>
     </table>
   </div>
+
+  <!-- Register User Modal -->
+  <div id="registerUserModal" class="modal">
+    <div class="modal-content">
+      <span class="close" id="closeUserModal">&times;</span>
+      <h2>Register User</h2>
+      <form id="registerUserForm">
+        <label for="appId">App ID:</label>
+        <input type="text" id="appId" name="appId" required />
+
+        <label for="deviceId">Device ID:</label>
+        <input type="text" id="deviceId" name="deviceId" required />
+
+        <button type="submit">Register</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Register Game Modal -->
+  <div id="registerGameModal" class="modal">
+    <div class="modal-content">
+      <span class="close" id="closeGameModal">&times;</span>
+      <h2>Register Game</h2>
+      <form id="registerGameForm">
+        <label for="gameName">Game Name:</label>
+        <input type="text" id="gameName" name="gameName" required />
+
+        <label for="gameType">Game Type:</label>
+        <input type="text" id="gameType" name="gameType" required />
+
+        <button type="submit">Register</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const userModal = document.getElementById('registerUserModal');
+    const gameModal = document.getElementById('registerGameModal');
+    const closeUserModal = document.getElementById('closeUserModal');
+    const closeGameModal = document.getElementById('closeGameModal');
+  
+    // Open modals
+    document.getElementById('registerUserBtn').onclick = () => userModal.style.display = 'flex';
+    document.getElementById('registerGameBtn').onclick = () => gameModal.style.display = 'flex';
+  
+    // Close modals
+    closeUserModal.onclick = () => userModal.style.display = 'none';
+    closeGameModal.onclick = () => gameModal.style.display = 'none';
+  
+    // Close modals when clicked outside
+    window.onclick = (e) => {
+      if (e.target === userModal) userModal.style.display = 'none';
+      if (e.target === gameModal) gameModal.style.display = 'none';
+    };
+  
+    // Register User API Call
+    document.getElementById('registerUserForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const appId = document.getElementById('appId').value;
+      const deviceId = document.getElementById('deviceId').value;
+  
+      const response = await fetch('/user/registerUser', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appId, deviceId }),
+      });
+  
+      if (response.ok) {
+        const data = await response.json();
+        const token = data.token;
+        localStorage.setItem('token', token);
+        alert('User Registered Successfully');
+        userModal.style.display = 'none';
+      } else {
+        alert('Registration Failed');
+      }
+    };
+  
+    // Register Game API Call
+    document.getElementById('registerGameForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const gameName = document.getElementById('gameName').value;
+      const gameType = document.getElementById('gameType').value;
+  
+      const token = localStorage.getItem('token');
+      if (!token) {
+        alert('No token found. Please register first.');
+        return;
+      }
+  
+      const response = await fetch('/user/registerGame', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`, // Corrected Authorization header
+        },
+        body: JSON.stringify({ gameName, gameType }),
+      });
+  
+      if (response.ok) {
+        const data = await response.json();
+        alert(`Game Registered`); // Corrected alert message
+        gameModal.style.display = 'none';
+      } else {
+        alert('Game Registration Failed');
+      }
+    };
+  </script>
+  
 </body>
 </html>

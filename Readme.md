@@ -3,67 +3,107 @@ User Events API
 This API allows you to manage user details and events, providing endpoints to save user data and event information.
 
 API Endpoints
-1. POST /saveuser/
-Saves user details in the database.
+1. User Registration
+URL: /registerUser
+Method: POST
+Description: Registers a new user by generating a unique ID, private key, and wallet.
+Middleware: validateRequest(validators.user.registerUser)
+Request Body:
+json
 
-Request:
-Headers: None required.
-Body:
 {
   "appId": "string",
-  "deviceId": "string",
-  "userId": "string (optional)"
+  "deviceId": "string"
+}
+Response:
+200 OK:
+json
+
+{
+  "message": "Details Saved",
+  "data": {
+    "userId": "string",
+    "appId": "string",
+    "deviceId": "string",
+    "saAddress": "string"
+  },
+  "token": "string"
+}
+400 Bad Request:
+json
+
+{
+  "status": false,
+  "message": "Missing required fields"
+}
+500 Internal Server Error:
+json
+
+{
+  "status": false,
+  "message": "Unexpected error occurred"
 }
 
+
+2. Game Registration
+URL: /registerGame
+Method: POST
+Description: Registers a new game under a user.
+Middleware: authenticateUser
+Request Body:
+json
+
+{
+  "gameName": "string",
+  "gameType": "string",
+  "eventDetails": "string"
+}
 Response:
-  . Success (200):
-    {
-      "message": "Details Save",
-      "data": {
-        "userId": "userXYZ",
-        "appId": "sampleAppId",
-        "deviceId": "sampleDeviceId"
-      }
-    }
+200 OK:
+json
 
-  . Error (500):
-    {
-      "status": false,
-      "message": "Error in inserting Data"
-    }
+{
+  "status": true,
+  "message": "Game Registered!",
+  "data": "object"
+}
+500 Internal Server Error:
+json
 
-
-2. POST /saveevents
-Saves event details for a specific user. Requires user authentication.
-
-Request:
-Headers:
-Authorization: Bearer <token>
-Body:    
-    {
-      "userId": "string",
-      "name": "string",
-      "type": "string",
-      "eventDetails": "object"
-    }
-
-. Response:
-    - Success (200):
-    {
-      "message": "Save Events Successfully"
-    }
-
-    - Error (500):
-    {
-      "status": false,
-      "message": "Error in inserting Data"
-    }
+{
+  "status": false,
+  "message": "Unexpected error"
+}
 
 
 
 - Save Event Details:
 
-Route: /saveevents
+Send Event
+URL: /sendEvent/:eventId
+Method: POST
+Description: Sends event data to the associated smart account.
+Middleware:
+validateRequest(validators.user.sendEvent)
+authenticateUser
+Parameters:
+eventId: The unique ID of the event to send.
+Response:
+200 OK:
+json
+
+{
+  "status": true,
+  "message": "Transaction done Successfully",
+  "data": "object"
+}
+500 Internal Server Error:
+json
+
+{
+  "status": false,
+  "message": "Unexpected error"
+}
 
 Controller Logic:
 

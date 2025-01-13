@@ -64,7 +64,6 @@ export class User {
     try {
         const details:any = await postgreDb.query.eventData.findMany({
             where: (eventData, { and, eq }) => and(
-                eq(eventData.userId, userId),
                 eq(eventData.eventId, eventId)
             ),
             columns: {
@@ -81,10 +80,10 @@ export class User {
             }
         });
         console.log(details ,"details")
-        if(details[0].transactionhash){
-          throw new Error("already transaction done for this event")
-        }
-        return details[0]?.user;
+        // if(details[0].transactionhash){
+        //   throw new Error("already transaction done for this event")
+        // }
+        return details[0];
     } catch (error: any) {
         throw new Error(error.message);
     }
@@ -109,8 +108,6 @@ export class User {
             .where(
                 and(
                     eq(eventData.eventId, eventId),
-                    eq(eventData.userId, userId),
-                    isNull(eventData.transactionhash)
                 )
             )
             .returning({

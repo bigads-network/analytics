@@ -139,7 +139,7 @@ export class User {
       const eventId = req.params.eventId;
       const privateKey =  sha512_256("APPID" + "EVENTID"); // from addres which is always same as the all the transaction get pol from this address
       const data = await dbservices.User.getuserdetails(userId, eventId)
-      const sa_address = data.saAddress
+      const sa_address = data.user.saAddress
       const provider = new ethers.providers.JsonRpcProvider(providerUrl);
       console.log("Provider connected:", provider);
       const wallet = new ethers.Wallet(privateKey, provider);
@@ -159,7 +159,7 @@ export class User {
       const txReceipt = await txResponse.wait();
       console.log("Transaction Receipt Hash:", txReceipt.transactionHash);
       console.log("Transaction Receipt Details:", txReceipt);
-      const updateeventdata =  await dbservices.User.updateEventData(userId ,eventId ,txReceipt.transactionHash ,sa_address,wallet.address ,"0")
+      const updateeventdata =  await dbservices.User.updateEventData(userId,eventId,txReceipt.transactionHash ,sa_address,wallet.address ,"0")
       // if(updateeventdata.length ===0){
       //   throw new Error("already transaction for this event")
       // }
