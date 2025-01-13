@@ -57,7 +57,7 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views')); // Adjust the path based on your project structure
 
 // Route to fetch and render user data
-app.get('/render-user-data', async (req, res) => {
+app.get('/dashboard', async (req, res) => {
   try {
     // Fetch data from the API
     const response = await axios.get('http://localhost:8008/user/data');

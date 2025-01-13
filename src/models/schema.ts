@@ -2,7 +2,7 @@ import { relations} from 'drizzle-orm';
 import { serial,varchar,pgTable,primaryKey, jsonb } from 'drizzle-orm/pg-core';
 
 
-export const user: any = pgTable("users", {
+export const user:any = pgTable("users", {
   id: serial("id"),
   userId:varchar("user_id").unique(),
   appId:varchar("app_id"),
@@ -40,7 +40,7 @@ export const user: any = pgTable("users", {
 
 
   export const userRelations = relations(user, ({ many }) => ({
-    events: many(eventData,{
+      events: many(eventData,{
       relationName: "userEvents",
     }),
   }));
