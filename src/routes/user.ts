@@ -1,11 +1,12 @@
 import express from "express"
 const router=express.Router()
 import controllers from "../controllers";
-import { authenticateUser } from "../middleware";
+import { authenticateUser, validateRequest } from "../middleware";
+import validators from "../validators";
 
-router.post("/registerUser",controllers.User.registerUser)
-router.post("/registerGame",authenticateUser,controllers.User.registerGame)
-router.post("/sendEvent/:eventId" ,authenticateUser, controllers.User.sendEvent)
+router.post("/registerUser",validateRequest(validators.user.registerUser),controllers.User.registerUser)
+router.post("/registerGame",validateRequest(validators.user.registerGame),authenticateUser,controllers.User.registerGame)
+router.post("/sendEvent/:eventId" ,validateRequest(validators.user.sendEvent),authenticateUser, controllers.User.sendEvent)
 // router.post("savequstion",controllers.User.saveQue)
 router.get("/data",controllers.User.getdata)
 
