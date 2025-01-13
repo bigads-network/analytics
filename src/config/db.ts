@@ -23,6 +23,6 @@
         logger.error(`Error connecting to database: ${err}`);
     });
 
-    const postgreDb = drizzle(client);
+    const postgreDb = drizzle(client,{ schema: { ...schema } });
 
     export default postgreDb;
