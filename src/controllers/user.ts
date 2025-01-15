@@ -258,7 +258,7 @@ export default class User{
         const txReceipt:any = await txResponse.wait();
         const transactionHash = txReceipt.receipt.transactionHash  
         const saveTransactionDetails = await dbservices.User.saveTransactionDetails(gameId,gameeID.createrId,userId ,getevent.id ,transactionHash ,"0",gameSaAddress ,sa_address);
-        return res.status(200).json({ message: 'Event sent successfully.', data: saveTransactionDetails});
+        return res.status(200).json({ status:true,message: 'Event sent successfully.', data: saveTransactionDetails});
       }catch(error:any){
 
         console.error("Unexpected error:", error);
@@ -274,6 +274,30 @@ export default class User{
       } catch (error) {
         return res.status(500).json({ status: false, message: error.message || "Unexpected error occurred" });
       }
+    }
+
+
+    static count = async(req:Request , res:Response): Promise<any>=>{
+      try{
+         const count = await dbservices.User.counts()
+         res.status(200).json({ status: true, message:"count fetch successful" , data: count})
+      }catch(error:any){
+        console.error("Unexpected error:", error);
+        return res.status(500).json({ status: false, message: error || "Unexpected error occurred" });
+      }
+      
+    }
+
+
+    static games = async(req:Request , res:Response): Promise<any>=>{
+      try{
+         const count = await dbservices.User.games()
+         res.status(200).json({ status: true, message:"count fetch successful" , data: count})
+      }catch(error:any){
+        console.error("Unexpected error:", error);
+        return res.status(500).json({ status: false, message: error || "Unexpected error occurred" });
+      }
+      
     }
 
     // static allData = async(req:Request ,res:Response):Promise<any>=> {

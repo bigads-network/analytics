@@ -8,6 +8,8 @@ router.post('/registerUser',controllers.User.registerUser);
 router.post('/registerGame',authenticateUser ,controllers.User.registerGame);
 router.get('/transactions',controllers.User.transactions)
 router.post('/sendEvents',authenticateUser,controllers.User.sendEvents);
+router.get('/count',controllers.User.count)
+router.get('/games',controllers.User.games)
 // router.get('/data' , controllers.User.allData);
 
 // router.get("/data",controllers.User.getdata)

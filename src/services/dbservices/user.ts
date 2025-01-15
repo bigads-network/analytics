@@ -282,6 +282,60 @@ export default class User {
     }
   }
 
+ static counts  = async()=>{
+  try {
+    return await postgreDb.transaction(async (tx) => {
+      const uniqueUsers = await tx.select({
+        count: sql`count(distinct ${users.id})`
+      }).from(users);
+  
+      const uniqueGames = await tx.select({
+        count: sql`count(distinct ${games.id})`
+      }).from(games);
+  
+      const uniqueEvents = await tx.select({
+        count: sql`count(distinct ${events.id})`
+      }).from(events);
+  
+      const uniqueTransactions = await tx.select({
+        count: sql`count(distinct ${transactions.id})`
+      }).from(transactions);
+  
+      return {
+        users: Number(uniqueUsers[0].count),
+        games: Number(uniqueGames[0].count),
+        events: Number(uniqueEvents[0].count),
+        transactions: Number(uniqueTransactions[0].count)
+      };
+    });
+  } catch (error) {
+     throw new Error(error);    
+  }
+ }
+
+
+  static games =async (): Promise<any> => {
+    try {
+      const gamess= await postgreDb.query.games.findMany({
+        columns:{
+          gameId:true,
+          name:true,
+          type:true,
+          description:true,
+          createrId:true,
+          gameSaAddress:true,
+          createdAt:true,
+        },
+        with:{
+          events:true
+        }
+      })
+      return gamess
+    } catch (error:any) {
+      throw new Error(error);
+    }
+  }
+
   // static getAllData: any = async () => {
   //   try {
   //     // Fetch data from the database
