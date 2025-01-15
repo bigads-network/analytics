@@ -2,108 +2,56 @@ User Events API
 
 This API allows you to manage user details and events, providing endpoints to save user data and event information.
 
-API Endpoints
-1. User Registration
-URL: /registerUser
-Method: POST
+
+## API Reference
+
+#### 1. User Registration
+
+
+```http
+  POST /user/registerUser
+```
 Description: Registers a new user by generating a unique ID, private key, and wallet.
-Middleware: validateRequest(validators.user.registerUser)
-Request Body:
-json
+#### Middleware: validateRequest(validators.user.registerUser)
 
-{
-  "appId": "string",
-  "deviceId": "string"
-}
-Response:
-200 OK:
-json
+| Parameter | Type     | Required field                |
+| :-------- | :------- | :------------------------- |
+| `body` | `string` | {"appId": "string", "deviceId": "string"}|
 
-{
-  "message": "Details Saved",
-  "data": {
-    "userId": "string",
-    "appId": "string",
-    "deviceId": "string",
-    "saAddress": "string"
-  },
-  "token": "string"
-}
-400 Bad Request:
-json
+#### 2. Game Registration
 
-{
-  "status": false,
-  "message": "Missing required fields"
-}
-500 Internal Server Error:
-json
-
-{
-  "status": false,
-  "message": "Unexpected error occurred"
-}
-
-
-2. Game Registration
-URL: /registerGame
-Method: POST
+```http
+  POST /user/registerGame
+```
 Description: Registers a new game under a user.
-Middleware: authenticateUser
-Request Body:
-json
 
-{
-  "gameName": "string",
-  "gameType": "string",
-  "eventDetails": "string"
-}
-Response:
-200 OK:
-json
+| Parameter | Type     | Required field                       |
+| :-------- | :------- | :-------------------------------- |
+| `body`     | `string` | {"name": "string","type": "string","description": "string" , events :array}|
 
-{
-  "status": true,
-  "message": "Game Registered!",
-  "data": "object"
-}
-500 Internal Server Error:
-json
+#### 3. Send Event
 
-{
-  "status": false,
-  "message": "Unexpected error"
-}
-
-
-
-- Save Event Details:
-
-Send Event
-URL: /sendEvent/:eventId
-Method: POST
+```http
+  POST /sendEvent
+```
 Description: Sends event data to the associated smart account.
-Middleware:
-validateRequest(validators.user.sendEvent)
-authenticateUser
-Parameters:
-eventId: The unique ID of the event to send.
-Response:
-200 OK:
-json
 
-{
-  "status": true,
-  "message": "Transaction done Successfully",
-  "data": "object"
-}
-500 Internal Server Error:
-json
+| Parameter | Type     | Required field                       |
+| :-------- | :------- | :-------------------------------- |
+| `query`     | `string` | eventId|
+| `query`     | `string` | gameId|
 
-{
-  "status": false,
-  "message": "Unexpected error"
-}
+#### 3. All transactions
+
+```http
+  POST /transaction
+```
+Description: Get all Transactions.
+
+| Parameter | Type     | Required field                       |
+| :-------- | :------- | :-------------------------------- |
+| -     | - | -|
+
 
 Controller Logic:
 

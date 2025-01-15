@@ -7,6 +7,8 @@ import { envConfigs } from "./config/envconfig";
 import logger from "./config/logger";
 import path from "path";
 import axios from "axios";
+import swagger from "swagger-ui-express"
+import apiDocs from "./config/swagger";
 
 const app = express();
 
@@ -16,7 +18,11 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cors({ origin: "*"}));
 passport.use('jwt', jwtStrategy);
 
+app.use("/api-docs", swagger.serve, swagger.setup(apiDocs))
+
 app.use("/", router);
+
+
 
 // (async () => {
 //   let userIds = ["ae40a072-257c-46ee-b8e6-084a6d9f33e5","5b497525-5f56-48d6-a27c-ddc3b0105d45","58f31914-25fb-4108-807b-83929b8e83e3","40b1eccc-5dc7-46b3-a335-44997f48cc96","2f188a97-01c4-4f7d-95ab-cb5235c25a0c",
@@ -59,20 +65,18 @@ app.set('views', path.join(__dirname, 'views')); // Adjust the path based on you
 // Route to fetch and render user data
 app.get('/dashboard', async (req, res) => {
   try {
-    // Fetch data from the API
-    const response = await axios.get('http://localhost:8008/user/data');
-    const { alldata, dataCount } = response.data.data;
+      // Make the API call
+      const response = await axios.get(`${process.env.BACKEND_URL}/user/transactions`);
+      const transactions = response.data.data;
 
-    // Render the data using an EJS template
-    res.render('user-data', {
-      events: alldata,
-      statistics: dataCount,
-    });
+      // Render the EJS template and pass the data
+      res.render('data', { transactions });
   } catch (error) {
-    console.error('Error fetching user data:', error);
-    res.status(500).send('Failed to load user data');
+      console.error('Error fetching transactions:', error);
+      res.status(500).send('An error occurred while fetching transactions.');
   }
 });
+
 
 
 app.listen(envConfigs.port, () => {

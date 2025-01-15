@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transaction List</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 text-gray-800">
+    <div class="container mx-auto p-6">
+        <!-- Header Section -->
+        <h1 class="text-4xl font-bold text-center text-indigo-600 mb-8">Transaction List</h1>
+
+        <!-- Table Container -->
+        <div class="overflow-hidden bg-white shadow-lg rounded-lg">
+            <table class="table-auto w-full">
+                <!-- Table Header -->
+                <thead class="bg-indigo-600 text-white">
+                    <tr>
+                        <th class="px-6 py-3 text-left uppercase text-sm font-medium">Transaction Hash</th>
+                        <th class="px-6 py-3 text-left uppercase text-sm font-medium">Event</th>
+                        <th class="px-6 py-3 text-left uppercase text-sm font-medium">Game</th>
+                        <th class="px-6 py-3 text-left uppercase text-sm font-medium">To User</th>
+                    </tr>
+                </thead>
+                <!-- Table Body -->
+                <tbody class="divide-y divide-gray-200">
+                    <% transactions.forEach(transaction => { %>
+                        <tr class="hover:bg-indigo-50 transition-all">
+                            <td class="px-6 py-4 text-gray-700 font-medium"><%= transaction.transactionHash %></td>
+                            <td class="px-6 py-4 text-gray-600">
+                                <span class="font-semibold text-indigo-500"><%= transaction.event.eventType %></span>
+                                <span class="text-gray-500 text-sm">- <%= transaction.event.eventId %></span>
+                            </td>
+                            <td class="px-6 py-4 text-gray-600">
+                                <span class="font-semibold"><%= transaction.game.name %></span>
+                                <span class="text-gray-500 text-sm">(<%= transaction.game.type %>)</span>
+                            </td>
+                            <td class="px-6 py-4 text-gray-600">
+                                <span class="font-semibold text-indigo-500"><%= transaction.toUser.userId %></span>
+                            </td>
+                        </tr>
+                    <% }) %>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Footer Section -->
+        <div class="mt-6 text-center text-sm text-gray-600">
+            <p>Powered by <span class="font-semibold text-indigo-500">Your Application</span></p>
+        </div>
+    </div>
+</body>
+</html>

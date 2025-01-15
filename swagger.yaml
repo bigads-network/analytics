@@ -1,0 +1,338 @@
+openapi: 3.0.0
+info:
+  title: Bigads API
+  description: API documentation for Bigads
+  version: 0.0.1
+servers:
+  - url: http://localhost:8009
+    description: Local server
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+paths:
+  /users/registerUser:
+    post:
+      summary: Return login user if not registered, if not registered, performs registration.
+      description: Optional extended description in CommonMark or HTML.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                appId:
+                  type: string
+                deviceId:
+                  type: string
+              required:
+                - appId
+                - deviceId
+      responses:
+        "200":
+          description: A JSON object containing user details and a token.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: User Logged In
+                  data:
+                    type: object
+                    properties:
+                      userId:
+                        type: string
+                        example: user_607LHYRR
+                      appId:
+                        type: string
+                        example: AppTESTID12311
+                      deviceId:
+                        type: string
+                        example: TESTDEVICEID111234
+                      saAddress:
+                        type: string
+                        example: 0xb34c1506FCca7CFd00Da4158315e2A2291928323
+                  token:
+                    type: string
+                    example: eyJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOjEsInJvbGUiOiJjcmVhdG9yIiwidHlwZSI6ImFjY2VzcyIsImV4cCI6MTczNjk1MDg5M30.LLQdFdxTkK_BbY403G2HBrx4RbP7SCh2Ni2ccIQL80c
+        "500":
+          description: Internal server error - Database Error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /games/registerGame:
+    post:
+      summary: Return Game Registration with events details.
+      description: Optional extended description in CommonMark or HTML.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: TekkenChampionship
+                type:
+                  type: string
+                  example: tekken
+                description:
+                  type: string
+                  example: A thrilling online battle championship.
+                events:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      eventType:
+                        type: string
+                        example: Solo Match
+              required:
+                - name
+                - type
+                - description
+                - events
+      responses:
+        "200":
+          description: A JSON object containing the registered game and its events.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Game registered Succesfully
+                  data:
+                    type: object
+                    properties:
+                      game:
+                        type: object
+                        properties:
+                          id:
+                            type: integer
+                            example: 4
+                          createrId:
+                            type: integer
+                            example: 1
+                          gameId:
+                            type: string
+                            example: game_XXTI9R8L
+                          gameToken:
+                            type: string
+                            nullable: true
+                            example: null
+                          gameSaAddress:
+                            type: string
+                            example: 0x25D0678F52F60b2340F6B8302bd9702Fe1432085
+                          name:
+                            type: string
+                            example: TekkenChampionship
+                          type:
+                            type: string
+                            example: tekken
+                          description:
+                            type: string
+                            example: A thrilling online battle championship.
+                          createdAt:
+                            type: string
+                            format: date-time
+                            example: 2025-01-15T07:33:14.258Z
+                      events:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            gameId:
+                              type: integer
+                              example: 4
+                            eventId:
+                              type: string
+                              example: event_XFD2AT7Q
+                            eventType:
+                              type: string
+                              example: Solo Match
+                      Gametoken:
+                        type: string
+                        example: eyJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOjQsInR5cGUiOiJhY2Nlc3MiLCJleHAiOjE3MzY5MzgzOTR9.pDn70VidiNLIYNXvKg04WWgqm_0pv8MD7eokcNO9cS4
+        "401":
+          description: Unauthorized - Invalid or Expired token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        "500":
+          description: Internal server error - Database Error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /user/sendEvents:
+    post:
+      summary: Send events to users for a specific game.
+      description: This endpoint sends events based on the provided eventId and gameId.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: eventId
+          in: query
+          required: true
+          schema:
+            type: string
+            example: event_XFD2AT7Q
+        - name: gameId
+          in: query
+          required: true
+          schema:
+            type: integer
+            example: 4
+      responses:
+        "200":
+          description: A JSON object containing the details of the sent event.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Event sent successfully.
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                        example: 2
+                      fromGameId:
+                        type: integer
+                        example: 4
+                      GameCreator:
+                        type: integer
+                        example: 1
+                      toUser:
+                        type: integer
+                        example: 1
+                      eventId:
+                        type: integer
+                        example: 7
+                      transactionHash:
+                        type: string
+                        example: 0xca78c65fe4c6752dbeef5301e02332ae496729d0f77ba9bcaec05ad992de83df
+                      amount:
+                        type: string
+                        example: "0"
+                      from:
+                        type: string
+                        example: 0x25D0678F52F60b2340F6B8302bd9702Fe1432085
+                      to:
+                        type: string
+                        example: 0xb34c1506FCca7CFd00Da4158315e2A2291928323
+                      createdAt:
+                        type: string
+                        format: date-time
+                        example: 2025-01-15T11:42:52.807Z
+        "401":
+          description: Unauthorized - Invalid or Expired token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        "500":
+          description: Internal server error - Database Error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /user/transactions:
+    get:
+      summary: Fetch user transactions
+      description: Retrieves a list of transactions for the user
+      responses:
+        '200':
+          description: Transaction fetch successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "transaction fetch successful"
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        transactionHash:
+                          type: string
+                          example: "0xd089b541f5a0d16437a341a7967245d298b516dec8f6c205bb615ba3b34134b3"
+                        event:
+                          type: object
+                          properties:
+                            eventType:
+                              type: string
+                              example: "Solo Match"
+                            eventId:
+                              type: string
+                              example: "event_XFD2AT7Q"
+                        toUser:
+                          type: object
+                          properties:
+                            userId:
+                              type: string
+                              example: "user_607LHYRR"
+                        game:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                              example: "TekkenChampionship"
+                            type:
+                              type: string
+                              example: "tekken"
+                            gameId:
+                              type: string
+                              example: "game_XXTI9R8L"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Internal server error"
