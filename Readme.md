@@ -2,68 +2,56 @@ User Events API
 
 This API allows you to manage user details and events, providing endpoints to save user data and event information.
 
-API Endpoints
-1. POST /saveuser/
-Saves user details in the database.
 
-Request:
-Headers: None required.
-Body:
-{
-  "appId": "string",
-  "deviceId": "string",
-  "userId": "string (optional)"
-}
+## API Reference
 
-Response:
-  . Success (200):
-    {
-      "message": "Details Save",
-      "data": {
-        "userId": "userXYZ",
-        "appId": "sampleAppId",
-        "deviceId": "sampleDeviceId"
-      }
-    }
-
-  . Error (500):
-    {
-      "status": false,
-      "message": "Error in inserting Data"
-    }
+#### 1. User Registration
 
 
-2. POST /saveevents
-Saves event details for a specific user. Requires user authentication.
+```http
+  POST /user/registerUser
+```
+Description: Registers a new user by generating a unique ID, private key, and wallet.
+#### Middleware: validateRequest(validators.user.registerUser)
 
-Request:
-Headers:
-Authorization: Bearer <token>
-Body:    
-    {
-      "userId": "string",
-      "name": "string",
-      "type": "string",
-      "eventDetails": "object"
-    }
+| Parameter | Type     | Required field                |
+| :-------- | :------- | :------------------------- |
+| `body` | `string` | {"appId": "string", "deviceId": "string"}|
 
-. Response:
-    - Success (200):
-    {
-      "message": "Save Events Successfully"
-    }
+#### 2. Game Registration
 
-    - Error (500):
-    {
-      "status": false,
-      "message": "Error in inserting Data"
-    }
+```http
+  POST /user/registerGame
+```
+Description: Registers a new game under a user.
 
+| Parameter | Type     | Required field                       |
+| :-------- | :------- | :-------------------------------- |
+| `body`     | `string` | {"name": "string","type": "string","description": "string" , events :array}|
 
+#### 3. Send Event
 
-- Save Event Details:
+```http
+  POST /sendEvent
+```
+Description: Sends event data to the associated smart account.
 
-Route: /saveevents
+| Parameter | Type     | Required field                       |
+| :-------- | :------- | :-------------------------------- |
+| `query`     | `string` | eventId|
+| `query`     | `string` | gameId|
+
+#### 3. All transactions
+
+```http
+  POST /transaction
+```
+Description: Get all Transactions.
+
+| Parameter | Type     | Required field                       |
+| :-------- | :------- | :-------------------------------- |
+| -     | - | -|
+
 
 Controller Logic:
 

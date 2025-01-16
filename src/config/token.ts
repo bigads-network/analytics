@@ -4,16 +4,20 @@ import jwt from "jsonwebtoken";
 import { envConfigs } from './envconfig';
 import { TokenTypes } from '../enums';
 
-export const generateAuthTokens = (payload: { userId:any }) => {
+export const generateAuthTokens = (payload:{userId:any , role?:any}) => {
+  // console.log(userId ,"payloaddddddddddddddddddddddddddddd")
   const accessTokenExpires = moment().add(
     envConfigs.accessExpirationMinutes,
     "minutes"
   );
+  console.log(accessTokenExpires , "access token expires")
   const accessToken = jwt.sign(JSON.stringify({
     userId: payload.userId,
+    role:payload.role,
     type: TokenTypes.ACCESS, // Include the token type
     exp: accessTokenExpires.unix() // Set expiration time in UNIX timestamp format
   }), envConfigs.jwtsecret);
+  // console.log(userId , "access token")
   return accessToken;
 }
 
@@ -24,7 +28,7 @@ const jwtOptions = {
 
 const jwtVerify = async (payload, done) => {
   try {
-    // console.log(payload ,"payloadddd")
+    console.log(payload ,"payloadddd")
     if (payload.type !== TokenTypes.ACCESS) {
       throw new Error('Invalid token type');
     }

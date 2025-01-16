@@ -4,32 +4,51 @@ export default class user {
 
     static registerUser = z.object({
         body:z.object({
-            appId: z.string(),
-            deviceId: z.string(),
+          appId: z.string(),
+          deviceId: z.string(),
         }).strict(),
         params:z.object({
         }).strict(),
         query:z.object({}).strict(),
       })
 
-
+      static eventValidator = z.object({
+        eventType: z.string(), // Ensures eventType is a string
+      });
+      
       static registerGame = z.object({
         body:z.object({
-            gameName: z.string(),
-            gameType: z.string(),
+          name: z.string(), // Ensures name is a string
+          type: z.string(), // Ensures type matches specific values
+          description: z.string(), // Ensures description is a string
+          events: z.array(this.eventValidator), // Ensures events is an array of valid event objects
+        }).strict(), // Disallows additional fields
+        params: z.object({
         }).strict(),
-        params:z.object({
-        }).strict(),
-        query:z.object({}).strict(),
+        query: z.object({}).strict()
       })
 
       static sendEvent = z.object({
         body:z.object({
         }).strict(),
         params:z.object({
-            eventId: z.string(),
+
         }).strict(),
-        query:z.object({}).strict(),
+        query:z.object({
+          eventId: z.string(),
+          gameId:z.string(),
+        }).strict(),
       })
   
+      static transactions = z.object({
+        body:z.object({
+        }).strict(),
+        params:z.object({
+
+        }).strict(),
+        query:z.object({
+        
+        }).strict(),
+      })
+
 }
