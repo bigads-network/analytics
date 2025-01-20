@@ -13,7 +13,7 @@ components:
       scheme: bearer
       bearerFormat: JWT
 paths:
-  /users/registerUser:
+  /user/registerUser:
     post:
       summary: Return login user if not registered, if not registered, performs registration.
       description: Optional extended description in CommonMark or HTML.
@@ -70,7 +70,7 @@ paths:
                   error:
                     type: string
 
-  /games/registerGame:
+  /user/registerGame:
     post:
       summary: Return Game Registration with events details.
       description: Optional extended description in CommonMark or HTML.
