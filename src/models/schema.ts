@@ -22,8 +22,10 @@ export const games = pgTable('games', {
   name: varchar('name'),
   type: varchar('type'),
   description: varchar('description'),
+  isApproved: boolean('isApproved').default(false),
   createdAt: timestamp('created_at').defaultNow(),
 });
+
 
 export const events = pgTable('events', {
   id: serial('id').primaryKey(),

@@ -4,8 +4,7 @@ import jwt from "jsonwebtoken";
 import { envConfigs } from './envconfig';
 import { TokenTypes } from '../enums';
 
-export const generateAuthTokens = (payload:{userId:any , role?:any}) => {
-  // console.log(userId ,"payloaddddddddddddddddddddddddddddd")
+export const generateAuthTokens = (payload:{userId?:any, gameId?:any, role?:any}) => {
   const accessTokenExpires = moment().add(
     envConfigs.accessExpirationMinutes,
     "minutes"
@@ -13,11 +12,11 @@ export const generateAuthTokens = (payload:{userId:any , role?:any}) => {
   console.log(accessTokenExpires , "access token expires")
   const accessToken = jwt.sign(JSON.stringify({
     userId: payload.userId,
+    gameID:payload.gameId,
     role:payload.role,
     type: TokenTypes.ACCESS, // Include the token type
     exp: accessTokenExpires.unix() // Set expiration time in UNIX timestamp format
   }), envConfigs.jwtsecret);
-  // console.log(userId , "access token")
   return accessToken;
 }
 

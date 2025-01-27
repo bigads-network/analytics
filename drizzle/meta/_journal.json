@@ -8,6 +8,20 @@
       "when": 1736947330740,
       "tag": "0000_complete_puff_adder",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1737879698538,
+      "tag": "0001_gifted_ghost_rider",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1737880490376,
+      "tag": "0002_unusual_skrulls",
+      "breakpoints": true
     }
   ]
 }
