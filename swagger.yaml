@@ -296,12 +296,6 @@ paths:
       security:
         - bearerAuth: []
       parameters:
-        - name: eventId
-          in: query
-          required: true
-          schema:
-            type: string
-            example: event_XFD2AT7Q
         - name: Authorization
           in: headers
           required: true
@@ -313,7 +307,18 @@ paths:
           required: true
           schema:
             type: string
-            example: game_token_XXTI9R8L         
+            example: game_token_XXTI9R8L 
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                eventId:
+                  type: string
+                  description: The type of event being for transaction.
+                  example: event_qwert        
       responses:
         "200":
           description: A JSON object containing the details of the sent event.
