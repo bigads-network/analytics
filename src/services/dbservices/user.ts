@@ -132,7 +132,7 @@ export default class User {
         gameSaAddress:saAddress,
         description,
         isApproved:true
-      }).returning({id:games.id});
+      }).returning();
   
       if (!newGame) throw new Error('Game registration failed.');
   
