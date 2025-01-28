@@ -224,11 +224,10 @@ export default class User {
         })
       }
 
-
-
       return await postgreDb.select({
         appId:users.appId,
-        deviceId: users.deviceId
+        deviceId: users.deviceId,
+        saAddress:users.saAddress
     }).from(users).where(eq(users.id,userId))
     } catch (error) {
       throw new Error(error.message);
