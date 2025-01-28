@@ -382,6 +382,10 @@ export default class User{
     static eventCreation = async(req:Request, res:Response):Promise<any> => {
         try {
           const userId = req['user'].userId;
+          const role = req['user'].role;
+          if(role !== 'creator') {
+            throw new Error(" should be creator of the game")
+          }
           const gameId = req.params.gameId;
           const checkExist = await dbservices.User.checkGameExists(userId, gameId)
           if(checkExist.length===0){
@@ -413,6 +417,10 @@ export default class User{
         const gameObject= await dbservices.User.gameObject(gameId)
         const gameeID = await dbservices.User.getGameID(gameId) // get  creator Details  from  it
         const getevent = await dbservices.User.getEventById(eventId)
+        const checkEventwithgame = await dbservices.User.checkEvent(eventId, gameId)
+        if(checkEventwithgame.length === 0){
+          return res.status(404).json({ message: 'Event for game not found.' });
+        }
         const gameSaAddress = gameeID.gameSaAddress;  // from address information
         const creatorID= gameeID.createrId
         const generateGameId= gameeID.gameId
