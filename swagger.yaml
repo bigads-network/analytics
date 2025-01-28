@@ -6,6 +6,8 @@ info:
 servers:
   - url: http://localhost:8008
     description: Local server
+  - url: https://data-center-7yhai.ondigitalocean.app/
+    description: Production server
 components:
   securitySchemes:
     bearerAuth:
