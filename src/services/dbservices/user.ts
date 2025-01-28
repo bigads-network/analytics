@@ -291,6 +291,24 @@ export default class User {
     }
   }
 
+
+
+  static checkEvent = async(eventId:any , gameID:any):Promise<any>=>{
+    try {
+      return await postgreDb.select({
+        gameId:events.gameId
+       }).from(events).where(
+        and(
+          eq(events.eventId, eventId),
+          eq(events.gameId, gameID)
+        )
+      )
+    } catch (error:any) {
+      throw new Error(error.message);
+      
+    }
+  }
+
   static checkevent = async(gameId :any, eventtype:any):Promise<any> =>{
     try{
         return await postgreDb.select({
