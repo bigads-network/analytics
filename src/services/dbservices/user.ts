@@ -2,6 +2,7 @@ import {and, count, countDistinct, desc, eq, inArray, isNull, sql} from "drizzle
 import postgreDb from "../../config/db";
 import { generateAuthTokens } from "../../config/token";
 import { events, games, transactions, userGames, users, } from "../../models/schema";
+import { generateGameToken } from "../../config/gameToken";
 
 export default class User {
 
@@ -27,6 +28,28 @@ export default class User {
             appId:appId,
             deviceId:deviceId,
             saAddress:saAddress,
+        }).returning({
+          userId:users.userId,
+          id:users.id,
+          role:users.role,
+          saAddress:users.saAddress
+        })
+        // console.log(result , "result")
+        return result[0]
+    }catch(error:any){
+        throw new Error(error.message)
+    }
+  }
+
+  static saveDetailsOwner:any = async(userId:any,secret_key:any,deviceId:any,saAddress:any ,):Promise<any>=>{
+    try{
+      // console.log("Saving details dbserver details")
+        const result =  await postgreDb.insert(users).values({
+            userId:userId,
+            appId:secret_key,
+            deviceId:deviceId,
+            saAddress:saAddress,
+            role: 'creator'
         }).returning({
           userId:users.userId,
           id:users.id,
@@ -70,7 +93,7 @@ export default class User {
           .where(eq(events.gameId, gameId));
   
         // Step 3: Generate a game token
-        const gameToken = await generateAuthTokens({ userId: gameId });
+        const gameToken = await generateGameToken(gameId);
   
         // Return all results
         return {
@@ -105,7 +128,7 @@ export default class User {
   
       if (!newGame) throw new Error('Game registration failed.');
   
-      const Gametoken= await generateAuthTokens({gameId:newGame.id})
+      const Gametoken= await generateGameToken(newGame.id)
 
       // console.log(newGame.id ,"Game registratioz")
 
@@ -117,11 +140,11 @@ export default class User {
   
       await postgreDb.insert(events).values(newEvents);
 
-       const uodatedgame=await postgreDb.update(games).set({
+       const updatedgame=await postgreDb.update(games).set({
         gameToken: Gametoken
       }).where(eq(games.id ,newGame.id)).returning()
   
-      return { game: uodatedgame[0], events: newEvents ,Gametoken:Gametoken };
+      return { game: updatedgame[0], events: newEvents ,Gametoken:Gametoken };
     } catch (error) {
       throw new Error(`Error registering game: ${error.message}`);
     }

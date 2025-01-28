@@ -12,6 +12,16 @@ export default class user {
         query:z.object({}).strict(),
       })
 
+      static registerOwner = z.object({
+        body:z.object({
+          secret_key: z.string(),
+          deviceId: z.string(),
+        }).strict(),
+        params:z.object({
+        }).strict(),
+        query:z.object({}).strict(),
+      })
+
       static eventValidator = z.object({
         eventType: z.string(), // Ensures eventType is a string
       });
@@ -30,13 +40,14 @@ export default class user {
 
       static sendEvent = z.object({
         body:z.object({
+          eventId: z.string(),
+          gameId:z.string(),
         }).strict(),
         params:z.object({
 
         }).strict(),
         query:z.object({
-          eventId: z.string(),
-          gameId:z.string(),
+
         }).strict(),
       })
   
