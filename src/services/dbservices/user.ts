@@ -123,7 +123,6 @@ export default class User {
   static registerGame =async (userId: any ,gameId:any ,gameData: { name: string, type: string,description: string, events: { eventType: string }[]  }, saAddress:any) => {
     // console.log(userId,gameId,gameData ,saAddress)
     const { name, type, description, events: eventList } = gameData;
-  
     try {
       const [newGame] = await postgreDb.insert(games).values({
         createrId:userId,
@@ -132,8 +131,8 @@ export default class User {
         type,
         gameSaAddress:saAddress,
         description,
+        isApproved:true
       }).returning();
-
   
       if (!newGame) throw new Error('Game registration failed.');
   
