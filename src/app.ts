@@ -17,9 +17,7 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use(cors({ origin: "*"}));
 passport.use('jwt', jwtStrategy);
-
 app.use("/api-docs", swagger.serve, swagger.setup(apiDocs))
-
 app.use("/", router);
 
 
@@ -62,20 +60,7 @@ app.use("/", router);
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views')); // Adjust the path based on your project structure
 
-// Route to fetch and render user data
-// app.get('/dashboard', async (req, res) => {
-//   try {
-//       // Make the API call
-//       const response = await axios.get(`${process.env.BACKEND_URL}/user/transactions`);
-//       const transactions = response.data.data;
 
-//       // Render the EJS template and pass the data
-//       res.render('data', { transactions });
-//   } catch (error) {
-//       console.error('Error fetching transactions:', error);
-//       res.status(500).send('An error occurred while fetching transactions.');
-//   }
-// });
 
 
 

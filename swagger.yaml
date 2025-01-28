@@ -4,7 +4,7 @@ info:
   description: API documentation for Bigads
   version: 0.0.1
 servers:
-  - url: http://localhost:8009
+  - url: http://localhost:8008
     description: Local server
 components:
   securitySchemes:
@@ -74,6 +74,14 @@ paths:
     post:
       summary: Return Game Registration with events details.
       description: Optional extended description in CommonMark or HTML.
+      parameters:
+      - in: headers
+        name: Authorization
+        required: true
+        schema:
+          type: string
+          example: Bearer <your_token_here>
+        description: Bearer token for authentication. Replace `<your_token_here>` with your actual token.
       security:
         - bearerAuth: []
       requestBody:
@@ -186,6 +194,102 @@ paths:
                 properties:
                   error:
                     type: string
+  
+  /user/events/{gameId}:
+    post:
+      summary: Create events for a particular game
+      description: This endpoint creates events for a particular game.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          description: The ID of the game for which the event is being created.
+          schema:
+            type: integer
+            example: 4
+        - name: Authorization
+          in: header
+          required: true
+          description: Bearer token for authentication.
+          schema:
+            type: string
+            example: Bearer <your_token_here>
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                eventType:
+                  type: string
+                  description: The type of event being created.
+                  example: TekkenChampionship
+      responses:
+        "200":
+          description: Event created successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Event created
+                  event:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        eventId:
+                          type: string
+                          description: The ID of the created event.
+                          example: event_A4I40CEH
+        "400":
+          description: Bad Request - Invalid input data.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: Invalid game ID or request body.
+        "401":
+          description: Unauthorized - Invalid or missing bearer token.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: Unauthorized. Please provide a valid token.
+        "500":
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: Failed to create event due to a server error.
+
 
   /user/sendEvents:
     post:
@@ -206,6 +310,17 @@ paths:
           schema:
             type: integer
             example: 4
+        - name: Authorization
+          in: headers
+          required: true
+          schema:
+            type: string
+            example: Bearer <your_token_here>
+        - name : game_apikey
+          in: headers
+          required: true
+          schema:
+            type: string         
       responses:
         "200":
           description: A JSON object containing the details of the sent event.

@@ -1,0 +1,1 @@
+ALTER TABLE "games" ALTER COLUMN "isApproved" SET DEFAULT false;

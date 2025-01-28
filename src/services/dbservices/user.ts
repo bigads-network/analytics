@@ -105,7 +105,7 @@ export default class User {
   
       if (!newGame) throw new Error('Game registration failed.');
   
-      const Gametoken= await generateAuthTokens({userId:newGame.id})
+      const Gametoken= await generateAuthTokens({gameId:newGame.id})
 
       // console.log(newGame.id ,"Game registratioz")
 
@@ -127,6 +127,8 @@ export default class User {
     }
   };
 
+
+  
   // {
   //   name: 'TekkenChampionship',
   //   type: 'tekken',
@@ -172,7 +174,8 @@ export default class User {
         columns:{
           createrId:true,
           gameSaAddress:true,
-          gameId:true
+          gameId:true,
+          isApproved:true,
         },
         with:{
           creator:{
@@ -223,12 +226,60 @@ export default class User {
 
 
 
-      return await postgreDb.select().from(users).where(eq(users.id,userId))
+      return await postgreDb.select({
+        appId:users.appId,
+        deviceId: users.deviceId
+    }).from(users).where(eq(users.id,userId))
     } catch (error) {
       throw new Error(error.message);
     }
   }
 
+  static checkGameExists = async(userId:any , gameID:any):Promise<any>=>{
+    try {
+      return await postgreDb.select({
+        gameId:games.gameId
+       }).from(games).where(
+        and(
+          eq(games.createrId, userId),
+          eq(games.id, gameID)
+        )
+      )
+    } catch (error:any) {
+      throw new Error(error.message);
+      
+    }
+  }
+
+  static checkevent = async(gameId :any, eventtype:any):Promise<any> =>{
+    try{
+        return await postgreDb.select({
+        eventId:events.eventId
+       }).from(events).where(
+        and(
+          eq(events.gameId, gameId),
+          eq(events.eventType, eventtype)
+        )
+      )
+      
+    }catch(error:any){
+      throw new Error(error)
+    }
+  }
+
+  static createEvent = async(gameId:any ,eventType:any):Promise<any> =>{
+    try {
+       return postgreDb.insert(events).values({
+        gameId: gameId,
+        eventId: `event_${this.generateId()}`, // Generate unique eventId
+        eventType: eventType,
+       }).returning({
+          eventId: events.eventId
+       })
+    } catch (error) {
+       throw new Error(error)
+    }
+  }
 
   static saveTransactionDetails = async(gameID:number ,creatorID:any ,userId:any , eventId:any , transactionHash:any,amount:any ,from:any, to:any ):Promise<any> => {
     try {
