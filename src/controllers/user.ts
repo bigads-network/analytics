@@ -115,7 +115,7 @@ export default class User{
   
         return res.status(200).send({
           message,
-          data: { userId: userExist.userId, appId, deviceId, saAddress: userExist.saAddress },
+          data: { userId: userExist.userId, role : userExist.role , appId, deviceId, saAddress: userExist.saAddress },
           token,
         });
       } catch (error: any) {
@@ -384,17 +384,17 @@ export default class User{
             });
 
             const saAddress = await smartAccount.getAccountAddress();
-            // console.log("Smart Account Address:", saAddress);
+            console.log("Smart Account Address:", saAddress);
         // const privateKey =  sha512_256("APPID" + "EVENTID"); // from addres which is always same as the all the transaction get pol from this address
         const  userDetails = await dbservices.User.getuserdetailsbyId(userId,gameId)
-        // console.log(userDetails , "userDetails")
+        console.log(userDetails , "userDetails")
         const sa_address = userDetails[0].saAddress;
         const provider = new ethers.providers.JsonRpcProvider(providerUrl);
         const datetime = new Date().toISOString(); // Current datetime in ISO format
         const encodedData = ethers.utils.toUtf8Bytes(
           JSON.stringify({ ...userDetails, eventId, datetime })
         );
-                const tx:any = {
+          const tx:any = {
           to: sa_address,
           data:ethers.utils.hexlify(encodedData),
           value: ethers.utils.parseUnits("0.0001",18),
