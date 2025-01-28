@@ -71,11 +71,20 @@ export default class User {
       const result = await postgreDb.transaction(async (trx) => {
         // Step 1: Check if the game exists
         const gameResult: any = await trx
-          .select()
+          .select({
+            id: games.id,
+            createrId: games.createrId,
+            gameId: games.gameId,
+            name: games.name,
+            type: games.type,
+            gameSaAddress: games.gameSaAddress,
+            description: games.description,
+            isApproved: games.isApproved
+          })
           .from(games)
           .where(
             and(eq(games.createrId, userId), eq(games.name, name), eq(games.type, type))
-          );
+          )
   
         if (!gameResult || gameResult.length === 0) {
           return null
@@ -142,7 +151,16 @@ export default class User {
 
        const updatedgame=await postgreDb.update(games).set({
         gameToken: Gametoken
-      }).where(eq(games.id ,newGame.id)).returning()
+      }).where(eq(games.id ,newGame.id)).returning({
+        id: games.id,
+        createrId: games.createrId,
+        gameId: games.gameId,
+        name: games.name,
+        type: games.type,
+        gameSaAddress: games.gameSaAddress,
+        description: games.description,
+        isApproved: games.isApproved
+      })
   
       return { game: updatedgame[0], events: newEvents ,Gametoken:Gametoken };
     } catch (error) {
