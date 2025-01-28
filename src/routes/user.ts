@@ -5,10 +5,8 @@ import { authenticateUser, validateRequest } from "../middleware";
 import validators from "../validators";
 
 router.post('/registerUser',validateRequest(validators.user.registerUser),controllers.User.registerUser);
-router.post('/registerGame',authenticateUser,controllers.User.registerGame);
-router.post('/sendEvents',validateRequest(validators.user.sendEvent),authenticateUser,controllers.User.sendEvents);
+// router.post('/registerGame',authenticateUser,controllers.User.registerGame);
 router.get('/transactions',validateRequest(validators.user.transactions),controllers.User.transactions)
-router.post('/events/:gameId',authenticateUser,controllers.User.eventCreation)
 
 
 
