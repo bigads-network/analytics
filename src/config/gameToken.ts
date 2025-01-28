@@ -5,11 +5,11 @@ const secretKey = process.env.GAME_JWT_SECRET ;
 
 export const generateGameToken = (gameId: number | string): string => {
   
+    const expiration = process.env.GAME_TIMEOUT_EXPIRATION ? parseInt(process.env.GAME_TIMEOUT_EXPIRATION, 10) : 60;
     const payload = { gameId };
-    const expiration = process.env.GAME_TIMEOUT_EXPIRATION
-    const options = { expiresIn: expiration }; 
+    const options = { expiresIn: `${expiration}m` }; // Correct format for expiration
 
-      const token = jwt.sign(payload, secretKey, options);
+    const token = jwt.sign(payload, secretKey, options);
   
     return token;
   };
@@ -32,6 +32,6 @@ export const generateGameToken = (gameId: number | string): string => {
   
       next(); // Call the next middleware
     } catch (error) {
-      res.status(403).json({ message: "Invalid or expired token", error: error.message });
+      res.status(403).json({ message: "Invalid or expired Game token", error: error.message });
     }
   };

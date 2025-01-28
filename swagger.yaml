@@ -72,7 +72,7 @@ paths:
 
   /user/registerGame:
     post:
-      summary: Return Game Registration with events details.
+      summary: Return Game Registration with events details and you should be at creator role to register a game.
       description: Optional extended description in CommonMark or HTML.
       parameters:
       - in: headers
@@ -139,10 +139,6 @@ paths:
                           gameId:
                             type: string
                             example: game_XXTI9R8L
-                          gameToken:
-                            type: string
-                            nullable: true
-                            example: null
                           gameSaAddress:
                             type: string
                             example: 0x25D0678F52F60b2340F6B8302bd9702Fe1432085
@@ -175,7 +171,7 @@ paths:
                               example: Solo Match
                       Gametoken:
                         type: string
-                        example: eyJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOjQsInR5cGUiOiJhY2Nlc3MiLCJleHAiOjE3MzY5MzgzOTR9.pDn70VidiNLIYNXvKg04WWgqm_0pv8MD7eokcNO9cS4
+                        example: game_token
         "401":
           description: Unauthorized - Invalid or Expired token
           content:
@@ -304,23 +300,18 @@ paths:
           schema:
             type: string
             example: event_XFD2AT7Q
-        - name: gameId
-          in: query
-          required: true
-          schema:
-            type: integer
-            example: 4
         - name: Authorization
           in: headers
           required: true
           schema:
             type: string
             example: Bearer <your_token_here>
-        - name : game_apikey
+        - name : game_authorization_token
           in: headers
           required: true
           schema:
-            type: string         
+            type: string
+            example: game_token_XXTI9R8L         
       responses:
         "200":
           description: A JSON object containing the details of the sent event.
