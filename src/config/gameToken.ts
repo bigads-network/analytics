@@ -6,8 +6,8 @@ const secretKey = process.env.GAME_JWT_SECRET ;
 export const generateGameToken = (gameId: number | string): string => {
   
     const payload = { gameId };
-  
-    const options = { expiresIn: '1h' }; 
+    const expiration = process.env.GAME_TIMEOUT_EXPIRATION
+    const options = { expiresIn: expiration }; 
 
       const token = jwt.sign(payload, secretKey, options);
   
