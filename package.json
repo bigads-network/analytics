@@ -23,6 +23,7 @@
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "crypto": "^1.0.1",
+    "diamnet-sdk": "^1.0.2",
     "dotenv": "^16.4.5",
     "drizzle-kit": "^0.22.7",
     "drizzle-orm": "^0.31.2",

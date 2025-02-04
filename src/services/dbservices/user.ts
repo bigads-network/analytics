@@ -324,6 +324,18 @@ export default class User {
     }
   }
 
+  static updateGameToken = async(gameId:any): Promise<any> => {
+    try {
+      const gameToken = generateGameToken(gameId);
+      const updatedGame = await postgreDb.update(games).set({ gameToken:gameToken }).where(eq(games.id, gameId)).returning({
+        gameToken:games.gameToken
+    });
+      return updatedGame[0];
+    } catch (error) {
+      throw new Error(error.message);
+    }
+  }
+
   static createEvent = async(gameId:any ,eventType:any):Promise<any> =>{
     try {
        return postgreDb.insert(events).values({
