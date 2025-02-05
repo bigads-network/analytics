@@ -9,7 +9,6 @@ import path from "path";
 import axios from "axios";
 import swagger from "swagger-ui-express"
 import apiDocs from "./config/swagger";
-import { transfer } from "./transcation";
 
 const app = express();
 
@@ -62,7 +61,6 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views')); // Adjust the path based on your project structure
 
 
-// transfer();
 app.listen(envConfigs.port, () => {
   logger.info(`Server started on ${envConfigs.port}`);
 })

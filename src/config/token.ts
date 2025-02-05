@@ -9,7 +9,7 @@ export const generateAuthTokens = (payload:{userId?:any, gameId?:any, role?:any}
     envConfigs.accessExpirationMinutes,
     "minutes"
   );
-  console.log(accessTokenExpires , "access token expires")
+  // console.log(accessTokenExpires , "access token expires")
   const accessToken = jwt.sign(JSON.stringify({
     userId: payload.userId,
     gameID:payload.gameId,
@@ -27,7 +27,7 @@ const jwtOptions = {
 
 const jwtVerify = async (payload, done) => {
   try {
-    console.log(payload ,"payloadddd")
+    // console.log(payload ,"payloadddd")
     if (payload.type !== TokenTypes.ACCESS) {
       throw new Error('Invalid token type');
     }

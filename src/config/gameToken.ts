@@ -1,11 +1,12 @@
 import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import { envConfigs } from './envconfig';
 
-const secretKey = process.env.GAME_JWT_SECRET ;
+const secretKey = envConfigs.game_jwt_secret ;
 
 export const generateGameToken = (gameId: number | string): string => {
   
-    const expiration = process.env.GAME_TIMEOUT_EXPIRATION ? parseInt(process.env.GAME_TIMEOUT_EXPIRATION, 10) : 60;
+    const expiration = envConfigs.game_timeout_expiration ? parseInt(envConfigs.game_timeout_expiration, 10) : 60;
     const payload = { gameId };
     const options = { expiresIn: `${expiration}m` }; // Correct format for expiration
 
@@ -26,7 +27,7 @@ export const generateGameToken = (gameId: number | string): string => {
     try {
       const decoded = jwt.verify(token, secretKey);
   
-      console.log(decoded ,"decodeeeeee gam,e tokennn" );
+      // console.log(decoded ,"decodeeeeee gam,e tokennn" );
       // Attach the decoded gameId to the request object
       req.body.gameId = (decoded as { gameId: string | number }).gameId; // Attach gameId to the request
   
