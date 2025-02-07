@@ -324,6 +324,18 @@ export default class User {
     }
   }
 
+  static updateGameToken = async(gameId:any): Promise<any> => {
+    try {
+      const gameToken = generateGameToken(gameId);
+      const updatedGame = await postgreDb.update(games).set({ gameToken:gameToken }).where(eq(games.id, gameId)).returning({
+        gameToken:games.gameToken
+    });
+      return updatedGame[0];
+    } catch (error) {
+      throw new Error(error.message);
+    }
+  }
+
   static createEvent = async(gameId:any ,eventType:any):Promise<any> =>{
     try {
        return postgreDb.insert(events).values({
@@ -348,8 +360,9 @@ export default class User {
         eventId,
         GameCreator:creatorID,
         toUser:userId,
-        fromGameId:gameID
-
+        fromGameId:gameID,
+        transactionChain:"POLYGON Testnet"
+        
       }).returning();
       return result[0];
     } catch (error:any ){
@@ -363,6 +376,12 @@ export default class User {
         columns:{
           transactionHash:true
         },
+      extras: {
+        createdAt:
+          sql`created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata'`.as(
+            "createdAtIST"
+          ),
+      },
         with:{
           event:{
             columns:{
@@ -406,14 +425,18 @@ export default class User {
       }).from(events);
   
       const uniqueTransactions = await tx.select({
-        count: sql`count(distinct ${transactions.id})`
+        count: sql`count(distinct ${transactions.id})`,
+        polygonCount: sql`count(distinct case when ${transactions.transactionChain} = 'POLYGON Testnet' then ${transactions.id} end)`,
+        DiamanteCount: sql`count(distinct case when ${transactions.transactionChain} = 'DIAMANTE Testnet' then ${transactions.id} end)`,
       }).from(transactions);
   
       return {
         users: Number(uniqueUsers[0].count),
         games: Number(uniqueGames[0].count),
         events: Number(uniqueEvents[0].count),
-        transactions: Number(uniqueTransactions[0].count)
+        transactions: Number(uniqueTransactions[0].count),
+        polygon: Number(uniqueTransactions[0].polygonCount),
+        diamante: Number(uniqueTransactions[0].DiamanteCount)
       };
     });
   } catch (error) {

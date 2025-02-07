@@ -9,7 +9,7 @@ router.post('/registerCreator',validateRequest(validators.user.registerOwner),co
 router.post('/registerGame',authenticateUser,controllers.User.registerGame);
 router.post('/sendEvents',authenticateUser,authenticateGameToken,controllers.User.sendEvents);
 router.post('/events/:gameId',authenticateUser,controllers.User.eventCreation)
-
+router.post('/gameToken',controllers.User.updateGameToken)
 
 
 

@@ -39,7 +39,6 @@ export default class User{
 
     static registerUser: any = async (req: Request, res: Response) => {
       try {
-        // console.log("registerUser request body:", req.body);
   
         const { appId, deviceId } = req.body;
         if (!appId || !deviceId ) {
@@ -47,7 +46,6 @@ export default class User{
         }
   
         let userExist = await dbservices.User.userExists(deviceId, appId);
-        // console.log("User exists:", userExist);
   
         let message = "User Logged In";
         let userId, saAddress;
@@ -58,12 +56,8 @@ export default class User{
             throw new Error("Missing or invalid chainId in environment variables");
           }
   
-          userId = await `user_${this.generateId()}`;
-          // console.log("Generated userId:", userId);
-  
-          const privKey = sha512_256(appId + deviceId + userId);
-          // console.log("Generated private key:", privKey);
-  
+          userId = await `user_${this.generateId()}`;  
+          const privKey = sha512_256(appId + deviceId + userId);  
           const rpcHttpProvider = new ethers.providers.JsonRpcProvider(process.env.PROVIDER_URL);
           if (!rpcHttpProvider) {
             return res.status(500).json({ status: false, message: "Error creating RPC provider" });
@@ -83,10 +77,8 @@ export default class User{
           });
   
           const eoa = client.account.address;
-          // console.log(`EOA address: ${eoa}`);
   
           const bundlerUrl = chainIdToBundlerUrl[chainId];
-          // console.log("Bundler URL:", bundlerUrl);
           const Paymaster_key = process.env.PAYMASTERAPI_KEY
 
           const smartAccount = await createSmartAccountClient({
@@ -95,9 +87,7 @@ export default class User{
             chainId,
             biconomyPaymasterApiKey:Paymaster_key
           });
-         // console.log(smartAccount ,"smart account")
           saAddress = await smartAccount.getAccountAddress();
-          // console.log("Smart Account Address:", saAddress);
   
           const saveResult = await dbservices.User.saveDetails(userId, appId, deviceId, saAddress);
           if (!saveResult) {
@@ -105,13 +95,11 @@ export default class User{
           }
   
           userExist = saveResult;
-          // console.log(userExist ,"user registered");
           message = "User registered Succesfully";
         }
   
         // console.log(userExist.id)
         const token = await generateAuthTokens({userId:userExist.id , role:userExist.role });
-        // console.log("Generated token:", token);
   
         return res.status(200).send({
           message,
@@ -142,7 +130,6 @@ export default class User{
         }
   
         let userExist = await dbservices.User.userExists(deviceId, secret_key);
-        // console.log("User exists:", userExist);
   
         let message = "User Logged In";
         let userId, saAddress;
@@ -300,84 +287,6 @@ export default class User{
       }
     }
 
-    // static registerGame: any = async (req: Request, res: Response): Promise<any> => {
-    //   try {
-    //     const userId = req['user'].userId;
-    //     const role = req['user'].role;
-    
-    //     // Validate role if necessary
-    //     if (role !== 'creator') {
-    //       throw new Error("you should be creator to be to register a  game and its events"); 
-    //     }
-    
-    //     const gamesData = req.body;
-    
-    //     if (!Array.isArray(gamesData) || gamesData.length === 0) {
-    //       return res.status(400).json({ message: 'Invalid games data. Provide an array of games.' });
-    //     }
-    
-    //     const chainId = parseInt(process.env.CHAINID || "80002");
-    //     if (!chainId) {
-    //       throw new Error("Missing or invalid chainId in environment variables");
-    //     }
-    
-    //     const rpcHttpProvider = new ethers.providers.JsonRpcProvider(process.env.PROVIDER_URL);
-    //     if (!rpcHttpProvider) {
-    //       return res.status(500).json({ status: false, message: "Error creating RPC provider" });
-    //     }
-    
-    //     const Paymaster_key = process.env.PAYMASTERAPI_KEY;
-    
-    //     const results = [];
-    //     let message ;
-    //     for (const gameData of gamesData) {
-    //       if (!gameData || !gameData.events || !Array.isArray(gameData.events)) {
-    //         return res.status(400).json({ message: 'Invalid game data or events in one or more games.' });
-    //       }
-    
-    //       let gameExist = await dbservices.User.gameExists(userId, gameData.name, gameData.type);
-    //       message = "Game Already exists";
-    //       if (!gameExist) {
-    //         const gameId = `game_${this.generateId()}`;
-    //         const privKey = sha512_256(JSON.stringify(gameData) + gameId + userId);
-    //         const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
-    
-    //         const account: any = privateKeyToAccount(wallet.privateKey as any);
-    //         const chainName = chainIdToChainName[chainId];
-    //         const client = createWalletClient({
-    //           account,
-    //           chain: chainName,
-    //           transport: http(),
-    //         });
-    
-    //         const bundlerUrl = chainIdToBundlerUrl[chainId];
-    //         const smartAccount = await createSmartAccountClient({
-    //           signer: client,
-    //           bundlerUrl,
-    //           chainId,
-    //           biconomyPaymasterApiKey: Paymaster_key,
-    //         });
-    
-    //         const saAddress = await smartAccount.getAccountAddress();
-    
-    //         const saveResult = await dbservices.User.registerGame(userId, gameId, gameData, saAddress);
-    //         if (!saveResult) {
-    //           throw new Error("Error saving game details");
-    //         }
-    
-    //         gameExist = saveResult;
-    //          message = "Game registered Succesfully";
-
-    //       }
-    
-    //       results.push(gameExist);
-    //     }
-    
-    //     return res.status(201).json({ message: message, data: results });
-    //   } catch (error: any) {
-    //     return res.status(500).json({ status: false, message: error.message || "Unexpected error occurred" });
-    //   }
-    // };
     
     static eventCreation = async(req:Request, res:Response):Promise<any> => {
         try {
@@ -489,7 +398,7 @@ export default class User{
           const tx:any = {
           to: sa_address,
           data:ethers.utils.hexlify(encodedData),
-          value: ethers.utils.parseUnits("0.0001",18),
+          value:"0"
         };
         // console.log("tx...........",tx)
         const txResponse = await smartAccount.sendTransaction(tx);
@@ -505,7 +414,15 @@ export default class User{
     }
 
 
-    
+    static updateGameToken = async(req:Request, res:Response):Promise<any> => {
+      try {
+         const gameId= req.body.gameId;
+         const updateToken = await dbservices.User.updateGameToken(gameId)
+         res.status(200).send({status: true ,message: "Updated game token",data: updateToken})
+      } catch (error:any) {
+       res.status(500).json({ status:false, message: error.message})
+      }
+    }
 
     
     static transactions:any=async(req:Request,res:Response)=>{
@@ -553,3 +470,6 @@ export default class User{
     //   }
     // }
 }
+
+
+
