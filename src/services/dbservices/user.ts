@@ -427,6 +427,7 @@ export default class User {
           GameCreator: creatorID,
           toUser: userId,
           fromGameId: gameID,
+          transactionChain:"DIAMANTE Testnet"
         })
         .returning();
       return result[0];

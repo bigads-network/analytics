@@ -43,6 +43,7 @@ export const transactions = pgTable('transactions', {
   toUser: integer('to_user').references(() => users.id), // for the track of user which is playing the game
   eventId: integer('event_id').references(() => events.id), // for the track of event
   transactionHash: varchar('transaction_hash').unique(),
+  transactionChain: varchar('transaction_chain'),
   amount: varchar('amount'),
   from: varchar('from'),    //Game saAddress  has to save
   to: varchar('to'),// user Account address has to svw which is playiing the game
