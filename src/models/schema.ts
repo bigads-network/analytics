@@ -53,7 +53,7 @@ export const transactions = pgTable('transactions', {
 export const userGames = pgTable('user_games', {
   id: serial('id').primaryKey(),
   userId: integer('user_id').references(() => users.id),
-  gameId: integer('event_id').references(() => games.id),
+  gameId: integer('game_id').references(() => games.id),
   createdAt: timestamp('created_at').defaultNow(),
 });
 
