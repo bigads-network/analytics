@@ -441,6 +441,7 @@ export default class User {
       return await postgreDb.query.transactions.findMany({
         columns: {
           transactionHash: true,
+          transactionChain: true
         },
         extras: {
           createdAtIST:
