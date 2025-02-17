@@ -292,7 +292,7 @@ paths:
   /user/sendEvents:
     post:
       summary: Send events to users for a specific game.
-      description: This endpoint sends events based on the provided eventId and gameId.
+      description: This endpoint sends event to server for a specific game .
       security:
         - bearerAuth: []
       parameters:
