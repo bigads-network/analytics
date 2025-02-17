@@ -314,40 +314,30 @@ export default class User{
         }
     }
 
-    static sendEvents = async(req:Request, res:Response):Promise<any>=>{
-      try{
-       
-        // Compare the provided gameApiKey with the static key in the environment
-        // const gameIdd = req.body.gameId;
-        // console.log(gameIdd ,"gaemeeeeidddddddddddddddddddd")
-        const userId = req['user'].userId   // to user  the user is come to play
-        const eventId:any = req.body.eventId  // event which user come to play
-        const gameId = req.body.gameId as any // gameId which user play (primarykey)
-        const gameObject= await dbservices.User.gameObject(gameId)
-        const gameeID = await dbservices.User.getGameID(gameId) // get  creator Details  from  it
-        const getevent = await dbservices.User.getEventById(eventId)
-        const checkEventwithgame = await dbservices.User.checkEvent(eventId, gameId)
-        if(checkEventwithgame.length === 0){
-          return res.status(404).json({ message: 'Event for game not found.' });
-        }
-        const gameSaAddress = gameeID.gameSaAddress;  // from address information
-        const creatorID= gameeID.createrId
-        const generateGameId= gameeID.gameId
-        // console.log(getevent.id , userId , eventId ,gameId)
-        if(!getevent ||!gameeID){
-          return res.status(404).json({ message: 'Event not found.' });
-        }
-
-        if(!gameeID.isApproved){
-          return res.status(403).json({ message: 'Game is not approved for  sending events' });
-        }
-        
-        const chainId = parseInt(process.env.CHAINID || "80002");
-
-        // // console.log(gameObject , generateGameId , creatorID)
-        const privKey = sha512_256(gameObject + generateGameId + creatorID);
-            // // console.log("Generated private key:", privKey);
+    static sendEvents = async (req: Request, res: Response): Promise<any> => {
+      try {
+        let userId: string | null = null;
+        let token, saAddress;
     
+        // Early check for user or missing appId/deviceId
+        if (req["user"] === null) {
+          const { appId, deviceId } = req.body;
+          if (!appId || !deviceId) {
+            return res.status(400).json({
+              status: false,
+              message: "Missing required fields: appId, deviceId",
+            });
+          }
+    
+          let userExist = await dbservices.User.userExists(deviceId, appId);
+          if (!userExist) {
+            const chainId = parseInt(process.env.CHAINID || "80002");
+            if (!chainId) {
+              throw new Error("Missing or invalid chainId in environment variables");
+            }
+    
+            userId = `user_${this.generateId()}`;
+            const privKey = sha512_256(appId + deviceId + userId);
             const rpcHttpProvider = new ethers.providers.JsonRpcProvider(process.env.PROVIDER_URL);
             if (!rpcHttpProvider) {
               return res.status(500).json({ status: false, message: "Error creating RPC provider" });
@@ -358,60 +348,148 @@ export default class User{
               return res.status(500).json({ status: false, message: "Error creating wallet" });
             }
     
-            // console.log("provider url.........",providerUrl);
-            // console.log(wallet.privateKey, "private key........")
-            const account:any = privateKeyToAccount(wallet.privateKey as any);
+            const account: any = privateKeyToAccount(wallet.privateKey as any);
             const chainName = chainIdToChainName[chainId];
             const client = createWalletClient({
               account,
               chain: chainName,
-              transport: http(providerUrl),
+              transport: http(),
             });
     
             const eoa = client.account.address;
-            // console.log(`EOA address: ${eoa}`);
-    
             const bundlerUrl = chainIdToBundlerUrl[chainId];
-            // console.log("Bundler URL:", bundlerUrl);
+            const Paymaster_key = process.env.PAYMASTERAPI_KEY;
     
-             const Paymaster_key = process.env.PAYMASTERAPI_KEY
-            // console.log(Paymaster_key)
-            
             const smartAccount = await createSmartAccountClient({
               signer: client,
               bundlerUrl,
               chainId,
-              biconomyPaymasterApiKey:Paymaster_key
+              biconomyPaymasterApiKey: Paymaster_key,
             });
-
-            const saAddress = await smartAccount.getAccountAddress();
-            console.log("Smart Account Address:", saAddress);
-        // const privateKey =  sha512_256("APPID" + "EVENTID"); // from addres which is always same as the all the transaction get pol from this address
-        const  userDetails = await dbservices.User.getuserdetailsbyId(userId,gameId)
-        console.log(userDetails , "userDetails")
+    
+            saAddress = await smartAccount.getAccountAddress();
+    
+            const saveResult = await dbservices.User.saveDetails(userId, appId, deviceId, saAddress);
+            if (!saveResult) {
+              throw new Error("Error saving user details");
+            }
+            userExist = saveResult;
+          }
+          userId = userExist.id;
+    
+          token = await generateAuthTokens({
+            userId: userExist.id,
+            role: userExist.role,
+          });
+        } else {
+          userId = req["user"].userId;
+        }
+    
+        if (!userId) {
+          return res.status(401).json({ message: "User authentication failed." });
+        }
+    
+        const eventId: any = req.body.eventId;
+        const gameId = req.body.gameId as any;
+        const gameObject = await dbservices.User.gameObject(gameId);
+        const gameeID = await dbservices.User.getGameID(gameId);
+        const getevent = await dbservices.User.getEventById(eventId);
+        const checkEventwithgame = await dbservices.User.checkEvent(eventId, gameId);
+        if (checkEventwithgame.length === 0) {
+          return res.status(404).json({ message: "Event for game not found." });
+        }
+    
+        const gameSaAddress = gameeID.gameSaAddress;
+        const creatorID = gameeID.createrId;
+        const generateGameId = gameeID.gameId;
+    
+        if (!getevent || !gameeID) {
+          return res.status(404).json({ message: "Event not found." });
+        }
+    
+        if (!gameeID.isApproved) {
+          return res.status(403).json({ message: "Game is not approved for sending events" });
+        }
+    
+        const chainId = parseInt(process.env.CHAINID || "80002");
+        const privKey = sha512_256(gameObject + generateGameId + creatorID);
+    
+        const rpcHttpProvider = new ethers.providers.JsonRpcProvider(process.env.PROVIDER_URL);
+        if (!rpcHttpProvider) {
+          return res.status(500).json({ status: false, message: "Error creating RPC provider" });
+        }
+    
+        const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
+        if (!wallet) {
+          return res.status(500).json({ status: false, message: "Error creating wallet" });
+        }
+    
+        const account: any = privateKeyToAccount(wallet.privateKey as any);
+        const chainName = chainIdToChainName[chainId];
+        const client = createWalletClient({
+          account,
+          chain: chainName,
+          transport: http(process.env.PROVIDER_URL),
+        });
+    
+        const eoa = client.account.address;
+        const bundlerUrl = chainIdToBundlerUrl[chainId];
+        const Paymaster_key = process.env.PAYMASTERAPI_KEY;
+    
+        const smartAccount = await createSmartAccountClient({
+          signer: client,
+          bundlerUrl,
+          chainId,
+          biconomyPaymasterApiKey: Paymaster_key,
+        });
+    
+        saAddress = await smartAccount.getAccountAddress();
+    
+        const userDetails = await dbservices.User.getuserdetailsbyId(userId, gameId);
         const sa_address = userDetails[0].saAddress;
-        const provider = new ethers.providers.JsonRpcProvider(providerUrl);
-        const datetime = new Date().toISOString(); // Current datetime in ISO format
+        const provider = new ethers.providers.JsonRpcProvider(process.env.PROVIDER_URL);
+        const datetime = new Date().toISOString();
+    
         const encodedData = ethers.utils.toUtf8Bytes(
           JSON.stringify({ ...userDetails, eventId, datetime })
         );
-          const tx:any = {
+    
+        const tx: any = {
           to: sa_address,
-          data:ethers.utils.hexlify(encodedData),
-          value:"0"
+          data: ethers.utils.hexlify(encodedData),
+          value: "0",
         };
-        // console.log("tx...........",tx)
+    
         const txResponse = await smartAccount.sendTransaction(tx);
-        const txReceipt:any = await txResponse.wait();
-        const transactionHash = txReceipt.receipt.transactionHash  
-        const saveTransactionDetails = await dbservices.User.saveTransactionDetails(gameId,gameeID.createrId,userId ,getevent.id ,transactionHash ,"0",gameSaAddress ,sa_address);
-        return res.status(200).json({ status:true,message: 'Event sent successfully.', data: saveTransactionDetails});
-      }catch(error:any){
-
+        const txReceipt: any = await txResponse.wait();
+        const transactionHash = txReceipt.receipt.transactionHash;
+    
+        const saveTransactionDetails = await dbservices.User.saveTransactionDetails(
+          gameId,
+          gameeID.createrId,
+          userId,
+          getevent.id,
+          transactionHash,
+          "0",
+          gameSaAddress,
+          sa_address
+        );
+    
+        return res.status(200).json({
+          status: true,
+          message: "Event sent successfully.",
+          data: saveTransactionDetails,
+          token:token
+        });
+      } catch (error: any) {
         console.error("Unexpected error:", error);
-        return res.status(500).json({ status: false, message: error.message || "Unexpected error occurred" });
+        return res.status(500).json({
+          status: false,
+          message: error.message || "Unexpected error occurred",
+        });
       }
-    }
+    };
+    
 
 
     static updateGameToken = async(req:Request, res:Response):Promise<any> => {

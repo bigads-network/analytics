@@ -14,8 +14,12 @@ const TokenHeaderSchema = z.object({
 
 const validateRequestHeader = (schema: AnyZodObject) => async (req: Request, res: Response, next: NextFunction) => {
   try {
-      const tokenHeader = req.headers['authorization']; 
-      await schema.parseAsync({ header:{ authorization: tokenHeader}});
+    const tokenHeader:any = req.headers['authorization'] || null; 
+    if (!tokenHeader) {
+      req["user"] = null;
+      return next();
+    }
+          await schema.parseAsync({ header:{ authorization: tokenHeader}});
       req.header['authorization'] = tokenHeader;
       next();
   } catch (error) {
@@ -27,7 +31,9 @@ const verifyCallback = (req:Request, resolve:any, reject:any,res:Response) => as
   // console.log("Userrrrr...............",user);
   // console.log(info);
   if (err || info || !user) {
-    return reject(new Error('UNAUTHOURIZED USER'));
+    // return reject(new Error('UNAUTHOURIZED USER'));
+    return resolve(); // Proceed without authentication
+
   }
   req["user"] = user;
   resolve();
