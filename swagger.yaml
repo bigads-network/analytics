@@ -318,7 +318,19 @@ paths:
                 eventId:
                   type: string
                   description: The type of event being for transaction.
-                  example: event_qwert        
+                  example: event_qwert 
+                appId:
+                  type: string
+                  description: The app ID associated with the user (only required if user is not authenticated).
+                  example: sampleAppid
+                  nullable: true
+                deviceId:
+                  type: string
+                  description: The device ID of the user (only required if user is not authenticated).
+                  example: sampleDeviceID
+                  nullable: true
+              required:
+                - eventId                               
       responses:
         "200":
           description: A JSON object containing the details of the sent event.
@@ -449,3 +461,5 @@ paths:
                   message:
                     type: string
                     example: "Internal server error"
+
+  
