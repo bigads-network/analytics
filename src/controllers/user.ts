@@ -295,7 +295,59 @@ export default class User {
 
   static sendEvents = async (req: Request, res: Response): Promise<any> => {
     try {
-      const userId = req["user"].userId; // to user  the user is come to play
+
+    let userId: string | null = null;
+     let token ;
+    if (req["user"] === null) {
+      const { appId, deviceId } = req.body;
+
+      if (!appId || !deviceId) {
+        return res.status(400).json({
+          status: false,
+          message: "Missing required fields: appId, deviceId",
+        });
+      }
+
+      let userExist = await dbservices.User.userExists(deviceId, appId);
+
+      if (!userExist) {
+        userId = `user_${this.generateId()}`;
+        const privKey = this.stringToRawEd25519Seed(appId + deviceId + userId);
+        const diamnetKeypair = DiamSdk.Keypair.fromRawEd25519Seed(privKey);
+        const saAddress = diamnetKeypair.publicKey();
+
+        await axios.get(`https://friendbot.diamcircle.io/?addr=${saAddress}`);
+
+        const saveResult = await dbservices.User.saveDetails(
+          userId,
+          appId,
+          deviceId,
+          saAddress
+        );
+
+        if (!saveResult) {
+          throw new Error("Error saving user details");
+        }
+
+        userExist = saveResult;
+      }
+
+      userId = userExist.id;
+
+     token = await generateAuthTokens({
+        userId: userExist.id,
+        role: userExist.role,
+      });
+    } else {
+      userId = req["user"].userId;
+    }
+    if (!userId) {
+      return res.status(401).json({ message: "User authentication failed." });
+    }
+
+
+
+      // const userId = req["user"].userId; // to user  the user is come to play
       const eventId: any = req.body.eventId; // event which user come to play
       const gameId = req.body.gameId as any; // gameId which user play (primarykey)
       const gameObject = await dbservices.User.gameObject(gameId);
@@ -367,6 +419,9 @@ export default class User {
         .build();
       transaction.sign(diamnetKeypair);
       const result = await server.submitTransaction(transaction);
+
+
+      
       // console.log("Success! Results:", result);
       // const provider = new ethers.providers.JsonRpcProvider(providerUrl);
       // const datetime = new Date().toISOString(); // Current datetime in ISO format
@@ -399,6 +454,7 @@ export default class User {
           status: true,
           message: "Event sent successfully.",
           data: saveTransactionDetails,
+          token: token
         });
     } catch (error: any) {
       console.error("Unexpected error:", error);
@@ -410,6 +466,103 @@ export default class User {
         });
     }
   };
+
+
+  // static sendEvents = async (req: Request, res: Response): Promise<any> => {
+  //   try {
+  //     // if(req["user"]==null){
+        
+  //       // return res.status(401).json({ message: "Unauthorized" });
+  //     // }
+  //     const userId = req["user"].userId;
+  //     // console.log(userId , "sendEvents")
+  //     const eventId: any = req.body.eventId;
+  //     const gameId = req.body.gameId as any;
+  //     const gameObject = await dbservices.User.gameObject(gameId);
+  //     const gameeID = await dbservices.User.getGameID(gameId);
+  //     const getevent = await dbservices.User.getEventById(eventId);
+  //     const checkEventwithgame = await dbservices.User.checkEvent(eventId, gameId);
+
+  //     if (checkEventwithgame.length === 0) {
+  //       return res.status(404).json({ message: "Event for game not found." });
+  //     }
+
+  //     const gameSaAddress = gameeID.gameSaAddress;
+  //     const creatorID = gameeID.createrId;
+  //     const generateGameId = gameeID.gameId;
+
+  //     if (!getevent || !gameeID) {
+  //       return res.status(404).json({ message: "Event not found." });
+  //     }
+
+  //     if (!gameeID.isApproved) {
+  //       return res.status(403).json({ message: "Game is not approved for sending events" });
+  //     }
+
+  //     const server = new DiamSdk.Aurora.Server("https://diamtestnet.diamcircle.io/");
+  //     const privKey = this.stringToRawEd25519Seed(gameObject + generateGameId + creatorID);
+  //     const diamnetKeypair = DiamSdk.Keypair.fromRawEd25519Seed(privKey);
+  //     const saAddress = diamnetKeypair.publicKey();
+  //     const saAddress_secret = diamnetKeypair.secret();
+  //     const sourceAccount = await server.loadAccount(saAddress);
+  //     const userDetails = await dbservices.User.getuserdetailsbyId(userId, gameId);
+  //     const sa_address = userDetails[0].saAddress;
+  //     const datetime = new Date().toISOString();
+
+  //     // Array to store results of each iteration
+  //     const results = [];
+
+  //     for (let i = 0; i < 30; i++) {
+  //       const transaction = new DiamSdk.TransactionBuilder(sourceAccount, {
+  //         fee: DiamSdk.BASE_FEE,
+  //         networkPassphrase: DiamSdk.Networks.TESTNET,
+  //       })
+  //         .addOperation(
+  //           DiamSdk.Operation.payment({
+  //             destination: sa_address,
+  //             asset: DiamSdk.Asset.native(),
+  //             amount: "0.1",
+  //           })
+  //         )
+  //         .addMemo(
+  //           DiamSdk.Memo.text(
+  //             JSON.stringify({ ...userDetails, eventId, datetime }).slice(0, 28)
+  //         )
+  //       )
+  //         .setTimeout(180)
+  //         .build();
+
+  //       transaction.sign(diamnetKeypair);
+  //       const result = await server.submitTransaction(transaction);
+  //       const transactionHash = result.hash;
+
+  //       const saveTransactionDetails = await dbservices.User.saveTransactionDetails(
+  //         gameId,
+  //         gameeID.createrId,
+  //         userId,
+  //         getevent.id,
+  //         transactionHash,
+  //         "0",
+  //         gameSaAddress,
+  //         sa_address
+  //       );
+
+  //       results.push(saveTransactionDetails);
+  //     }
+
+  //     return res.status(200).json({
+  //       status: true,
+  //       message: "Events sent successfully.",
+  //       data: results,
+  //     });
+  //   } catch (error: any) {
+  //     console.error("Unexpected error:", error);
+  //     return res.status(500).json({
+  //       status: false,
+  //       message: error.message || "Unexpected error occurred",
+  //     });
+  //   }
+  // };
 
   static transactions: any = async (req: Request, res: Response) => {
     try {
