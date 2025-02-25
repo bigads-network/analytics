@@ -17,7 +17,7 @@ export const generateGameToken = (gameId: number | string): string => {
 
   export const authenticateGameToken = (req: Request, res: Response, next: NextFunction): void => {
     const token = req.headers['game_authorization_token'] as string;
-  
+    
     if (!token) {
       res.status(401).json({ message: "Token is missing from gameAuthorization header" });
       return; // Ensure the function exits after sending a response
@@ -25,8 +25,6 @@ export const generateGameToken = (gameId: number | string): string => {
   
     try {
       const decoded = jwt.verify(token, secretKey);
-  
-      console.log(decoded ,"decodeeeeee gam,e tokennn" );
       // Attach the decoded gameId to the request object
       req.body.gameId = (decoded as { gameId: string | number }).gameId; // Attach gameId to the request
   

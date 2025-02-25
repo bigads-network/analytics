@@ -6,6 +6,7 @@ export default class user {
         body:z.object({
           appId: z.string(),
           deviceId: z.string(),
+          maAddress: z.string(),
         }).strict(),
         params:z.object({
         }).strict(),
@@ -50,6 +51,17 @@ export default class user {
 
         }).strict(),
       })
+
+      static getPendingRequests = z.object({
+        headers: z.object({
+          authorization: z.string().regex(/^Bearer\s+[a-zA-Z0-9-_]+\.[a-zA-Z0-9-_]+\.[a-zA-Z0-9-_]+$/, {
+            message: "Invalid Authorization token format. Must be a Bearer JWT token."
+          }),
+        }).strict(),
+        body: z.object({}).strict(), // No body expected
+        params: z.object({}).strict(), // No params expected
+        query: z.object({}).strict(), // No query expected
+      });
   
       static transactions = z.object({
         body:z.object({
@@ -62,4 +74,24 @@ export default class user {
         }).strict(),
       })
 
+    static requestCreator = z.object({
+        body:z.object({
+            maAddress: z.string(),
+            userRole: z.string(),
+            id: z.number(),
+        }).strict(),
+        params:z.object({
+        }).strict(),
+        query:z.object({}).strict(),
+      })
+
+    static approveCreatorRequest = z.object({
+      params: z.object({
+        maAddress: z.string()
+      }).strict(),
+      body: z.object({
+        responseType: z.string()
+      }).strict(),
+      query: z.object({}).strict()
+    });
 }

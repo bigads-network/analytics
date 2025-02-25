@@ -13,7 +13,6 @@
     // console.log(envConfigs.db_url);
     
     export const client = new Client(envConfigs.db_url);
-
     client
     .connect()
     .then(() => {
