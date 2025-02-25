@@ -10,6 +10,7 @@ export const users = pgTable('users', {
   deviceId: varchar('device_id'),
   role: varchar('role').default('user'),
   saAddress: varchar('sa_address'),
+  maAddress: varchar('ma_address').unique(), // Ensure explicit unique constraint
   createdAt: timestamp('created_at').defaultNow(),
 });
 
@@ -57,12 +58,22 @@ export const userGames = pgTable('user_games', {
   createdAt: timestamp('created_at').defaultNow(),
 });
 
+export const creatorRequests = pgTable('creator_requests', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }), // Reference users table by ID
+  maAddress: varchar('ma_address'), 
+  role: varchar('role').default('user'),
+  status: varchar('status').default('pending'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
 
 export const usersRelations = relations(users, ({ many }) => ({
   usersToEvents: many(userGames),
-  games:many(games),
-  userTransaction: many(transactions,{relationName:'userTransaction'}),
-  CreatorTransaction: many(transactions,{relationName:'creatorTransaction'})
+  games: many(games),
+  userTransaction: many(transactions, { relationName: 'userTransaction' }),
+  CreatorTransaction: many(transactions, { relationName: 'creatorTransaction' }),
+  creatorRequests: many(creatorRequests),
 }));
 
 
@@ -114,5 +125,12 @@ export const transactionsRelations = relations(transactions, ({ one }) => ({
   game: one(games, {
     fields: [transactions.fromGameId],
     references: [games.id],
+  }),
+}));
+
+export const creatorRequestsRelations = relations(creatorRequests, ({ one }) => ({
+  user: one(users, {
+    fields: [creatorRequests.userId], // Only keep userId as FK
+    references: [users.id],
   }),
 }));
