@@ -113,9 +113,7 @@ let transaction;
 
 export const transfer = async () => {
     try {
-      console.log("rtyfgukhljo;pk'")
         const sourceAccount = await server.loadAccount(sourceKeys.publicKey());
-        console.log(sourceAccount,"transfer")
         transaction = new DiamSdk.TransactionBuilder(sourceAccount, {
             fee: DiamSdk.BASE_FEE,
             networkPassphrase: DiamSdk.Networks.TESTNET,
@@ -139,7 +137,6 @@ export const transfer = async () => {
           transaction.sign(sourceKeys);
           // And finally, send it off to Diamante!
           const result = await server.submitTransaction(transaction);
-          console.log("Success! Results:", result);
           return result;
     } catch (error) {
         console.log("error in transfer...", error);

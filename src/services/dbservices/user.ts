@@ -1,26 +1,61 @@
 import {and, count, countDistinct, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import postgreDb from "../../config/db";
 import { generateAuthTokens } from "../../config/token";
-import { events, games, transactions, userGames, users, } from "../../models/schema";
+import { events, games, transactions, userGames, users, creatorRequests } from "../../models/schema";
 import { generateGameToken } from "../../config/gameToken";
+import dotenv from "dotenv";
+dotenv.config();
 
 export default class User {
 
   static generateId = () => Math.random().toString(36).substr(2, 8).toUpperCase();
 
-  static userExists:any = async(deviceId:any, appId:any):Promise<any>=>{
+  static createCreatorRequest = async(id:number, maAddress:string, userRole:string):Promise<any> => {
+    try {
+      const result = await postgreDb.insert(creatorRequests).values({
+        userId:id,
+        maAddress,
+        role: userRole
+      }).returning();
+      return result[0];
+    } catch (error) {
+      throw new Error(error);
+    }
+  }
+
+  static adminUserExists = async(userId:number):Promise<any>=>{
     try{
-      // console.log("registerUser in db service " , deviceId, appId) 
-      
-       // console.log(result)
-      const result = await postgreDb.select().from(users).where(and(eq(users.deviceId,deviceId),eq(users.appId,appId)))
+      const result = await postgreDb.select().from(users).where(eq(users.id, userId))
+      return result[0]
+    }catch(error:any){
+      throw new Error(error)
+    }
+  }
+  
+  static rejectCreatorRequest = async(maAddress:string): Promise<any> => {
+    try {
+      const result = await postgreDb
+        .update(creatorRequests)
+        .set({ status: 'rejected' })
+        .where(eq(creatorRequests.maAddress, maAddress))
+        .returning();
+      return result[0];
+    } catch (error) {
+      throw new Error(`Error rejecting creator request: ${error.message}`);
+    }
+  }
+  
+
+  static userExists:any = async(maAddress:any):Promise<any>=>{
+    try{
+      const result = await postgreDb.select().from(users).where(eq(users.maAddress,maAddress))
         return result[0]
     }catch(error:any){
         throw new Error(error)
     }
-  }
+    }
 
-  static saveDetails:any = async(userId:any,appId:any,deviceId:any,saAddress:any ,):Promise<any>=>{
+  static saveDetails:any = async(userId:any,appId:any,deviceId:any,saAddress:any,maAddress:any):Promise<any>=>{
     try{
       // console.log("Saving details dbserver details")
         const result =  await postgreDb.insert(users).values({
@@ -28,11 +63,13 @@ export default class User {
             appId:appId,
             deviceId:deviceId,
             saAddress:saAddress,
+            maAddress:maAddress
         }).returning({
           userId:users.userId,
           id:users.id,
           role:users.role,
-          saAddress:users.saAddress
+          saAddress:users.saAddress,
+          maAddress:users.maAddress
         })
         // console.log(result , "result")
         return result[0]
@@ -361,7 +398,7 @@ export default class User {
         GameCreator:creatorID,
         toUser:userId,
         fromGameId:gameID,
-        transactionChain:"POLYGON Testnet"
+        transactionChain:"DIAMANTE Testnet"
         
       }).returning();
       return result[0];
@@ -521,5 +558,96 @@ export default class User {
   //     throw new Error(`Error in getAllData: ${error.message}`);
   //   }
   // };
+
+  static approveCreatorRequest = async(maAddress:string): Promise<any> => {
+    try {
+      return await postgreDb.transaction(async (trx) => {
+        // Get the creator request details
+        const request = await trx.query.creatorRequests.findFirst({
+          where: eq(creatorRequests.maAddress, maAddress),
+          columns: {
+            userId: true,
+            status: true
+          }
+        });
+
+        if (!request || request.status === 'approved') {
+          throw new Error('Invalid request or already approved');
+        }
+
+        // Update the creator request status
+        const updatedRequest = await trx
+          .update(creatorRequests)
+          .set({
+            status: 'approved',
+            role: 'creator',
+            updatedAt: new Date()
+          })
+          .where(eq(creatorRequests.maAddress, maAddress))
+          .returning();
+        // Update the user role
+        const updatedUser = await trx
+          .update(users)
+          .set({
+            role: 'creator',
+            appId:process.env.owner_Secret_Key
+          })
+          .where(eq(users.maAddress, maAddress))
+          .returning();
+
+        return {
+          request: updatedRequest[0],
+          user: updatedUser[0]
+        };
+      });
+    } catch (error: any) {
+      throw new Error(`Error approving creator request: ${error.message}`);
+    }
+  }
+
+  static getPendingRequests = async(): Promise<any> => {
+    try {
+      const result = await postgreDb
+        .select()
+        .from(creatorRequests)
+        .where(eq(creatorRequests.status, 'pending')) 
+        .orderBy(desc(creatorRequests.createdAt))
+        .limit(10);
+  
+      return result;
+    } catch (error) {
+      throw new Error(`Error fetching pending requests: ${error.message}`);
+    }
+  }
+
+  static getCreatorRequestStatus = async(userId: number): Promise<any> => { 
+    try {
+      const result = await postgreDb
+        .select()
+        .from(creatorRequests)
+        .where(eq(creatorRequests.userId, userId))
+        .orderBy(desc(creatorRequests.createdAt))
+        .limit(1);
+      
+      return result[0];
+    } catch (error) {
+      throw new Error(`Error checking creator request: ${error.message}`);
+    }
+  }
+
+  static getCreatorRequest = async(userId: number): Promise<any> => {
+    try {
+      const result = await postgreDb
+        .select()
+        .from(creatorRequests)
+        .where(eq(creatorRequests.userId, userId))
+        .orderBy(desc(creatorRequests.createdAt))
+        .limit(1);
+      
+      return result[0];
+    } catch (error) {
+      throw new Error(`Error checking creator request: ${error.message}`);
+    }
+  }
 
 }

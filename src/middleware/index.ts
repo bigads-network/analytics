@@ -50,7 +50,6 @@ export const authenticateUserJwt = () => async (req:any, res:any, next:NextFunct
       next(err)
     });
 };
-
 export const authenticateUser = [
   validateRequestHeader(TokenHeaderSchema),
   authenticateUserJwt()
