@@ -397,7 +397,7 @@ export default class User{
   
 
     static registerGame: any = async (req: Request, res: Response): Promise<any> => {
-      const { name, type, description, events, wallet_address } = req.body;
+      const { wallet_address } = req.body;
 
       try {
           const userId = req['user'].userId;

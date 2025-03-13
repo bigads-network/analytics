@@ -4,7 +4,7 @@ info:
   description: API documentation for Bigads
   version: 0.0.1
 servers:
-  - url: http://localhost:8009
+  - url: http://localhost:8008
     description: Local server
   - url: https://bigads-efwrc.ondigitalocean.app/
     description: Production server
@@ -95,6 +95,9 @@ paths:
             schema:
               type: object
               properties:
+                wallet_address:
+                  type: string
+                  example: "string"
                 name:
                   type: string
                   example: TekkenChampionship
@@ -903,6 +906,7 @@ paths:
             schema:
               type: object
               properties:
+                
                 secret_key:
                   type: string
                   description: The secret key for authentication
@@ -1023,6 +1027,10 @@ paths:
             schema:
               type: object
               properties:
+                wallet_address:
+                  type: string
+                  description: The wallet address of the user
+                  example: "string"
                 name:
                   type: string
                   description: The name of the game
