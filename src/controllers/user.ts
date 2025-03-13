@@ -526,6 +526,7 @@ export default class User{
 
     static sendEvents = async (req: Request, res: Response): Promise<any> => {
       const { deviceId, appId, eventId, gameId, wallet_address } = req.body;
+      console.log(process.env.PROVIDER_URL ,"providerrrrrr")
       try {
           let userId: string | null = null;
           let token, saAddress;
@@ -858,9 +859,7 @@ export default class User{
         console.error("Unexpected error:", error);
         return res.status(500).json({ status: false, message: error || "Unexpected error occurred" });
       }
-      
     }
-
 
     static games = async(req:Request , res:Response): Promise<any>=>{
       try{

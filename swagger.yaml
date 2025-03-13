@@ -6,7 +6,7 @@ info:
 servers:
   - url: http://localhost:8009
     description: Local server
-  - url: https://data-center-7yhai.ondigitalocean.app/
+  - url: https://bigads-efwrc.ondigitalocean.app/
     description: Production server
 components:
   securitySchemes:
@@ -26,6 +26,8 @@ paths:
             schema:
               type: object
               properties:
+                maAddress:
+                 type: string
                 appId:
                   type: string
                 deviceId:
