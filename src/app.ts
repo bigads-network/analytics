@@ -9,7 +9,6 @@ import path from "path";
 import axios from "axios";
 import swagger from "swagger-ui-express"
 import apiDocs from "./config/swagger";
-import { transfer } from "./transcation";
 
 const app = express();
 

@@ -10,12 +10,11 @@ export default class User {
 
   static generateId = () => Math.random().toString(36).substr(2, 8).toUpperCase();
 
-  static createCreatorRequest = async(id:number, maAddress:string, userRole:string):Promise<any> => {
+  static createCreatorRequest = async(id:number, maAddress:string):Promise<any> => {
     try {
       const result = await postgreDb.insert(creatorRequests).values({
         userId:id,
         maAddress,
-        role: userRole
       }).returning();
       return result[0];
     } catch (error) {
@@ -590,7 +589,6 @@ export default class User {
           .update(users)
           .set({
             role: 'creator',
-            appId:process.env.owner_Secret_Key
           })
           .where(eq(users.maAddress, maAddress))
           .returning();
@@ -635,12 +633,12 @@ export default class User {
     }
   }
 
-  static getCreatorRequest = async(userId: number): Promise<any> => {
+  static getCreatorRequest = async(maAddress: any): Promise<any> => {
     try {
       const result = await postgreDb
         .select()
         .from(creatorRequests)
-        .where(eq(creatorRequests.userId, userId))
+        .where(eq(creatorRequests.maAddress, maAddress))
         .orderBy(desc(creatorRequests.createdAt))
         .limit(1);
       

@@ -77,8 +77,6 @@ export default class user {
     static requestCreator = z.object({
         body:z.object({
             maAddress: z.string(),
-            userRole: z.string(),
-            id: z.number(),
         }).strict(),
         params:z.object({
         }).strict(),

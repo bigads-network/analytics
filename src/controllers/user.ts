@@ -15,6 +15,7 @@ import { chainIdToBundlerUrl, chainIdToChainName, providerUrl } from '../config/
 export default class User{
 
 
+  static generateId = () => Math.random().toString(36).substr(2, 8).toUpperCase();
 
   // static tokenTest = async(req: Request, res: Response): Promise<any> => {
   //   try {
@@ -37,368 +38,377 @@ export default class User{
   //   }
   // }
 
-   static requestCreator = async(req:Request, res:Response):Promise<any> => {
+  static registerUser: any = async (req: Request, res: Response) => {
     try {
-      const { maAddress, userRole, id } = req.body;
-      
-      // Check if user exists
-      const user = await dbservices.User.userExists(maAddress);
-      if (!user) {
-        return res.status(404).json({ status: false, message: "User not found" });
-      }
+        const { appId, deviceId, maAddress } = req.body;
+        const walletAddress = maAddress || '';
 
-      // Check if user already has a pending request
-      const existingRequest = await dbservices.User.getCreatorRequest(id);
-      if (existingRequest) {
-        if (existingRequest.status === 'pending') {
-          return res.status(400).json({ 
-            status: false, 
-            message: "You already have a pending creator request" 
-          });
-        } else if (existingRequest.status === 'fulfilled') {
-          return res.status(400).json({ 
-            status: false, 
-            message: "You are already a creator" 
-          });
+        let userExist, message = "User Logged In", userId, saAddress, token;
+
+        if (walletAddress.startsWith('0x')) {
+            if (!appId || !deviceId || !maAddress) {
+                return res.status(400).json({ 
+                    status: false, 
+                    message: "Missing required fields: appId, deviceId, maAddress" 
+                });
+            }
+
+            userExist = await dbservices.User.userExists(maAddress);
+
+            if (!userExist) {
+                const chainId = parseInt(process.env.CHAINID || "80002");
+                if (!chainId) {
+                    throw new Error("Missing or invalid chainId in environment variables");
+                }
+
+                userId = `user_${this.generateId()}`;  
+                const privKey = sha512_256(appId + deviceId + userId);  
+                const rpcHttpProvider = new ethers.providers.JsonRpcProvider(process.env.PROVIDER_URL);
+                if (!rpcHttpProvider) {
+                    return res.status(500).json({ status: false, message: "Error creating RPC provider" });
+                }
+
+                const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
+                if (!wallet) {
+                    return res.status(500).json({ status: false, message: "Error creating wallet" });
+                }
+
+                const account: any = privateKeyToAccount(wallet.privateKey as any);
+                const chainName = chainIdToChainName[chainId];
+                const client = createWalletClient({
+                    account,
+                    chain: chainName,
+                    transport: http(),
+                });
+
+                const eoa = client.account.address;
+                const bundlerUrl = chainIdToBundlerUrl[chainId];
+                const Paymaster_key = process.env.PAYMASTERAPI_KEY;
+
+                const smartAccount = await createSmartAccountClient({
+                    signer: client,
+                    bundlerUrl,
+                    chainId,
+                    biconomyPaymasterApiKey: Paymaster_key
+                });
+                saAddress = await smartAccount.getAccountAddress();
+
+                const saveResult = await dbservices.User.saveDetails(userId, appId, deviceId, saAddress, maAddress);
+                if (!saveResult) {
+                    throw new Error("Error saving user details");
+                }
+
+                userExist = saveResult;
+                message = "User registered Successfully";
+            }
+
+            token = await generateAuthTokens({userId: userExist.id, role: userExist.role});
+
+            return res.status(200).send({
+                message,
+                data: { 
+                    id: userExist.id,
+                    userId: userExist.userId, 
+                    role: userExist.role, 
+                    appId, 
+                    deviceId, 
+                    saAddress: userExist.saAddress, 
+                    maAddress: userExist.maAddress 
+                },
+                token,
+            });
+        } else {
+            // Diamante-based flow
+            if (!appId || !deviceId) {
+                return res.status(400).json({
+                    status: false,
+                    message: "Missing required fields: appId, deviceId",
+                });
+            }
+
+            userExist = await dbservices.User.userExists(maAddress);
+            
+            if (!userExist) {
+                userId = `user_${this.generateId()}`;
+                const privKey = this.stringToRawEd25519Seed(appId + deviceId + userId);
+                const diamnetKeypair = DiamSdk.Keypair.fromRawEd25519Seed(privKey);
+                saAddress = diamnetKeypair.publicKey();
+                await axios.get(`https://friendbot.diamcircle.io/?addr=${saAddress}`);
+
+                const saveResult = await dbservices.User.saveDetails(userId, appId, deviceId, saAddress, maAddress);
+                if (!saveResult) {
+                    throw new Error("Error saving user details");
+                }
+                userExist = saveResult;
+                message = "User registered Successfully";
+            }
+
+            token = await generateAuthTokens({
+                userId: userExist.id,
+                role: userExist.role,
+            });
+
+            return res.status(200).send({
+                message,
+                data: {
+                    id: userExist.id,
+                    userId: userExist.userId,
+                    role: userExist.role,
+                    appId,
+                    deviceId,
+                    saAddress: userExist.saAddress,
+                    maAddress: userExist.maAddress 
+                },
+                token,
+            });
         }
-      }
+    } catch (error: any) {
+        console.error("Unexpected error:", error);
+        return res.status(500).json({ 
+            status: false, 
+            message: error.message || "Unexpected error occurred" 
+        });
+    }
+  };
 
-      // Create new creator request
-      const creatorRequest = await dbservices.User.createCreatorRequest(id, maAddress, userRole);
-      if (!creatorRequest) {
-        return res.status(404).json({ 
+  static requestCreator = async(req:Request, res:Response):Promise<any> => {
+  try {
+    const { maAddress } = req.body;
+    
+    // Check if user exists
+    const user = await dbservices.User.userExists(maAddress);
+    console.log(user.id ,"userid")
+    if (!user) {
+      return res.status(404).json({ status: false, message: "User not found" });
+    }
+
+    // Check if user already has a pending request
+    const existingRequest = await dbservices.User.getCreatorRequest(maAddress);
+    if (existingRequest) {
+      if (existingRequest.status === 'pending') {
+        return res.status(400).json({ 
           status: false, 
-          message: "Failed to create creator request" 
+          message: "You already have a pending creator request" 
+        });
+      } else if (existingRequest.status === 'fulfilled') {
+        return res.status(400).json({ 
+          status: false, 
+          message: "You are already a creator" 
+        });
+      }
+    }
+
+    // Create new creator request
+    const creatorRequest = await dbservices.User.createCreatorRequest( user.id ,maAddress);
+    if (!creatorRequest) {
+      return res.status(404).json({ 
+        status: false, 
+        message: "Failed to create creator request" 
+      });
+    }
+
+    return res.status(200).json({ 
+      status: true, 
+      message: "Creator request created", 
+      data: creatorRequest 
+    });
+    
+  } catch (error) {
+    return res.status(500).json({ 
+      status: false, 
+      message: error.message || "Unexpected error occurred" 
+    });
+  }
+  };
+
+  static approveCreatorRequest = async(req: Request, res: Response): Promise<any> => {
+    try {
+      const { maAddress } = req.params;
+      const { responseType } = req.body;
+      const adminRole = req['user'].role;
+
+      // Verify admin role
+      if (adminRole !== 'admin') {
+        return res.status(403).json({ 
+          status: false, 
+          message: "Only admin can process creator requests" 
         });
       }
 
-      return res.status(200).json({ 
-        status: true, 
-        message: "Creator request created", 
-        data: creatorRequest 
+      // Validate response type
+      if (!['Approve', 'Reject'].includes(responseType)) {
+        return res.status(400).json({
+          status: false,
+          message: "Invalid response type. Must be either 'Approve' or 'Reject'"
+        });
+      }
+
+      let result;
+      if (responseType === 'Approve') {
+        // Update creator request and user role
+        result = await dbservices.User.approveCreatorRequest(maAddress);
+      } else {
+        // Only update request status to rejected
+        result = await dbservices.User.rejectCreatorRequest(maAddress);
+      }
+
+      if (!result) {
+        return res.status(404).json({
+          status: false,
+          message: "Creator request not found"
+        });
+      }
+
+      return res.status(200).json({
+        status: true,
+        message: `Creator request ${responseType.toLowerCase()}d successfully`,
+        data: result
       });
-      
-    } catch (error) {
+
+    } catch (error: any) {
       return res.status(500).json({ 
         status: false, 
         message: error.message || "Unexpected error occurred" 
       });
     }
-   }
+}
 
-    static generateId = () => Math.random().toString(36).substr(2, 8).toUpperCase();
+static getPendingRequests = async(req: Request, res: Response): Promise<any> => {
+  try {
+      const userRole = req['user'].role;
+      const userId = req['user'].userId;
+      
 
-    // static registerUser: any = async (req: Request, res: Response) => {
-    //   try {
-  
-    //     const { appId, deviceId, maAddress } = req.body;
-    //     if (!appId || !deviceId || !maAddress) {
-    //       return res.status(400).json({ status: false, message: "Missing required fields: appId, deviceId, maAddress" });
-    //     }
-        
-    //     let userExist = await dbservices.User.userExists(maAddress);
-  
-    //     let message = "User Logged In";
-    //     let userId, saAddress;
-       
-
-    //     if (!userExist) {
-    //       const chainId = parseInt(process.env.CHAINID || "80002");
-    //       if (!chainId) {
-    //         throw new Error("Missing or invalid chainId in environment variables");
-    //       }
-  
-    //       userId = await `user_${this.generateId()}`;  
-    //       const privKey = sha512_256(appId + deviceId + userId);  
-    //       const rpcHttpProvider = new ethers.providers.JsonRpcProvider(process.env.PROVIDER_URL);
-    //       if (!rpcHttpProvider) {
-    //         return res.status(500).json({ status: false, message: "Error creating RPC provider" });
-    //       }
-  
-    //       const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
-    //       console.log(wallet,"wallet");
-    //       if (!wallet) {
-    //         return res.status(500).json({ status: false, message: "Error creating wallet" });
-    //       }
-  
-    //       const account:any = privateKeyToAccount(wallet.privateKey as any);
-    //       const chainName = chainIdToChainName[chainId];
-    //       const client = createWalletClient({
-    //         account,
-    //         chain: chainName,
-    //         transport: http(),
-    //       });
-  
-    //       const eoa = client.account.address;
-  
-    //       const bundlerUrl = chainIdToBundlerUrl[chainId];
-    //       const Paymaster_key = process.env.PAYMASTERAPI_KEY
-
-    //       const smartAccount = await createSmartAccountClient({
-    //         signer: client,
-    //         bundlerUrl,
-    //         chainId,
-    //         biconomyPaymasterApiKey:Paymaster_key
-    //       });
-    //       saAddress = await smartAccount.getAccountAddress();
-  
-    //       const saveResult = await dbservices.User.saveDetails(userId, appId, deviceId, saAddress,maAddress);
-    //       console.log(saveResult, "saveResult");
-    //       if (!saveResult) {
-    //         throw new Error("Error saving user details");
-    //       }
-  
-    //       userExist = saveResult;
-    //       message = "User registered Successfully";
-    //     }
-  
-    //     // console.log(userExist.id)
-    //     const token = await generateAuthTokens({userId:userExist.id , role:userExist.role });
-  
-    //     return res.status(200).send({
-    //       message,
-    //       data: {id : userExist.id, userId: userExist.userId, role : userExist.role , appId, deviceId, saAddress: userExist.saAddress, maAddress: userExist.maAddress },
-    //       token,
-    //     });
-    //   } catch (error: any) {
-    //     console.error("Unexpected error:", error);
-    //     return res.status(500).json({ status: false, message: error.message || "Unexpected error occurred" });
-    //   }
-    // };
-
-    static registerUser: any = async (req: Request, res: Response) => {
-      try {
-          const { appId, deviceId, maAddress } = req.body;
-          const walletAddress = maAddress || '';
-  
-          let userExist, message = "User Logged In", userId, saAddress, token;
-  
-          if (walletAddress.startsWith('0x')) {
-              // Ethereum-based flow
-              if (!appId || !deviceId || !maAddress) {
-                  return res.status(400).json({ 
-                      status: false, 
-                      message: "Missing required fields: appId, deviceId, maAddress" 
-                  });
-              }
-  
-              userExist = await dbservices.User.userExists(maAddress);
-  
-              if (!userExist) {
-                  const chainId = parseInt(process.env.CHAINID || "80002");
-                  if (!chainId) {
-                      throw new Error("Missing or invalid chainId in environment variables");
-                  }
-  
-                  userId = `user_${this.generateId()}`;  
-                  const privKey = sha512_256(appId + deviceId + userId);  
-                  const rpcHttpProvider = new ethers.providers.JsonRpcProvider(process.env.PROVIDER_URL);
-                  if (!rpcHttpProvider) {
-                      return res.status(500).json({ status: false, message: "Error creating RPC provider" });
-                  }
-  
-                  const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
-                  if (!wallet) {
-                      return res.status(500).json({ status: false, message: "Error creating wallet" });
-                  }
-  
-                  const account: any = privateKeyToAccount(wallet.privateKey as any);
-                  const chainName = chainIdToChainName[chainId];
-                  const client = createWalletClient({
-                      account,
-                      chain: chainName,
-                      transport: http(),
-                  });
-  
-                  const eoa = client.account.address;
-                  const bundlerUrl = chainIdToBundlerUrl[chainId];
-                  const Paymaster_key = process.env.PAYMASTERAPI_KEY;
-  
-                  const smartAccount = await createSmartAccountClient({
-                      signer: client,
-                      bundlerUrl,
-                      chainId,
-                      biconomyPaymasterApiKey: Paymaster_key
-                  });
-                  saAddress = await smartAccount.getAccountAddress();
-  
-                  const saveResult = await dbservices.User.saveDetails(userId, appId, deviceId, saAddress, maAddress);
-                  if (!saveResult) {
-                      throw new Error("Error saving user details");
-                  }
-  
-                  userExist = saveResult;
-                  message = "User registered Successfully";
-              }
-  
-              token = await generateAuthTokens({userId: userExist.id, role: userExist.role});
-  
-              return res.status(200).send({
-                  message,
-                  data: { 
-                      id: userExist.id,
-                      userId: userExist.userId, 
-                      role: userExist.role, 
-                      appId, 
-                      deviceId, 
-                      saAddress: userExist.saAddress, 
-                      maAddress: userExist.maAddress 
-                  },
-                  token,
-              });
-          } else {
-              // Diamante-based flow
-              if (!appId || !deviceId) {
-                  return res.status(400).json({
-                      status: false,
-                      message: "Missing required fields: appId, deviceId",
-                  });
-              }
-  
-              userExist = await dbservices.User.userExists(maAddress);
-              
-              if (!userExist) {
-                  userId = `user_${this.generateId()}`;
-                  const privKey = this.stringToRawEd25519Seed(appId + deviceId + userId);
-                  const diamnetKeypair = DiamSdk.Keypair.fromRawEd25519Seed(privKey);
-                  saAddress = diamnetKeypair.publicKey();
-                  await axios.get(`https://friendbot.diamcircle.io/?addr=${saAddress}`);
-  
-                  const saveResult = await dbservices.User.saveDetails(userId, appId, deviceId, saAddress, maAddress);
-                  if (!saveResult) {
-                      throw new Error("Error saving user details");
-                  }
-                  userExist = saveResult;
-                  message = "User registered Successfully";
-              }
-  
-              token = await generateAuthTokens({
-                  userId: userExist.id,
-                  role: userExist.role,
-              });
-  
-              return res.status(200).send({
-                  message,
-                  data: {
-                      id: userExist.id,
-                      userId: userExist.userId,
-                      role: userExist.role,
-                      appId,
-                      deviceId,
-                      saAddress: userExist.saAddress,
-                      maAddress: userExist.maAddress 
-                  },
-                  token,
-              });
-          }
-      } catch (error: any) {
-          console.error("Unexpected error:", error);
-          return res.status(500).json({ 
-              status: false, 
-              message: error.message || "Unexpected error occurred" 
+      if (userRole !== 'admin') {
+          return res.status(403).json({
+              status: false,
+              message: "Access denied. Admin privileges required"
           });
       }
-  };
 
-    static registerOwner: any = async (req: Request, res: Response) => {
-      try {
-        // console.log("registerUser request body:", req.body);
+      // Check if user exists in user table
+      const userExists = await dbservices.User.adminUserExists(userId);
+     
+      if (!userExists) {
+          return res.status(404).json({
+              status: false,
+              message: "User not found"
+          });
+      }
+
+      const requests = await dbservices.User.getPendingRequests();
+      return res.status(200).json({
+          status: true,
+          message: "Pending requests fetch successful",
+          data: requests
+      });
+  } catch (error: any) {
+      console.error("Unexpected error:", error);
+      return res.status(500).json({
+          status: false,
+          message: "Internal server error",
+          error: error.message
+      });
+  }
+}
+
+//   static registerOwner: any = async (req: Request, res: Response) => {
+//       try {
+//         // console.log("registerUser request body:", req.body);
   
-        const { secret_key, deviceId } = req.body;
+//         const { secret_key, deviceId ,maAddress} = req.body;
         
          
         
-        if (!secret_key || !deviceId ) {
-          return res.status(400).json({ status: false, message: "Missing required fields: appId, deviceId" });
-        }
+//         if (!secret_key || !deviceId ) {
+//           return res.status(400).json({ status: false, message: "Missing required fields: appId, deviceId" });
+//         }
 
-        const secretkey = process.env.owner_Secret_key
-        console.log(secretkey, secret_key)
-        if(secret_key!==secretkey){
-          return res.status(403).json({ status: false, message: 'Invalid secret key.' });
-        }
+//         const secretkey = process.env.owner_Secret_key
+//         console.log(secretkey, secret_key)
+//         if(secret_key!==secretkey){
+//           return res.status(403).json({ status: false, message: 'Invalid secret key.' });
+//         }
   
-        let userExist = await dbservices.User.userExists(deviceId, secret_key);
+//         let userExist = await dbservices.User.userExists(maAddress);
   
-        let message = "User Logged In";
-        let userId, saAddress;
+//         let message = "Admin Logged In";
+//         let userId, saAddress;
   
-        if (!userExist) {
-          const chainId = parseInt(process.env.CHAINID || "80002");
-          if (!chainId) {
-            throw new Error("Missing or invalid chainId in environment variables");
-          }
+//         if (!userExist) {
+//           const chainId = parseInt(process.env.CHAINID || "80002");
+//           if (!chainId) {
+//             throw new Error("Missing or invalid chainId in environment variables");
+//           }
   
-          userId = await `user_${this.generateId()}`;
-          // console.log("Generated userId:", userId);
+//           userId = await `user_${this.generateId()}`;
+//           // console.log("Generated userId:", userId);
   
-          const privKey = sha512_256(secret_key + deviceId + userId);
-          // console.log("Generated private key:", privKey);
+//           const privKey = sha512_256(secret_key + deviceId + userId);
+//           // console.log("Generated private key:", privKey);
   
-          const rpcHttpProvider = new ethers.providers.JsonRpcProvider(process.env.PROVIDER_URL);
-          if (!rpcHttpProvider) {
-            return res.status(500).json({ status: false, message: "Error creating RPC provider" });
-          }
+//           const rpcHttpProvider = new ethers.providers.JsonRpcProvider(process.env.PROVIDER_URL);
+//           if (!rpcHttpProvider) {
+//             return res.status(500).json({ status: false, message: "Error creating RPC provider" });
+//           }
   
-          const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
-          if (!wallet) {
-            return res.status(500).json({ status: false, message: "Error creating wallet" });
-          }
+//           const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
+//           if (!wallet) {
+//             return res.status(500).json({ status: false, message: "Error creating wallet" });
+//           }
   
-          const account:any = privateKeyToAccount(wallet.privateKey as any);
-          const chainName = chainIdToChainName[chainId];
-          const client = createWalletClient({
-            account,
-            chain: chainName,
-            transport: http(),
-          });
+//           const account:any = privateKeyToAccount(wallet.privateKey as any);
+//           const chainName = chainIdToChainName[chainId];
+//           const client = createWalletClient({
+//             account,
+//             chain: chainName,
+//             transport: http(),
+//           });
   
-          const eoa = client.account.address;
-          // console.log(`EOA address: ${eoa}`);
+//           const eoa = client.account.address;
+//           // console.log(`EOA address: ${eoa}`);
   
-          const bundlerUrl = chainIdToBundlerUrl[chainId];
-          // console.log("Bundler URL:", bundlerUrl);
-          const Paymaster_key = process.env.PAYMASTERAPI_KEY
+//           const bundlerUrl = chainIdToBundlerUrl[chainId];
+//           // console.log("Bundler URL:", bundlerUrl);
+//           const Paymaster_key = process.env.PAYMASTERAPI_KEY
 
-          const smartAccount = await createSmartAccountClient({
-            signer: client,
-            bundlerUrl,
-            chainId,
-            biconomyPaymasterApiKey:Paymaster_key
-          });
-         // console.log(smartAccount ,"smart account")
-          saAddress = await smartAccount.getAccountAddress();
-          // console.log("Smart Account Address:", saAddress);
+//           const smartAccount = await createSmartAccountClient({
+//             signer: client,
+//             bundlerUrl,
+//             chainId,
+//             biconomyPaymasterApiKey:Paymaster_key
+//           });
+//          // console.log(smartAccount ,"smart account")
+//           saAddress = await smartAccount.getAccountAddress();
+//           // console.log("Smart Account Address:", saAddress);
   
-          const saveResult = await dbservices.User.saveDetailsOwner(userId, secret_key, deviceId, saAddress);
-          if (!saveResult) {
-            throw new Error("Error saving user details");
-          }
+//           const saveResult = await dbservices.User.saveDetailsOwner(userId, secret_key, deviceId, saAddress);
+//           if (!saveResult) {
+//             throw new Error("Error saving user details");
+//           }
   
-          userExist = saveResult;
-          // console.log(userExist ,"user registered");
-          message = "User registered Succesfully";
-        }
+//           userExist = saveResult;
+//           // console.log(userExist ,"user registered");
+//           message = "User registered Succesfully";
+//         }
   
-        // console.log(userExist.id)
-        const token = await generateAuthTokens({userId:userExist.id , role:userExist.role });
-        // console.log("Generated token:", token);
+//         // console.log(userExist.id)
+//         const token = await generateAuthTokens({userId:userExist.id , role:userExist.role });
+//         // console.log("Generated token:", token);
   
-        return res.status(200).send({
-          message,
-          data: { userId: userExist.userId, role : userExist.role , secret_key, deviceId, saAddress: userExist.saAddress },
-          token,
-        });
-      } catch (error: any) {
-        console.error("Unexpected error:", error);
-        return res.status(500).json({ status: false, message: error.message || "Unexpected error occurred" });
-      }
-    };
+//         return res.status(200).send({
+//           message,
+//           data: { userId: userExist.userId, role : userExist.role , secret_key, deviceId, saAddress: userExist.saAddress },
+//           token,
+//         });
+//       } catch (error: any) {
+//         console.error("Unexpected error:", error);
+//         return res.status(500).json({ status: false, message: error.message || "Unexpected error occurred" });
+//       }
+//   };
   
-
-    static registerGame: any = async (req: Request, res: Response): Promise<any> => {
+  static registerGame: any = async (req: Request, res: Response): Promise<any> => {
       const { wallet_address } = req.body;
-
       try {
           const userId = req['user'].userId;
           const role = req['user'].role;
@@ -496,9 +506,8 @@ export default class User{
           });
       }
   }
-
-    
-    static eventCreation = async(req:Request, res:Response):Promise<any> => {
+ 
+  static eventCreation = async(req:Request, res:Response):Promise<any> => {
         try {
           const userId = req['user'].userId;
           const role = req['user'].role;
@@ -522,10 +531,22 @@ export default class User{
           res.status(500).json({ status: false, message: error.message})
           
         }
-    }
+  }
 
-    static sendEvents = async (req: Request, res: Response): Promise<any> => {
-      const { deviceId, appId, eventId, gameId, wallet_address } = req.body;
+  static updateGameToken = async(req:Request, res:Response):Promise<any> => {
+    try {
+       const gameId= req.body.gameId;
+       const updateToken = await dbservices.User.updateGameToken(gameId)
+       res.status(200).send({status: true ,message: "Updated game token",data: updateToken})
+    } catch (error:any) {
+     res.status(500).json({ status:false, message: error.message})
+    }
+}
+
+  static sendEvents = async (req: Request, res: Response): Promise<any> => {
+      const {  wallet_address } = req.body;
+      const eventId: any = req.body.eventId;
+
       console.log(process.env.PROVIDER_URL ,"providerrrrrr")
       try {
           let userId: string | null = null;
@@ -742,12 +763,12 @@ export default class User{
                   return res.status(401).json({ message: "User authentication failed." });
               }
   
-              const eventId: any = req.body.eventId;
               const gameId = req.body.gameId as any;
               const gameObject = await dbservices.User.gameObject(gameId);
               const gameeID = await dbservices.User.getGameID(gameId);
               const getevent = await dbservices.User.getEventById(eventId);
               const checkEventwithgame = await dbservices.User.checkEvent(eventId, gameId);
+              console.log(checkEventwithgame.gameObject)
               if (checkEventwithgame.length === 0) {
                   return res.status(404).json({ message: "Event for game not found." });
               }
@@ -827,19 +848,8 @@ export default class User{
   };
     
 
-
-    static updateGameToken = async(req:Request, res:Response):Promise<any> => {
-      try {
-         const gameId= req.body.gameId;
-         const updateToken = await dbservices.User.updateGameToken(gameId)
-         res.status(200).send({status: true ,message: "Updated game token",data: updateToken})
-      } catch (error:any) {
-       res.status(500).json({ status:false, message: error.message})
-      }
-    }
-
-    
-    static transactions:any=async(req:Request,res:Response)=>{
+  
+  static transactions:any=async(req:Request,res:Response)=>{
       try {
         
         const transactionDetails = await dbservices.User.getTransactionDetails()
@@ -848,10 +858,9 @@ export default class User{
       } catch (error) {
         return res.status(500).json({ status: false, message: error.message || "Unexpected error occurred" });
       }
-    }
+  }
 
-
-    static count = async(req:Request , res:Response): Promise<any>=>{
+  static count = async(req:Request , res:Response): Promise<any>=>{
       try{
          const count = await dbservices.User.counts()
          res.status(200).json({ status: true, message:"count fetch successful" , data: count})
@@ -859,9 +868,9 @@ export default class User{
         console.error("Unexpected error:", error);
         return res.status(500).json({ status: false, message: error || "Unexpected error occurred" });
       }
-    }
+  }
 
-    static games = async(req:Request , res:Response): Promise<any>=>{
+  static games = async(req:Request , res:Response): Promise<any>=>{
       try{
          const count = await dbservices.User.games()
          res.status(200).json({ status: true, message:"count fetch successful" , data: count})
@@ -870,9 +879,9 @@ export default class User{
         return res.status(500).json({ status: false, message: error || "Unexpected error occurred" });
       }
       
-    }
+  }
 
-    static getCreatorRequestStatus = async(req:Request , res:Response): Promise<any>=>{
+  static getCreatorRequestStatus = async(req:Request , res:Response): Promise<any>=>{
       try{
          const status = await dbservices.User.getCreatorRequestStatus(parseInt(req.params.userId))
          res.status(200).json({ status: true, message:"creator request status fetch successful" , data: status})
@@ -880,9 +889,18 @@ export default class User{
         console.error("Unexpected error:", error);
         return res.status(500).json({ status: false, message: error || "Unexpected error occurred" });
       }
-    }
+  }
 
-    // static allData = async(req:Request ,res:Response):Promise<any>=> {
+
+
+
+
+  static stringToRawEd25519Seed(str: string): Buffer {
+    const hash = sha512_256(str);
+    return Buffer.from(hash, 'hex');
+   }
+
+      // static allData = async(req:Request ,res:Response):Promise<any>=> {
     //   try {
     //     const data = await dbservices.User.getAllData()
     //     res.status(200).json({status: true, message:"data fetch successful" , data: data})
@@ -891,103 +909,6 @@ export default class User{
     //     return res.status(500).json({ status: false, message: error.message || "Unexpected error occurred" });
     //   }
     // }
-
-    static getPendingRequests = async(req: Request, res: Response): Promise<any> => {
-        try {
-            const userRole = req['user'].role;
-            const userId = req['user'].userId;
-            
-
-            if (userRole !== 'admin') {
-                return res.status(403).json({
-                    status: false,
-                    message: "Access denied. Admin privileges required"
-                });
-            }
-
-            // Check if user exists in user table
-            const userExists = await dbservices.User.adminUserExists(userId);
-           
-            if (!userExists) {
-                return res.status(404).json({
-                    status: false,
-                    message: "User not found"
-                });
-            }
-
-            const requests = await dbservices.User.getPendingRequests();
-            return res.status(200).json({
-                status: true,
-                message: "Pending requests fetch successful",
-                data: requests
-            });
-        } catch (error: any) {
-            console.error("Unexpected error:", error);
-            return res.status(500).json({
-                status: false,
-                message: "Internal server error",
-                error: error.message
-            });
-        }
-    }
-
-
-    static approveCreatorRequest = async(req: Request, res: Response): Promise<any> => {
-      try {
-        const { maAddress } = req.params;
-        const { responseType } = req.body;
-        const adminRole = req['user'].role;
-
-        // Verify admin role
-        if (adminRole !== 'admin') {
-          return res.status(403).json({ 
-            status: false, 
-            message: "Only admin can process creator requests" 
-          });
-        }
-
-        // Validate response type
-        if (!['Approve', 'Reject'].includes(responseType)) {
-          return res.status(400).json({
-            status: false,
-            message: "Invalid response type. Must be either 'Approve' or 'Reject'"
-          });
-        }
-
-        let result;
-        if (responseType === 'Approve') {
-          // Update creator request and user role
-          result = await dbservices.User.approveCreatorRequest(maAddress);
-        } else {
-          // Only update request status to rejected
-          result = await dbservices.User.rejectCreatorRequest(maAddress);
-        }
-
-        if (!result) {
-          return res.status(404).json({
-            status: false,
-            message: "Creator request not found"
-          });
-        }
-
-        return res.status(200).json({
-          status: true,
-          message: `Creator request ${responseType.toLowerCase()}d successfully`,
-          data: result
-        });
-
-      } catch (error: any) {
-        return res.status(500).json({ 
-          status: false, 
-          message: error.message || "Unexpected error occurred" 
-        });
-      }
-    }
-
-    static stringToRawEd25519Seed(str: string): Buffer {
-      const hash = sha512_256(str);
-      return Buffer.from(hash, 'hex');
-    }
 }
 
 
