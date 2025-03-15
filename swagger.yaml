@@ -74,398 +74,6 @@ paths:
                   error:
                     type: string
 
-  /user/registerGame:
-    post:
-      summary: Return Game Registration with events details and you should be at creator role to register a game.
-      description: Optional extended description in CommonMark or HTML.
-      parameters:
-      - in: headers
-        name: Authorization
-        required: true
-        schema:
-          type: string
-          example: Bearer <your_token_here>
-        description: Bearer token for authentication. Replace `<your_token_here>` with your actual token.
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                wallet_address:
-                  type: string
-                  example: "string"
-                name:
-                  type: string
-                  example: TekkenChampionship
-                type:
-                  type: string
-                  example: tekken
-                description:
-                  type: string
-                  example: A thrilling online battle championship.
-                events:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      eventType:
-                        type: string
-                        example: Solo Match
-              required:
-                - name
-                - type
-                - description
-                - events
-      responses:
-        "200":
-          description: A JSON object containing the registered game and its events.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Game registered Succesfully
-                  data:
-                    type: object
-                    properties:
-                      game:
-                        type: object
-                        properties:
-                          id:
-                            type: integer
-                            example: 4
-                          createrId:
-                            type: integer
-                            example: 1
-                          gameId:
-                            type: string
-                            example: game_XXTI9R8L
-                          gameSaAddress:
-                            type: string
-                            example: 0x25D0678F52F60b2340F6B8302bd9702Fe1432085
-                          name:
-                            type: string
-                            example: TekkenChampionship
-                          type:
-                            type: string
-                            example: tekken
-                          description:
-                            type: string
-                            example: A thrilling online battle championship.
-                          createdAt:
-                            type: string
-                            format: date-time
-                            example: 2025-01-15T07:33:14.258Z
-                      events:
-                        type: array
-                        items:
-                          type: object
-                          properties:
-                            gameId:
-                              type: integer
-                              example: 4
-                            eventId:
-                              type: string
-                              example: event_XFD2AT7Q
-                            eventType:
-                              type: string
-                              example: Solo Match
-                      Gametoken:
-                        type: string
-                        example: game_token
-        "401":
-          description: Unauthorized - Invalid or Expired token
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-        "500":
-          description: Internal server error - Database Error
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-  
-  /user/events/{gameId}:
-    post:
-      summary: Create events for a particular game
-      description: This endpoint creates events for a particular game.
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: gameId
-          in: path
-          required: true
-          description: The ID of the game for which the event is being created.
-          schema:
-            type: integer
-            example: 4
-        - name: Authorization
-          in: header
-          required: true
-          description: Bearer token for authentication.
-          schema:
-            type: string
-            example: Bearer <your_token_here>
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                eventType:
-                  type: string
-                  description: The type of event being created.
-                  example: TekkenChampionship
-      responses:
-        "200":
-          description: Event created successfully.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: true
-                  message:
-                    type: string
-                    example: Event created
-                  event:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        eventId:
-                          type: string
-                          description: The ID of the created event.
-                          example: event_A4I40CEH
-        "400":
-          description: Bad Request - Invalid input data.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: Invalid game ID or request body.
-        "401":
-          description: Unauthorized - Invalid or missing bearer token.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: Unauthorized. Please provide a valid token.
-        "500":
-          description: Internal Server Error.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: Failed to create event due to a server error.
-
-  # /creator/sendEvents:
-  #   post:
-  #     summary: Send events to users for a specific game.
-  #     description: This endpoint sends event to server for a specific game .
-  #     security:
-  #       - bearerAuth: []
-  #     parameters:
-  #       - name: Authorization
-  #         in: headers
-  #         required: true
-  #         schema:
-  #           type: string
-  #           example: Bearer <your_token_here>
-  #       - name : game_authorization_token
-  #         in: headers
-  #         required: true
-  #         schema:
-  #           type: string
-  #           example: game_token_XXTI9R8L 
-  #     requestBody:
-  #       required: true
-  #       content:
-  #         application/json:
-  #           schema:
-  #             type: object
-  #             properties:
-  #               eventId:
-  #                 type: string
-  #                 description: The type of event being for transaction.
-  #                 example: event_qwert 
-  #               appId:
-  #                 type: string
-  #                 description: The app ID associated with the user (only required if user is not authenticated).
-  #                 example: sampleAppid
-  #                 nullable: true
-  #               deviceId:
-  #                 type: string
-  #                 description: The device ID of the user (only required if user is not authenticated).
-  #                 example: sampleDeviceID
-  #                 nullable: true
-  #             required:
-  #               - eventId                               
-  #     responses:
-  #       "200":
-  #         description: A JSON object containing the details of the sent event.
-  #         content:
-  #           application/json:
-  #             schema:
-  #               type: object
-  #               properties:
-  #                 message:
-  #                   type: string
-  #                   example: Event sent successfully.
-  #                 data:
-  #                   type: object
-  #                   properties:
-  #                     id:
-  #                       type: integer
-  #                       example: 2
-  #                     fromGameId:
-  #                       type: integer
-  #                       example: 4
-  #                     GameCreator:
-  #                       type: integer
-  #                       example: 1
-  #                     toUser:
-  #                       type: integer
-  #                       example: 1
-  #                     eventId:
-  #                       type: integer
-  #                       example: 7
-  #                     transactionHash:
-  #                       type: string
-  #                       example: 0xca78c65fe4c6752dbeef5301e02332ae496729d0f77ba9bcaec05ad992de83df
-  #                     amount:
-  #                       type: string
-  #                       example: "0"
-  #                     from:
-  #                       type: string
-  #                       example: 0x25D0678F52F60b2340F6B8302bd9702Fe1432085
-  #                     to:
-  #                       type: string
-  #                       example: 0xb34c1506FCca7CFd00Da4158315e2A2291928323
-  #                     createdAt:
-  #                       type: string
-  #                       format: date-time
-  #                       example: 2025-01-15T11:42:52.807Z
-  #       "401":
-  #         description: Unauthorized - Invalid or Expired token
-  #         content:
-  #           application/json:
-  #             schema:
-  #               type: object
-  #               properties:
-  #                 error:
-  #                   type: string
-  #       "500":
-  #         description: Internal server error - Database Error
-  #         content:
-  #           application/json:
-  #             schema:
-  #               type: object
-  #               properties:
-  #                 error:
-  #                   type: string
-
-  /user/transactions:
-    get:
-      summary: Fetch user transactions
-      description: Retrieves a list of transactions for the user
-      responses:
-        '200':
-          description: Transaction fetch successful
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: true
-                  message:
-                    type: string
-                    example: "transaction fetch successful"
-                  data:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        transactionHash:
-                          type: string
-                          example: "0xd089b541f5a0d16437a341a7967245d298b516dec8f6c205bb615ba3b34134b3"
-                        event:
-                          type: object
-                          properties:
-                            eventType:
-                              type: string
-                              example: "Solo Match"
-                            eventId:
-                              type: string
-                              example: "event_XFD2AT7Q"
-                        toUser:
-                          type: object
-                          properties:
-                            userId:
-                              type: string
-                              example: "user_607LHYRR"
-                        game:
-                          type: object
-                          properties:
-                            name:
-                              type: string
-                              example: "TekkenChampionship"
-                            type:
-                              type: string
-                              example: "tekken"
-                            gameId:
-                              type: string
-                              example: "game_XXTI9R8L"
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: "Internal server error"
-
   /user/requestCreator:
     post:
       summary: Submit a creator request for a user
@@ -481,18 +89,8 @@ paths:
                   type: string
                   example: "0xb34c1506FCca7CFd00Da4158315e2A2291928323"
                   description: The user's address (e.g., a blockchain or unique identifier).
-                userRole:
-                  type: string
-                  example: "creator"
-                  description: The role the user is requesting.
-                id:
-                  type: number
-                  example: 123
-                  description: The unique identifier of the user.
               required:
                 - maAddress
-                - userRole
-                - id
       responses:
         "200":
           description: Creator request successfully created.
@@ -777,247 +375,18 @@ paths:
                     type: string
                     example: "Database connection failed"
 
-  /user/count:
-    get:
-      summary: Fetch the total count of users
-      description: Retrieves the total count of users or similar resources from the system.
-      responses:
-        "200":
-          description: Successfully fetched the count.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: true
-                  message:
-                    type: string
-                    example: "count fetch successful"
-                  data:
-                    type: number
-                    description: The total count of users or resources.
-                    example: 42
-        "500":
-          description: Server error occurred during count retrieval.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: "Unexpected error occurred"
-          
-  /user/games:
-    get:
-      summary: Fetch the total count of games
-      description: Retrieves the total number of games available in the system.
-      responses:
-        "200":
-          description: Successfully fetched the count of games.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: true
-                  message:
-                    type: string
-                    example: "count fetch successful"
-                  data:
-                    type: number
-                    description: The total count of games.
-                    example: 15
-        "500":
-          description: Server error occurred during games count retrieval.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: "Unexpected error occurred"
-
-  /user/creator-request-status/{userId}:
-    get:
-      summary: Fetch the creator request status for a user
-      description: Retrieves the status of a creator request associated with the specified user ID.
+  /user/registerGame:
+    post:
+      summary: Return Game Registration with events details and you should be at creator role to register a game.
+      description: Optional extended description in CommonMark or HTML.
       parameters:
-        - in: path
-          name: userId
-          required: true
-          schema:
-            type: integer
-            example: 123
-          description: The unique identifier of the user whose creator request status is being fetched.
-      responses:
-        "200":
-          description: Successfully fetched the creator request status.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: true
-                  message:
-                    type: string
-                    example: "creator request status fetch successful"
-                  data:
-                    type: string
-                    description: The status of the creator request (e.g., pending, approved, rejected).
-                    example: "pending"
-        "500":
-          description: Server error occurred during status retrieval.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: "Unexpected error occurred"
-
-  /creator/registerCreator:
-    post:
-      summary: Register or log in a creator/owner
-      description: Registers a new creator/owner or logs in an existing one based on the provided secret key and device ID. If the user doesn't exist, a new smart account is created and saved. Returns user details and an authentication token.
-      tags:
-        - User
-      requestBody:
+      - in: headers
+        name: Authorization
         required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                
-                secret_key:
-                  type: string
-                  description: The secret key for authentication
-                  example: "my-secret-key-123"
-                deviceId:
-                  type: string
-                  description: Unique identifier for the user's device
-                  example: "device-uuid-456"
-              required:
-                - secret_key
-                - deviceId
-              additionalProperties: false
-      responses:
-        '200':
-          description: Success - User registered or logged in
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    description: Success message
-                    example: "User registered Succesfully"
-                  data:
-                    type: object
-                    properties:
-                      userId:
-                        type: string
-                        description: Unique identifier for the user
-                        example: "user_abc123"
-                      role:
-                        type: string
-                        description: Role of the user
-                        example: "owner"
-                      secret_key:
-                        type: string
-                        description: The secret key used for registration
-                        example: "my-secret-key-123"
-                      deviceId:
-                        type: string
-                        description: Device ID used for registration
-                        example: "device-uuid-456"
-                      saAddress:
-                        type: string
-                        description: Smart account address associated with the user
-                        example: "0x1234567890abcdef1234567890abcdef12345678"
-                  token:
-                    type: string
-                    description: Authentication token for the user
-                    example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                required:
-                  - message
-                  - data
-                  - token
-        '400':
-          description: Bad Request - Missing required fields
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: "Missing required fields: appId, deviceId"
-                required:
-                  - status
-                  - message
-        '403':
-          description: Forbidden - Invalid secret key
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: "Invalid secret key."
-                required:
-                  - status
-                  - message
-        '500':
-          description: Internal Server Error - Unexpected error occurred
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: "Unexpected error occurred"
-                required:
-                  - status
-                  - message
-      security: []
-
-  /creator/registerGame:
-    post:
-      summary: Register a new game for a creator
-      description: Registers a new game for an authenticated user with the "creator" role. If the game doesn't already exist for the user, a smart account is created and associated with the game. Returns the game details.
-      tags:
-        - Game
+        schema:
+          type: string
+          example: Bearer <your_token_here>
+        description: Bearer token for authentication. Replace `<your_token_here>` with your actual token.
       security:
         - bearerAuth: []
       requestBody:
@@ -1029,30 +398,32 @@ paths:
               properties:
                 wallet_address:
                   type: string
-                  description: The wallet address of the user
                   example: "string"
                 name:
                   type: string
-                  description: The name of the game
-                  example: "Space Adventure"
+                  example: TekkenChampionship
                 type:
                   type: string
-                  description: The type or category of the game
-                  example: "Action"
+                  example: tekken
+                description:
+                  type: string
+                  example: A thrilling online battle championship.
                 events:
                   type: array
-                  description: List of events associated with the game
                   items:
                     type: object
-                    description: Event details (structure depends on your implementation)
-                    example: { "eventName": "StartGame", "description": "Game started" }
+                    properties:
+                      eventType:
+                        type: string
+                        example: Solo Match
               required:
                 - name
                 - type
+                - description
                 - events
       responses:
-        '201':
-          description: Success - Game registered or already exists
+        "200":
+          description: A JSON object containing the registered game and its events.
           content:
             application/json:
               schema:
@@ -1060,87 +431,215 @@ paths:
                 properties:
                   message:
                     type: string
-                    description: Success message
-                    example: "Game registered Succesfully"
+                    example: Game registered Succesfully
                   data:
                     type: object
-                    description: Game details (structure depends on database response)
+                    properties:
+                      game:
+                        type: object
+                        properties:
+                          id:
+                            type: integer
+                            example: 4
+                          createrId:
+                            type: integer
+                            example: 1
+                          gameId:
+                            type: string
+                            example: game_XXTI9R8L
+                          gameSaAddress:
+                            type: string
+                            example: 0x25D0678F52F60b2340F6B8302bd9702Fe1432085
+                          name:
+                            type: string
+                            example: TekkenChampionship
+                          type:
+                            type: string
+                            example: tekken
+                          description:
+                            type: string
+                            example: A thrilling online battle championship.
+                          createdAt:
+                            type: string
+                            format: date-time
+                            example: 2025-01-15T07:33:14.258Z
+                      events:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            gameId:
+                              type: integer
+                              example: 4
+                            eventId:
+                              type: string
+                              example: event_XFD2AT7Q
+                            eventType:
+                              type: string
+                              example: Solo Match
+                      Gametoken:
+                        type: string
+                        example: game_token
+        "401":
+          description: Unauthorized - Invalid or Expired token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        "500":
+          description: Internal server error - Database Error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /creator/events/{gameId}:
+    post:
+      summary: Create events for a particular game
+      description: This endpoint creates events for a particular game.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          description: The ID of the game for which the event is being created.
+          schema:
+            type: integer
+            example: 4
+        - name: Authorization
+          in: header
+          required: true
+          description: Bearer token for authentication.
+          schema:
+            type: string
+            example: Bearer <your_token_here>
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                eventType:
+                  type: string
+                  description: The type of event being created.
+                  example: TekkenChampionship
+      responses:
+        "200":
+          description: Event created successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Event created
+                  event:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        eventId:
+                          type: string
+                          description: The ID of the created event.
+                          example: event_A4I40CEH
+        "400":
+          description: Bad Request - Invalid input data.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: Invalid game ID or request body.
+        "401":
+          description: Unauthorized - Invalid or missing bearer token.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: Unauthorized. Please provide a valid token.
+        "500":
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: Failed to create event due to a server error.
+
+  /creator/gameToken:
+    post:
+      summary: Update game token
+      description: Updates the token associated with a specified game. Returns the updated token details.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                gameId:
+                  type: string
+                  description: Unique identifier of the game for which the token is being updated
+                  example: "game_xyz789"
+              required:
+                - gameId
+      responses:
+        '200':
+          description: Success - Game token updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Updated game token"
+                  data:
+                    type: object
+                    description: Updated token details (structure depends on database response)
                     properties:
                       gameId:
                         type: string
-                        description: Unique identifier for the game
                         example: "game_xyz789"
-                      name:
+                      token:
                         type: string
-                        description: The name of the game
-                        example: "Space Adventure"
-                      type:
-                        type: string
-                        description: The type of the game
-                        example: "Action"
-                      saAddress:
-                        type: string
-                        description: Smart account address associated with the game
-                        example: "0xabcdef1234567890abcdef1234567890abcdef12"
+                        description: The updated game token
+                        example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
                 required:
+                  - status
                   - message
                   - data
-        '400':
-          description: Bad Request - Invalid game data or missing authentication header
-          content:
-            application/json:
-              schema:
-                oneOf:
-                  - type: object
-                    properties:
-                      message:
-                        type: string
-                        example: "Invalid game data or events."
-                    required:
-                      - message
-                  - type: object
-                    properties:
-                      status:
-                        type: boolean
-                        example: false
-                      message:
-                        type: string
-                        example: "Invalid Headers Authorization Token Missing."
-                    required:
-                      - status
-                      - message
-        '401':
-          description: Unauthorized - Invalid or missing token
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: "UNAUTHOURIZED USER"
-                required:
-                  - status
-                  - message
-        '403':
-          description: Forbidden - User does not have the "creator" role
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: "Invalid role"
-                required:
-                  - status
-                  - message
         '500':
           description: Internal Server Error - Unexpected error occurred
           content:
@@ -1162,8 +661,6 @@ paths:
     post:
       summary: Send events for a game
       description: Sends an event for a specified game, either for an authenticated user or a new user identified by appId and deviceId. Requires both user authentication (via JWT) and game authentication (via game_authorization_token). Creates a smart account transaction and saves the details.
-      tags:
-        - Events
       security:
         - bearerAuth: []
       requestBody:
@@ -1177,20 +674,13 @@ paths:
                   type: string
                   description: Unique identifier of the event to send
                   example: "event_123"
-                appId:
+                wallet_address:
                   type: string
-                  description: Application ID (required if user is not authenticated)
-                  example: "app_xyz"
-                deviceId:
-                  type: string
-                  description: Device ID (required if user is not authenticated)
-                  example: "device_456"
+                  description: wallet address of particuular user account
+                  example: "gkjscjhfkavkqjakejblvbllkbv"
               required:
                 - eventId
-              oneOf:
-                - required: [appId, deviceId]
-                - not:
-                    required: [appId, deviceId]
+                - wallet_address
       parameters:
         - in: header
           name: game_authorization_token
@@ -1198,7 +688,7 @@ paths:
             type: string
           required: true
           description: JWT token for game authentication
-          example: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
       responses:
         '200':
           description: Success - Event sent successfully
@@ -1360,38 +850,13 @@ paths:
                   - status
                   - message
 
-  /creator/events/{gameId}:
-    post:
-      summary: Create an event for a game
-      description: Creates a new event for a specified game. The request must be made by an authenticated user with the "creator" role, and the game must belong to that creator. Ensures the event type doesn’t already exist for the game.
-      tags:
-        - Events
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: gameId
-          schema:
-            type: string
-          required: true
-          description: Unique identifier of the game for which the event is being created
-          example: "game_xyz789"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                eventType:
-                  type: string
-                  description: The type of event to create
-                  example: "PlayerJoined"
-              required:
-                - eventType
+  /user/transactions:
+    get:
+      summary: Fetch user transactions
+      description: Retrieves a list of transactions for the user
       responses:
         '200':
-          description: Success - Event created successfully
+          description: Transaction fetch successful
           content:
             application/json:
               schema:
@@ -1402,171 +867,80 @@ paths:
                     example: true
                   message:
                     type: string
-                    example: "Event created"
-                  event:
-                    type: object
-                    description: Details of the created event (structure depends on database response)
-                    properties:
-                      id:
-                        type: string
-                        example: "event_123"
-                      gameId:
-                        type: string
-                        example: "game_xyz789"
-                      eventType:
-                        type: string
-                        example: "PlayerJoined"
-                required:
-                  - status
-                  - message
-                  - event
-        '400':
-          description: Bad Request - Invalid or missing authorization header
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: "Invalid Headers Authorization Token Missing."
-                required:
-                  - status
-                  - message
-        '401':
-          description: Unauthorized - Invalid or missing JWT token
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: "UNAUTHOURIZED USER"
-                required:
-                  - status
-                  - message
-        '403':
-          description: Forbidden - User is not a creator
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: "should be creator of the game"
-                required:
-                  - status
-                  - message
-        '404':
-          description: Not Found - Game not found for the creator
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: "game not found for paricular creator"
-                required:
-                  - status
-                  - message
-        '409':
-          description: Conflict - Event type already registered for the game
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: "already registered event"
-                required:
-                  - status
-                  - message
-        '500':
-          description: Internal Server Error - Unexpected error occurred
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: "Unexpected error occurred"
-                required:
-                  - status
-                  - message
-
-  /creator/gameToken:
-    post:
-      summary: Update game token
-      description: Updates the token associated with a specified game. Returns the updated token details.
-      tags:
-        - Game
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                gameId:
-                  type: string
-                  description: Unique identifier of the game for which the token is being updated
-                  example: "game_xyz789"
-              required:
-                - gameId
-      responses:
-        '200':
-          description: Success - Game token updated successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                    example: true
-                  message:
-                    type: string
-                    example: "Updated game token"
+                    example: "transaction fetch successful"
                   data:
-                    type: object
-                    description: Updated token details (structure depends on database response)
-                    properties:
-                      gameId:
-                        type: string
-                        example: "game_xyz789"
-                      token:
-                        type: string
-                        description: The updated game token
-                        example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                required:
-                  - status
-                  - message
-                  - data
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        transactionHash:
+                          type: string
+                          example: "0xd089b541f5a0d16437a341a7967245d298b516dec8f6c205bb615ba3b34134b3"
+                        event:
+                          type: object
+                          properties:
+                            eventType:
+                              type: string
+                              example: "Solo Match"
+                            eventId:
+                              type: string
+                              example: "event_XFD2AT7Q"
+                        toUser:
+                          type: object
+                          properties:
+                            userId:
+                              type: string
+                              example: "user_607LHYRR"
+                        game:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                              example: "TekkenChampionship"
+                            type:
+                              type: string
+                              example: "tekken"
+                            gameId:
+                              type: string
+                              example: "game_XXTI9R8L"
         '500':
-          description: Internal Server Error - Unexpected error occurred
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Internal server error"
+
+  /user/count:
+    get:
+      summary: Fetch the total count of users
+      description: Retrieves the total count of users or similar resources from the system.
+      responses:
+        "200":
+          description: Successfully fetched the count.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "count fetch successful"
+                  data:
+                    type: number
+                    description: The total count of users or resources.
+                    example: 42
+        "500":
+          description: Server error occurred during count retrieval.
           content:
             application/json:
               schema:
@@ -1578,7 +952,39 @@ paths:
                   message:
                     type: string
                     example: "Unexpected error occurred"
-                required:
-                  - status
-                  - message
-  
+          
+  /user/games:
+    get:
+      summary: Fetch the total count of games
+      description: Retrieves the total number of games available in the system.
+      responses:
+        "200":
+          description: Successfully fetched the count of games.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "count fetch successful"
+                  data:
+                    type: number
+                    description: The total count of games.
+                    example: 15
+        "500":
+          description: Server error occurred during games count retrieval.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Unexpected error occurred"
