@@ -409,9 +409,19 @@ static getPendingRequests = async(req: Request, res: Response): Promise<any> => 
   
   static registerGame: any = async (req: Request, res: Response): Promise<any> => {
       const { wallet_address } = req.body;
+
+      const user = await dbservices.User.userExists(wallet_address);
+      if (!user) {
+          return res.status(404).json({ status: false, message: "User not found" });
+      }
+      
       try {
           const userId = req['user'].userId;
           const role = req['user'].role;
+
+          if(user.id !== userId){
+            return res.status(403).json({ status: false, message: 'wallet addres is not associated with the userid' });
+          }
           
           if (role !== 'creator' && role !== 'admin') {
               throw new Error("Invalid role");
@@ -761,6 +771,15 @@ static getPendingRequests = async(req: Request, res: Response): Promise<any> => 
   
               if (!userId) {
                   return res.status(401).json({ message: "User authentication failed." });
+              }
+
+              const user = await dbservices.User.userExists(wallet_address);
+              console.log(user ,"................................................................")
+              if (!user) {
+                return res.status(404).json({ status: false, message: "User not found" });
+            }
+              if(user.id !== userId){
+                return res.status(403).json({ status: false, message: 'wallet addres is not associated with the userid' });
               }
   
               const gameId = req.body.gameId as any;
