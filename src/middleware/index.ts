@@ -19,7 +19,7 @@ const validateRequestHeader = (schema: AnyZodObject) => async (req: Request, res
       req["user"] = null;
       return next();
     }
-          await schema.parseAsync({ header:{ authorization: tokenHeader}});
+      await schema.parseAsync({ header:{ authorization: tokenHeader}});
       req.header['authorization'] = tokenHeader;
       next();
   } catch (error) {
