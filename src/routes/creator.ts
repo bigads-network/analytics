@@ -9,6 +9,7 @@ import { authenticateGameToken } from "../config/gameToken";
 router.post('/registerGame',authenticateUser,controllers.Creator.registerGame); //done // 
 router.post('/events/:gameId',authenticateUser,controllers.Creator.eventCreation) //done
 router.post('/gameToken',controllers.Creator.updateGameToken)
+router.post('/registerGame',authenticateUser,controllers.User.registerGame); //creator
 // router.post('/admin',controllers.User.adminlogin)
 
 

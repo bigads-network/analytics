@@ -11,7 +11,10 @@ router.get('/transactions',validateRequest(validators.user.transactions),control
 router.get('/count',controllers.Admin.count) //done
 router.get('/games',controllers.Admin.games) //done
 router.get('/events/:gameId',controllers.Admin.getEvents)
-
+router.get('/getPendingRequests',authenticateUser,controllers.User.getPendingRequests) // admin
+router.get('/transactions',validateRequest(validators.user.transactions),controllers.User.transactions)//admin
+router.get('/count',controllers.User.count) //admin
+router.get('/games',controllers.User.games) //admin
 
 
 export default router

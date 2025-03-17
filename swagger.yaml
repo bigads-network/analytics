@@ -153,7 +153,7 @@ paths:
                     type: string
                     example: "Unexpected error occurred"
 
-  /user/creator-requests/{maAddress}/approve:
+  /admin/creator-requests/{maAddress}/approve:
     patch:
       summary: Approve or reject a creator request
       description: Allows an admin to approve or reject a pending creator request identified by the user's maAddress.
@@ -268,7 +268,7 @@ paths:
                     type: string
                     example: "Unexpected error occurred"
 
-  /user/getPendingRequests:
+  /admin/getPendingRequests:
     get:
       summary: Fetch all pending creator requests
       description: Retrieves a list of pending creator requests. Accessible only to authenticated admin users.
@@ -375,7 +375,7 @@ paths:
                     type: string
                     example: "Database connection failed"
 
-  /user/registerGame:
+  /creator/registerGame:
     post:
       summary: Return Game Registration with events details and you should be at creator role to register a game.
       description: Optional extended description in CommonMark or HTML.
@@ -850,7 +850,7 @@ paths:
                   - status
                   - message
 
-  /user/transactions:
+  /admin/transactions:
     get:
       summary: Fetch user transactions
       description: Retrieves a list of transactions for the user
@@ -917,7 +917,7 @@ paths:
                     type: string
                     example: "Internal server error"
 
-  /user/count:
+  /amin/count:
     get:
       summary: Fetch the total count of users
       description: Retrieves the total count of users or similar resources from the system.
@@ -953,7 +953,7 @@ paths:
                     type: string
                     example: "Unexpected error occurred"
           
-  /user/games:
+  /admin/games:
     get:
       summary: Fetch the total count of games
       description: Retrieves the total number of games available in the system.

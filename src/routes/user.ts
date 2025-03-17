@@ -14,15 +14,12 @@ router.post('/sendEvents',authenticateUser,authenticateGameToken,controllers.Use
 router.get('/creator-request-status/:userId',controllers.User.getCreatorRequestStatus) //  dont make swaager for this request
 
 
-router.post('/registerGame',authenticateUser,controllers.User.registerGame); //creator
 
 
 
-router.patch('/creator-requests/:maAddress/approve',authenticateUser,validateRequest(validators.user.approveCreatorRequest),controllers.User.approveCreatorRequest);  //admin
-router.get('/getPendingRequests',authenticateUser,controllers.User.getPendingRequests) // admin
-router.get('/transactions',validateRequest(validators.user.transactions),controllers.User.transactions)//admin
-router.get('/count',controllers.User.count) //admin
-router.get('/games',controllers.User.games) //admin
+
+
+
 
 
 
