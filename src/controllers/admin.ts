@@ -95,6 +95,37 @@ export default class Admin{
         }
   }
 
+  static transactions:any=async(req:Request,res:Response)=>{
+    try {
+      
+      const transactionDetails = await dbservices.User.getTransactionDetails()
+      res.status(200).json({ status: true, message:"transaction fetch successful" , data: transactionDetails})
+      
+    } catch (error) {
+      return res.status(500).json({ status: false, message: error.message || "Unexpected error occurred" });
+    }
+}
+
+static count = async(req:Request , res:Response): Promise<any>=>{
+    try{
+       const count = await dbservices.User.counts()
+       res.status(200).json({ status: true, message:"count fetch successful" , data: count})
+    }catch(error:any){
+      console.error("Unexpected error:", error);
+      return res.status(500).json({ status: false, message: error || "Unexpected error occurred" });
+    }
+}
+
+static games = async(req:Request , res:Response): Promise<any>=>{
+    try{
+       const count = await dbservices.User.games()
+       res.status(200).json({ status: true, message:"count fetch successful" , data: count})
+    }catch(error:any){
+      console.error("Unexpected error:", error);
+      return res.status(500).json({ status: false, message: error || "Unexpected error occurred" });
+    }
+    
+}
 
   static getEvents = async(req: Request, res: Response): Promise<any> => {
     try {
