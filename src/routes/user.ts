@@ -11,23 +11,10 @@ router.post('/requestCreator',validateRequest(validators.user.requestCreator),co
 router.post('/sendEvents',authenticateUser,authenticateGameToken,controllers.User.sendEvents);   // user
 
 
+
+
 router.get('/creator-request-status/:userId',controllers.User.getCreatorRequestStatus) //  dont make swaager for this request
 
-
-
-
-
-
-
-
-
-
-
-
-
-// router.get('/tokenTest' ,controllers.User.tokenTest)
-// router.get('/data' , controllers.User.allData);
-// router.get("/data",controllers.User.getdata)
 
 
 export default router
