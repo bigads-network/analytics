@@ -988,3 +988,61 @@ paths:
                   message:
                     type: string
                     example: "Unexpected error occurred"
+
+  /admin/events/{gameId}:
+    get:
+      summary: Get events for a specific game
+      description: Fetches all events associated with a given game ID.
+      parameters:
+        - in: path
+          name: gameId
+          required: true
+          schema:
+            type: string
+          description: The unique ID of the game
+      responses:
+        '200':
+          description: Events fetched successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Events fetched successfully
+                  data:
+                    type: array
+                    items:
+                      type: object
+        '404':
+          description: Events not found for the given game
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: Events not found for the given game
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: Internal server error
+                  error:
+                    type: string

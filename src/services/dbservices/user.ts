@@ -648,4 +648,19 @@ export default class User {
     }
   }
 
+  static getEvents =async(gameId: any): Promise<any> => {
+    try {
+      const result = await postgreDb.query.events.findMany({
+        where:eq(events.gameId,gameId),
+        columns:{
+          eventId:true,
+        }
+      })
+      return result;
+    } catch (error) {
+      throw new Error(`error in getting events ${error.message}`);
+
+    }
+  }
+
 }

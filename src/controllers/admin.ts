@@ -95,4 +95,32 @@ export default class Admin{
         }
   }
 
+
+  static getEvents = async(req: Request, res: Response): Promise<any> => {
+    try {
+      const gameId = req.params.gameId;
+      const events = await dbservices.User.getEvents(gameId);
+
+      if (!events) {
+        return res.status(404).json({
+            status: false,
+            message: "Events not found for the given game"
+        });
+      }
+
+      return res.status(200).json({
+          status: true,
+          message: "Events fetched successfully",
+          data: events
+      });
+      
+    } catch (error) {
+      console.error("Unexpected error:", error);
+      return res.status(500).json({
+          status: false,
+          message: "Internal server error",
+          error: error.message
+      });
+    }
+  }
 }

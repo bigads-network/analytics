@@ -10,6 +10,7 @@ router.get('/PendingRequests',authenticateUser,controllers.Admin.getPendingReque
 router.get('/count',controllers.User.count) //done
 router.get('/games',controllers.User.games) //done
 router.get('/creator-request-status/:userId',controllers.User.getCreatorRequestStatus)
+router.get('/events/:gameId',controllers.Admin.getEvents)
 
 
 
