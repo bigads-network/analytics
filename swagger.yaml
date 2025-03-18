@@ -17,6 +17,8 @@ components:
 paths:
   /user/registerUser:
     post:
+      tags:
+        - user 
       summary: Return login user if not registered, if not registered, performs registration.
       description: Optional extended description in CommonMark or HTML.
       requestBody:
@@ -76,6 +78,8 @@ paths:
 
   /user/requestCreator:
     post:
+      tags:
+        - user    
       summary: Submit a creator request for a user
       description: Creates a creator request for a user if they exist and don’t already have a pending or fulfilled request.
       requestBody:
@@ -155,6 +159,8 @@ paths:
 
   /user/sendEvents:
     post:
+      tags:
+        - user 
       summary: Send events for a game
       description: Sends an event for a specified game, either for an authenticated user or a new user identified by appId and deviceId. Requires both user authentication (via JWT) and game authentication (via game_authorization_token). Creates a smart account transaction and saves the details.
       security:
@@ -348,6 +354,8 @@ paths:
                   
   /creator/registerGame:
     post:
+      tags:
+        - Creator 
       summary: Return Game Registration with events details and you should be at creator role to register a game.
       description: Optional extended description in CommonMark or HTML.
       parameters:
@@ -472,6 +480,8 @@ paths:
 
   /creator/events/{gameId}:
     post:
+      tags:
+        - Creator 
       summary: Create events for a particular game
       description: This endpoint creates events for a particular game.
       security:
@@ -567,6 +577,8 @@ paths:
 
   /creator/gameToken:
     post:
+      tags:
+        - Creator  
       summary: Update game token
       description: Updates the token associated with a specified game. Returns the updated token details.
       requestBody:
@@ -630,6 +642,8 @@ paths:
 
   /admin/creator-requests/{maAddress}/approve:
     patch:
+      tags:
+        - admin  
       summary: Approve or reject a creator request
       description: Allows an admin to approve or reject a pending creator request identified by the user's maAddress.
       security:
@@ -745,6 +759,8 @@ paths:
 
   /admin/getPendingRequests:
     get:
+      tags:
+        - admin   
       summary: Fetch all pending creator requests
       description: Retrieves a list of pending creator requests. Accessible only to authenticated admin users.
       security:
@@ -852,6 +868,8 @@ paths:
   
   /admin/transactions:
     get:
+      tags:
+        - admin  
       summary: Fetch user transactions
       description: Retrieves a list of transactions for the user
       responses:
@@ -919,6 +937,8 @@ paths:
 
   /admin/count:
     get:
+      tags:
+        - admin  
       summary: Fetch the total count of users
       description: Retrieves the total count of users or similar resources from the system.
       responses:
@@ -955,6 +975,8 @@ paths:
           
   /admin/games:
     get:
+      tags:
+        - admin  
       summary: Fetch the total count of games
       description: Retrieves the total number of games available in the system.
       responses:
@@ -991,6 +1013,8 @@ paths:
 
   /admin/events/{gameId}:
     get:
+      tags:
+        - admin    
       summary: Get events for a specific game
       description: Fetches all events associated with a given game ID.
       parameters:

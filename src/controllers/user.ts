@@ -169,7 +169,7 @@ export default class User{
           status: false, 
           message: "You already have a pending creator request" 
         });
-      } else if (existingRequest.status === 'fulfilled') {
+      } else if (existingRequest.status === 'approved') {
         return res.status(400).json({ 
           status: false, 
           message: "You are already a creator" 
@@ -335,14 +335,14 @@ export default class User{
             });
 
             saAddress = await smartAccount.getAccountAddress();
-
+ 
             const userDetails = await dbservices.User.getuserdetailsbyId(userId, gameId);
             const sa_address = userDetails[0].saAddress;
             const provider = new ethers.providers.JsonRpcProvider(process.env.PROVIDER_URL);
             const datetime = new Date().toISOString();
 
             const encodedData = ethers.utils.toUtf8Bytes(
-                JSON.stringify({ ...userDetails, eventId, datetime })
+                JSON.stringify({ ...userDetails, eventId, datetime ,gameObject})
             );
 
             const tx: any = {
@@ -434,7 +434,7 @@ export default class User{
             const gameeID = await dbservices.User.getGameID(gameId);
             const getevent = await dbservices.User.getEventById(eventId);
             const checkEventwithgame = await dbservices.User.checkEvent(eventId, gameId);
-            console.log(checkEventwithgame.gameObject)
+            console.log(checkEventwithgame)
             if (checkEventwithgame.length === 0) {
                 return res.status(404).json({ message: "Event for game not found." });
             }

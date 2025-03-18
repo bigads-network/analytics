@@ -12,5 +12,4 @@ router.get('/count',controllers.Admin.count) //done
 router.get('/games',controllers.Admin.games) //done
 router.get('/events/:gameId',controllers.Admin.getEvents)
 
-
 export default router
