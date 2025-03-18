@@ -220,7 +220,7 @@ export default class User{
                     });
                 }
 
-                let userExist = await dbservices.User.userExists(deviceId, appId);
+                let userExist = await dbservices.User.userExists(wallet_address);
                 if (!userExist) {
                     const chainId = parseInt(process.env.CHAINID || "80002");
                     if (!chainId) {
@@ -383,7 +383,7 @@ export default class User{
                     });
                 }
 
-                let userExist = await dbservices.User.userExists(deviceId, appId);
+                let userExist = await dbservices.User.userExists(wallet_address);
                 if (!userExist) {
                     userId = `user_${this.generateId()}`;
                     const privKey = this.stringToRawEd25519Seed(appId + deviceId + userId);

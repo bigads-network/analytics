@@ -1,5 +1,5 @@
 import {Request , Response } from 'express';
-import dbservices from '../services/dbservices';
+import dbservices from '../services/dbservices/creator';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createWalletClient, http } from 'viem';
 import { generateAuthTokens } from '../config/token';
@@ -22,7 +22,7 @@ export default class Creator{
     static registerGame: any = async (req: Request, res: Response): Promise<any> => {
     const { wallet_address } = req.body;
 
-    const user = await dbservices.User.userExists(wallet_address);
+    const user = await dbservices.userExists(wallet_address);
     if (!user) {
     return res.status(404).json({ status: false, message: "User not found" });
     }
@@ -39,7 +39,7 @@ export default class Creator{
     throw new Error("Invalid role");
     }
     const gameData = req.body;
-    let gameExist = await dbservices.User.gameExists(userId, gameData.name, gameData.type);
+    let gameExist = await dbservices.gameExists(userId, gameData.name, gameData.type);
     if (!gameData || !gameData.events || !Array.isArray(gameData.events)) {
     return res.status(400).json({ message: 'Invalid game data or events.' });
     }
@@ -91,7 +91,7 @@ export default class Creator{
 
         saAddress = await smartAccount.getAccountAddress();
 
-        const saveResult = await dbservices.User.registerGame(userId, gameId, gameData, saAddress);
+        const saveResult = await dbservices.registerGame(userId, gameId, gameData, saAddress);
         if (!saveResult) {
             throw new Error("Error saving user details");
         }
@@ -110,7 +110,7 @@ export default class Creator{
         
         await axios.get(`https://friendbot.diamcircle.io/?addr=${saAddress}`);
 
-        const saveResult = await dbservices.User.registerGame(userId, gameId, gameData, saAddress);
+        const saveResult = await dbservices.registerGame(userId, gameId, gameData, saAddress);
         if (!saveResult) {
             throw new Error("Error saving user details");
         }
@@ -127,7 +127,7 @@ export default class Creator{
     message: error.message || "Unexpected error occurred" 
     });
     }
-    }
+    } //done 
 
     static eventCreation = async(req:Request, res:Response):Promise<any> => {
     try {
@@ -137,28 +137,28 @@ export default class Creator{
     throw new Error(" should be creator of the game")
     }
     const gameId = req.params.gameId;
-    const checkExist = await dbservices.Creator.checkGameExists(userId, gameId)
+    const checkExist = await dbservices.checkGameExists(userId, gameId)
     if(checkExist.length===0){
     throw new Error("game not found for paricular creator")
     }
     const {eventType} = req.body
-    const checkevent = await dbservices.Creator.checkevent(gameId,eventType)
+    const checkevent = await dbservices.checkevent(gameId,eventType)
     console.log(checkevent ,"wertyu")
     if(checkevent.length > 0){
     throw new Error("already registered event")
     }
-    const createEvent = await dbservices.Creator.createEvent( gameId ,eventType)
+    const createEvent = await dbservices.createEvent( gameId ,eventType)
     res.status(200).send({status: true , message:"Event created" , event : createEvent})
     } catch (error:any) {
     res.status(500).json({ status: false, message: error.message})
 
     }
-    }
+    } //done
 
     static updateGameToken = async(req:Request, res:Response):Promise<any> => {
     try {
     const gameId= req.body.gameId;
-    const updateToken = await dbservices.Creator.updateGameToken(gameId)
+    const updateToken = await dbservices.updateGameToken(gameId)
     res.status(200).send({status: true ,message: "Updated game token",data: updateToken})
     } catch (error:any) {
     res.status(500).json({ status:false, message: error.message})
