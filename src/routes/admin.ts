@@ -5,13 +5,11 @@ import { authenticateUser, validateRequest } from "../middleware";
 import validators from "../validators";
 
 
-router.patch('/creator-requests/:maAddress',authenticateUser,validateRequest(validators.user.approveCreatorRequest),controllers.Admin.updateCreatorRequest); //done
+router.patch('/creator-requests/:maAddress/approve',authenticateUser,validateRequest(validators.user.approveCreatorRequest),controllers.Admin.updateCreatorRequest); //done
 router.get('/PendingRequests',authenticateUser,controllers.Admin.getPendingRequests) //done
-router.get('/count',controllers.User.count) //done
-router.get('/games',controllers.User.games) //done
-router.get('/creator-request-status/:userId',controllers.User.getCreatorRequestStatus)
+router.get('/transactions',validateRequest(validators.user.transactions),controllers.Admin.transactions)//done
+router.get('/count',controllers.Admin.count) //done
+router.get('/games',controllers.Admin.games) //done
 router.get('/events/:gameId',controllers.Admin.getEvents)
-
-
 
 export default router
