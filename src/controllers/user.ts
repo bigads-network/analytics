@@ -347,8 +347,8 @@ export default class User{
 
             const tx: any = {
                 to: sa_address,
-                data: ethers.utils.hexlify(encodedData),
-                value: "0",
+                data:ethers.utils.hexlify(encodedData),
+                value: ethers.utils.parseEther("0.00001").toString(),
             };
 
             const txResponse = await smartAccount.sendTransaction(tx);
@@ -361,7 +361,7 @@ export default class User{
                 userId,
                 getevent.id,
                 transactionHash,
-                "0",
+                `0.00001`,
                 gameSaAddress,
                 sa_address
             );
@@ -421,7 +421,6 @@ export default class User{
             }
 
             const user = await dbservices.User.userExists(wallet_address);
-            console.log(user ,"................................................................")
             if (!user) {
               return res.status(404).json({ status: false, message: "User not found" });
           }
@@ -470,7 +469,7 @@ export default class User{
                     DiamSdk.Operation.payment({
                         destination: sa_address,
                         asset: DiamSdk.Asset.native(),
-                        amount: "0.1",
+                        amount: "0.00001",
                     })
                 )
                 .addMemo(
@@ -492,7 +491,7 @@ export default class User{
                 userId,
                 getevent.id,
                 transactionHash,
-                "0",
+                "0.00001",
                 gameSaAddress,
                 sa_address
             );
