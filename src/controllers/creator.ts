@@ -129,6 +129,58 @@ export default class Creator{
     }
     } //done 
 
+    static async deleteGame(req: Request, res: Response): Promise<void> {
+        try {
+          const { gameId } = req.params; // Get gameId from URL params (varchar in schema)
+          const { id, userRole, maAddress } = req.body; // Assuming these come from body
+    
+          // Validate inputs
+          if (!gameId) {
+           res.status(400).json({ status: false, message: "Game ID is required" });
+          }
+    
+          if (!maAddress) {
+             res.status(400).json({ status: false, message: "User address is required" });
+          }
+    
+          // Check if user exists
+          const user = await dbservices.userExists(maAddress);
+          if (!user) {
+           res.status(404).json({ status: false, message: "User not found" });
+          }
+    
+          // Validate user role
+          if (userRole !== 'creator' && userRole !== 'admin') {
+          res.status(403).json({ status: false, message: "Unauthorized: Only creators or admins can delete games" });
+          }
+    
+          // Check if game exists using gameId (varchar from schema)
+          const game = await dbservices.gameExistsByGameId(gameId, parseInt(id));
+          if (!game) {
+             res.status(404).json({ status: false, message: "Game not found or not created by this user" });
+          }
+    
+          // Verify user ownership if creator
+          if (userRole === 'creator' && game.createrId !== user.id) {
+             res.status(403).json({ status: false, message: "Unauthorized: You can only delete your own games" });
+          }
+    
+          // Delete game and related data
+          const result = await dbservices.deleteGameAndRelatedData(gameId, user.id, userRole);
+    
+          res.status(200).json({ 
+            status: true, 
+            message: "Game and all related data deleted successfully",
+            data: result.deletedGame,
+          });
+        } catch (error) {
+           res.status(500).json({ 
+            status: false, 
+            message: error.message || "Failed to delete game and related data" 
+          });
+        }
+      }
+
     static eventCreation = async(req:Request, res:Response):Promise<any> => {
     try {
     const userId = req['user'].userId;

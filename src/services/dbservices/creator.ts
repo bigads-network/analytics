@@ -4,6 +4,7 @@ import { generateAuthTokens } from "../../config/token";
 import { events, games, transactions, userGames, users, creatorRequests } from "../../models/schema";
 import { generateGameToken } from "../../config/gameToken";
 import dotenv from "dotenv";
+import e from "express";
 dotenv.config();
 
 export default class Creator {
@@ -90,6 +91,66 @@ export default class Creator {
             }
           };
 
+          static gameExistsByGameId = async (gameId: string, id: number): Promise<any> => {
+            try {
+              const game = await postgreDb.query.games.findFirst({
+                where: and(eq(games.gameId, gameId), eq(games.createrId, id)),
+                columns: {
+                  id: true,
+                  gameId: true,
+                  createrId: true,
+                },
+              });
+              return game || null;
+            } catch (error: any) {
+              throw new Error(`Error checking game existence: ${error.message}`);
+            }
+          };
+      
+          static deleteGameAndRelatedData = async (gameId: string, userId: number, userRole: string): Promise<any> => {
+            try {
+              return await postgreDb.transaction(async (trx) => {
+                const game = await trx.query.games.findFirst({
+                  where: eq(games.gameId, gameId),
+                  columns: {
+                    id: true,
+                    createrId: true,
+                  },
+                });
+        
+                if (!game) {
+                  throw new Error("Game not found");
+                }
+        
+                if (userRole !== "admin" && userRole !== "creator") {
+                  throw new Error("Unauthorized: Only creators or admins can delete games");
+                }
+        
+                if (userRole === "creator" && game.createrId !== userId) {
+                  throw new Error("Unauthorized: You can only delete your own games");
+                }
+        
+                await trx.delete(transactions)
+                  .where(eq(transactions.fromGameId, game.id));
+        
+                await trx.delete(events)
+                  .where(eq(events.gameId, game.id));
+        
+                await trx.delete(userGames)
+                  .where(eq(userGames.gameId, game.id));
+        
+                const deletedGame = await trx.delete(games)
+                  .where(eq(games.gameId, gameId))
+                  .returning();
+        
+                return {
+                  deletedGame: deletedGame[0],
+                };
+              });
+            } catch (error: any) {
+              throw new Error(`Error deleting game and related data: ${error.message}`);
+            }
+          };
 
       static checkevent = async(gameId :any, eventtype:any):Promise<any> =>{
         try{
