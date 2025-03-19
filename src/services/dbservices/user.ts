@@ -317,25 +317,37 @@ export default class User {
     }
   }
 
-  static saveTransactionDetails = async(gameID:number ,creatorID:any ,userId:any , eventId:any , transactionHash:any,amount:any ,from:any, to:any ):Promise<any> => {
+  static saveTransactionDetails = async (
+    gameID: number,
+    creatorID: any,
+    userId: any,
+    eventId: any,
+    transactionHash: any,
+    amount: any,
+    from: any,
+    to: any
+  ): Promise<any> => {
     try {
+      const transactionChain = transactionHash.startsWith('0x') ? 'Polygon Testnet' : 'Diamante Testnet';
+  
       const result = await postgreDb.insert(transactions).values({
         transactionHash,
         amount,
         from,
         to,
         eventId,
-        GameCreator:creatorID,
-        toUser:userId,
-        fromGameId:gameID,
-        transactionChain:"DIAMANTE Testnet"
-        
+        GameCreator: creatorID,
+        toUser: userId,
+        fromGameId: gameID,
+        transactionChain,  
       }).returning();
+  
       return result[0];
-    } catch (error:any ){
+    } catch (error: any) {
       throw new Error(error);
     }
   }
+  
 
 
 
