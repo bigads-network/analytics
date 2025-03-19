@@ -347,8 +347,8 @@ export default class User{
 
             const tx: any = {
                 to: sa_address,
-                data: ethers.utils.hexlify(encodedData),
-                value: "0",
+                data:ethers.utils.hexlify(encodedData),
+                value: ethers.utils.parseEther("0.00001").toString(),
             };
 
             const txResponse = await smartAccount.sendTransaction(tx);
@@ -421,7 +421,6 @@ export default class User{
             }
 
             const user = await dbservices.User.userExists(wallet_address);
-            console.log(user ,"................................................................")
             if (!user) {
               return res.status(404).json({ status: false, message: "User not found" });
           }
