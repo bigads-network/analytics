@@ -361,7 +361,7 @@ export default class User{
                 userId,
                 getevent.id,
                 transactionHash,
-                "0",
+                `0.00001`,
                 gameSaAddress,
                 sa_address
             );
@@ -469,7 +469,7 @@ export default class User{
                     DiamSdk.Operation.payment({
                         destination: sa_address,
                         asset: DiamSdk.Asset.native(),
-                        amount: "0.1",
+                        amount: "0.00001",
                     })
                 )
                 .addMemo(
@@ -491,7 +491,7 @@ export default class User{
                 userId,
                 getevent.id,
                 transactionHash,
-                "0",
+                "0.00001",
                 gameSaAddress,
                 sa_address
             );
