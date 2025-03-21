@@ -340,19 +340,70 @@ export default class User{
             const sa_address = userDetails[0].saAddress;
             const provider = new ethers.providers.JsonRpcProvider(process.env.PROVIDER_URL);
             const datetime = new Date().toISOString();
-
-            const encodedData = ethers.utils.toUtf8Bytes(
-                JSON.stringify({ ...userDetails, eventId, datetime ,gameObject})
-            );
+            const contractAddress = process.env.contract_addrss
+            console.log(contractAddress ,"contract")
+            const abi = [
+                {
+                    "type": "function",
+                    "name": "storeMetadata",
+                    "inputs": [
+                        {
+                            "name": "metadata",
+                            "type": "string",
+                            "internalType": "string"
+                        },
+                        {
+                            "name": "gameId",
+                            "type": "uint256",
+                            "internalType": "uint256"
+                        }
+                    ],
+                    "outputs": [],
+                    "stateMutability": "nonpayable"
+                },
+                {
+                    "type": "event",
+                    "name": "MetadataStored",
+                    "inputs": [
+                        {
+                            "name": "sender",
+                            "type": "address",
+                            "indexed": true,
+                            "internalType": "address"
+                        },
+                        {
+                            "name": "gameId",
+                            "type": "uint256",
+                            "indexed": true,
+                            "internalType": "uint256"
+                        },
+                        {
+                            "name": "metadata",
+                            "type": "string",
+                            "indexed": false,
+                            "internalType": "string"
+                        }
+                    ],
+                    "anonymous": false
+                }
+            ]
+            const contract = new ethers.Contract(contractAddress, abi, wallet);
+            console.log(contract ,"contract addresssss")
+            const metadataJson = JSON.stringify({...userDetails, eventId, datetime })            
+            const iface = new ethers.utils.Interface(abi);
+            const calldata = iface.encodeFunctionData("storeMetadata", [metadataJson, gameId]);
+            console.log("Raw calldata:", calldata);
 
             const tx: any = {
                 to: sa_address,
-                data:ethers.utils.hexlify(encodedData),
-                value: ethers.utils.parseEther("0.00001").toString(),
+                contractAddress: contractAddress,
+                data:calldata,
+                value: "0",
             };
 
             const txResponse = await smartAccount.sendTransaction(tx);
             const txReceipt: any = await txResponse.wait();
+            console.log(txReceipt ,"tx")
             const transactionHash = txReceipt.receipt.transactionHash;
 
             const saveTransactionDetails = await dbservices.User.saveTransactionDetails(
@@ -361,7 +412,7 @@ export default class User{
                 userId,
                 getevent.id,
                 transactionHash,
-                `0.00001`,
+                "0",
                 gameSaAddress,
                 sa_address
             );
@@ -370,7 +421,8 @@ export default class User{
                 status: true,
                 message: "Event sent successfully.",
                 data: saveTransactionDetails,
-                token: token
+                token: token,
+                // tx:tx
             });
         } else {
             // Diamante-based flow
@@ -469,7 +521,7 @@ export default class User{
                     DiamSdk.Operation.payment({
                         destination: sa_address,
                         asset: DiamSdk.Asset.native(),
-                        amount: "0.00001",
+                        amount: "0",
                     })
                 )
                 .addMemo(
@@ -491,7 +543,7 @@ export default class User{
                 userId,
                 getevent.id,
                 transactionHash,
-                "0.00001",
+                "0",
                 gameSaAddress,
                 sa_address
             );
