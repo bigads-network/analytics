@@ -31,21 +31,12 @@ paths:
                 devicedata:
                   type: object
                   properties:
-                    imei:
+                    deviceId:
                       type: string
-                      example: "123456789012345"
-                    model:
-                      type: string
-                      example: "iPhone 14"
-                    brand:
-                      type: string
-                      example: "Apple"
+                      example: "iQOO neo"
                     sysName:
                       type: string
-                      example: "iOS"
-                    sysVersion:
-                      type: string
-                      example: "17.0"
+                      example: "android"
       responses:
         "200":
           description: Successful registration
