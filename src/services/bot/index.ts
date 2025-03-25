@@ -1,7 +1,8 @@
 import TelegramBot from 'node-telegram-bot-api'; // Import the required module
 import axios from 'axios';
+import { envConfigs } from '../../config/envconfig';
 
-const token = '7870226259:AAEUP4mpUCkvDURrKMMyD78XsvEoYnvApfM'; // Replace with your own bot token
+const token = envConfigs.telegram_token; // Replace with your own bot token
 const bot = new TelegramBot(token, { polling: true });
 
 

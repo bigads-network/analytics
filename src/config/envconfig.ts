@@ -14,7 +14,8 @@ const envVarsSchema = z.object({
   CHAINID80002:z.string(),
   CONTRACR_ADDRESS: z.string(),
   CHAINID137:z.string(),
-  CHAINID84532:z.string()
+  CHAINID84532:z.string(),
+  TELEGRAM_TOKEN:z.string(),
 });
 
 const envVars = envVarsSchema.parse(process.env);
@@ -29,7 +30,8 @@ export const envConfigs = {
   contractAddress : envVars.CONTRACR_ADDRESS,
   chain80002:envVars.CHAINID80002,
   chain137:envVars.CHAINID137,
-  chain84532 :envVars.CHAINID84532
+  chain84532 :envVars.CHAINID84532,
+  telegram_token:envVars.TELEGRAM_TOKEN
 };
 
 export const chainIdToChainName: any = {
