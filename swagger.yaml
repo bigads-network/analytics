@@ -34,7 +34,7 @@ paths:
                     deviceId:
                       type: string
                       example: "iQOO neo"
-                    sysName:
+                    OS:
                       type: string
                       example: "android"
       responses:
@@ -521,7 +521,7 @@ paths:
                     deviceId:
                       type: string
                       example: "iQOO neo"
-                    sysName:
+                    OS:
                       type: string
                       example: "android"
       responses:
