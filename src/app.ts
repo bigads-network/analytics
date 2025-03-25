@@ -8,7 +8,7 @@ import logger from "./config/logger";
 import path from "path";
 import swagger from "swagger-ui-express"
 import apiDocs from "./config/swagger";
-import "./services/bot"; // Import bot instance
+// import "./services/bot"; // Import bot instance
 
 const app = express();
 

@@ -14,7 +14,7 @@ bot.onText(/\/events/, async (msg) => {
     const chatId = msg.chat.id;
 
     try {
-        const response = await axios.get("http://localhost:8000/user/events");
+        const response = await axios.get(`${process.env.BACKEND_URL}/user/events`);
         const { status, data } = response.data;
 
         if (!status || !data.length) {
@@ -42,7 +42,7 @@ bot.onText(/\/events/, async (msg) => {
         const eventId = callbackQuery.data;
     
         try {
-            const response = await axios.get("http://localhost:8000/user/events");
+            const response = await axios.get(`${process.env.BACKEND_URL}/user/events`);
             const { data } = response.data;
             const event = data.find(event => event.eventId === eventId);
     
