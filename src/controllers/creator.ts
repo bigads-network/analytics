@@ -1,167 +1,230 @@
 import {Request , Response } from 'express';
-import dbservices from '../services/dbservices/creator';
+import dbservices from '../services/dbservices';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createWalletClient, http } from 'viem';
 import { generateAuthTokens } from '../config/token';
-import DiamSdk from "diamnet-sdk"
-import axios from 'axios';
 import { sha512_256 } from 'js-sha512';
 import { ethers } from 'ethers';
 import { createSmartAccountClient, Paymaster } from '@biconomy/account';
-import { chainIdToBundlerUrl, chainIdToChainName, providerUrl } from '../config/envconfig';
+import { chainIdToBundlerUrl, chainIdToChainName, envConfigs } from '../config/envconfig';
+import { generateGameToken } from '../config/gameToken';
 
 export default class Creator{
-
-    static generateId = () => Math.random().toString(36).substr(2, 8).toUpperCase();
-
-    static stringToRawEd25519Seed(str: string): Buffer {
-    const hash = sha512_256(str);
-    return Buffer.from(hash, 'hex');
-    }
-
-    static registerGame: any = async (req: Request, res: Response): Promise<any> => {
-    const { wallet_address } = req.body;
-
-    const user = await dbservices.userExists(wallet_address);
-    if (!user) {
-    return res.status(404).json({ status: false, message: "User not found" });
-    }
-
+   
+   static generateId = () => Math.random().toString(36).substr(2, 8).toUpperCase();
+   
+   static creatorRegister = async (req: Request, res: Response):Promise<any> => {
     try {
-    const userId = req['user'].userId;
-    const role = req['user'].role;
+        const { devicedata } = req.body;
 
-    if(user.id !== userId){
-    return res.status(403).json({ status: false, message: 'wallet addres is not associated with the userid' });
-    }
-
-    if (role !== 'creator' && role !== 'admin') {
-    throw new Error("Invalid role");
-    }
-    const gameData = req.body;
-    let gameExist = await dbservices.gameExists(userId, gameData.name, gameData.type);
-    if (!gameData || !gameData.events || !Array.isArray(gameData.events)) {
-    return res.status(400).json({ message: 'Invalid game data or events.' });
-    }
-    let message = "Game Already exists";
-    let saAddress;
-
-    // const walletAddress = req.body.walletAddress || '';
-    // console.log(walletAddress, "walletAddress")
-
-    if (wallet_address.startsWith('0x')) {
-    // Original Ethereum-based flow
-    if (!gameExist) {
-        const chainId = parseInt(process.env.CHAINID || "80002");
-        if (!chainId) {
-            throw new Error("Missing or invalid chainId in environment variables");
-        }
-        
-        const gameId = `game_${this.generateId()}`;
-        const privKey = sha512_256(gameData + gameId + userId);
-        
-        const rpcHttpProvider = new ethers.providers.JsonRpcProvider(process.env.PROVIDER_URL);
-        if (!rpcHttpProvider) {
-            return res.status(500).json({ status: false, message: "Error creating RPC provider" });
+        if (!devicedata) {
+            return res.status(400).json({ status: false, message: "Device data is required" });
         }
 
-        const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
-        if (!wallet) {
-            return res.status(500).json({ status: false, message: "Error creating wallet" });
+        let userExist = await dbservices.Creator.creatorExits(devicedata);
+        let message = "User Logged In";
+        let userId, saAddress, token;
+
+        if (!userExist) {
+            const chainId = parseInt(envConfigs.chainId || "80002");
+            if (!chainId) {
+                throw new Error("Missing or invalid chainId in environment variables");
+            }
+
+            userId = `creator_${this.generateId()}`; // Assuming `generateId` is defined elsewhere
+            const privKey = sha512_256(devicedata + userId);
+            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
+
+            if (!rpcHttpProvider) {
+                return res.status(500).json({ status: false, message: "Error creating RPC provider" });
+            }
+
+            const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
+            if (!wallet) {
+                return res.status(500).json({ status: false, message: "Error creating wallet" });
+            }
+
+            const wallet_address = await wallet.getAddress();
+            // 0xefBDeC8c2fec7B63a68a6dD31eC07327D0cF7a88 wallet_address
+            console.log(wallet_address, "wallet_address");
+
+            const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
+            const chainName = chainIdToChainName[chainId];
+            if (!chainName) {
+                return res.status(500).json({ status: false, message: "Unsupported chainId" });
+            }
+
+            const client = createWalletClient({
+                account,
+                chain: chainName,
+                transport: http(),
+            });
+
+
+            const bundlerUrl = chainIdToBundlerUrl[chainId];
+            if (!bundlerUrl) {
+                return res.status(500).json({ status: false, message: "Unsupported chainId for bundler" });
+            }
+            const Paymaster_key = envConfigs.paymaster_apikey;
+            if (!Paymaster_key) {
+                return res.status(500).json({ status: false, message: "Missing Paymaster API key" });
+            }
+
+            const smartAccount = await createSmartAccountClient({
+                signer: client,
+                bundlerUrl,
+                chainId,
+                biconomyPaymasterApiKey: Paymaster_key,
+            });
+
+            saAddress = await smartAccount.getAccountAddress();
+            console.log(saAddress ,"Account................................");
+            //0xcf03387269ec267bEEF77d932deB4437e811D459 Account................................
+            const saveResult = await dbservices.Creator.saveCreator(userId, devicedata, saAddress, wallet_address);
+
+            if (!saveResult) {
+                throw new Error("Error saving user details");
+            }
+
+            userExist = saveResult;
+            message = "User registered Successfully";
         }
 
-        const account: any = privateKeyToAccount(wallet.privateKey as any);
-        const chainName = chainIdToChainName[chainId];
-        const client = createWalletClient({
-            account,
-            chain: chainName,
-            transport: http(),
+        token = await generateAuthTokens({ userId: userExist.id, role: userExist.role });
+
+        return res.status(200).json({
+            status: true,
+            message,
+            data: {
+                id: userExist.id,
+                userId: userExist.userId,
+                role: userExist.role,
+                devicedata,
+                saAddress: userExist.saAddress,
+                walletAddress: userExist.walletAddress,
+            },
+            token,
         });
-
-        const eoa = client.account.address;
-        const bundlerUrl = chainIdToBundlerUrl[chainId];
-        const Paymaster_key = process.env.PAYMASTERAPI_KEY;
-
-        const smartAccount = await createSmartAccountClient({
-            signer: client,
-            bundlerUrl,
-            chainId,
-            biconomyPaymasterApiKey: Paymaster_key
-        });
-
-        saAddress = await smartAccount.getAccountAddress();
-
-        const saveResult = await dbservices.registerGame(userId, gameId, gameData, saAddress);
-        if (!saveResult) {
-            throw new Error("Error saving user details");
-        }
-
-        gameExist = saveResult;
-        message = "Game registered Successfully";
-    }
-    } else {
-    // Diamante-based flow
-    if (!gameExist) {
-        const gameId = `game_${this.generateId()}`;
-        const privKey = this.stringToRawEd25519Seed(gameData + gameId + userId);
-        const diamnetKeypair = DiamSdk.Keypair.fromRawEd25519Seed(privKey);
-        saAddress = diamnetKeypair.publicKey();
-        const saAddress_secret = diamnetKeypair.secret();
-        
-        await axios.get(`https://friendbot.diamcircle.io/?addr=${saAddress}`);
-
-        const saveResult = await dbservices.registerGame(userId, gameId, gameData, saAddress);
-        if (!saveResult) {
-            throw new Error("Error saving user details");
-        }
-        
-        gameExist = saveResult;
-        message = "Game registered Successfully";
-    }
-    }
-
-    return res.status(201).json({ message: message, data: gameExist });
     } catch (error: any) {
-    return res.status(500).json({ 
-    status: false, 
-    message: error.message || "Unexpected error occurred" 
-    });
+        return res.status(500).json({
+            status: false,
+            message: error.message || "Unexpected error occurred",
+        });
     }
-    } //done 
+   };
 
-    static eventCreation = async(req:Request, res:Response):Promise<any> => {
+   static gameRegister = async (req: Request, res: Response): Promise<any> => {
     try {
-    const userId = req['user'].userId;
-    const role = req['user'].role;
-    if(role !== 'creator') {
-    throw new Error(" should be creator of the game")
-    }
-    const gameId = req.params.gameId;
-    const checkExist = await dbservices.checkGameExists(userId, gameId)
-    if(checkExist.length===0){
-    throw new Error("game not found for paricular creator")
-    }
-    const {eventType} = req.body
-    const checkevent = await dbservices.checkevent(gameId,eventType)
-    console.log(checkevent ,"wertyu")
-    if(checkevent.length > 0){
-    throw new Error("already registered event")
-    }
-    const createEvent = await dbservices.createEvent( gameId ,eventType)
-    res.status(200).send({status: true , message:"Event created" , event : createEvent})
-    } catch (error:any) {
-    res.status(500).json({ status: false, message: error.message})
+        const creatorId = req['user'].userId;
+        const role = req['user'].role;
+        if (!creatorId || role!== "craetor") {
+            return res.status(401).json({ status: false, message: "Invaid role for Game Creation"});
+        }
+        const {gameName , gameType ,description}= req.body;
+        if (!gameName || !gameType ||!description) {
+            return res.status(400).json({ status: false, message: "Game data is required"});
+        }
+        let gameExist = await dbservices.Creator.gameExists(creatorId,gameName ,gameType );
+        let message = "Game Already exists";
+        let saAddress;
+        if (!gameExist) {
+            const chainId = parseInt(envConfigs.chainId || "80002");
+            if (!chainId) {
+                throw new Error("Missing or invalid chainId in environment variables");
+            }
+            
+            const gameId = `game_${this.generateId()}`;
+            const privKey = sha512_256(gameId + gameName +gameType);
+            
+            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
+            if (!rpcHttpProvider) {
+                return res.status(500).json({ status: false, message: "Error creating RPC provider" });
+            }
+    
+            const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
+            if (!wallet) {
+                return res.status(500).json({ status: false, message: "Error creating wallet" });
+            }
+            const wallet_address = await wallet.getAddress();
 
-    }
-    } //done
+            console.log("wallet" , wallet_address)
+            const account: any = privateKeyToAccount(wallet.privateKey as any);
+            const chainName = chainIdToChainName[chainId];
+            const client = createWalletClient({
+                account,
+                chain: chainName,
+                transport: http(),
+            });
+    
+            const eoa = client.account.address;
+            const bundlerUrl = chainIdToBundlerUrl[chainId];
+            const Paymaster_key = envConfigs.paymaster_apikey;
+    
+            const smartAccount = await createSmartAccountClient({
+                signer: client,
+                bundlerUrl,
+                chainId,
+                biconomyPaymasterApiKey: Paymaster_key
+            });
+    
+            saAddress = await smartAccount.getAccountAddress();
+    console.log(saAddress ,"saAddress................................................................");
+            const saveResult = await dbservices.Creator.registerGame(creatorId, gameId, gameName, gameType, description , saAddress ,wallet_address);
+            if (!saveResult) {
+                throw new Error("Error saving user details");
+            }
+    
+            gameExist = saveResult;
+            message = "Game registered Successfully";
+        }
 
-    static updateGameToken = async(req:Request, res:Response):Promise<any> => {
-    try {
-    const gameId= req.body.gameId;
-    const updateToken = await dbservices.updateGameToken(gameId)
-    res.status(200).send({status: true ,message: "Updated game token",data: updateToken})
-    } catch (error:any) {
-    res.status(500).json({ status:false, message: error.message})
+        const Gametoken= await generateGameToken(gameExist.id)
+        res.status(200).json({
+            status: true,
+            message:message,
+            data: gameExist,
+            gameToken : Gametoken
+        })  
+    } catch (error) {
+        res.status(500).json({
+            status: false,
+            message: error.message || "Unexpected error occurred",
+        })
     }
+   }
+
+
+   static eventsRegister = async( req: Request, res: Response):Promise<any> => {
+    try{
+        const creatorId = req['user'].userId;
+        const role = req['user'].role;
+        if (!creatorId || role!== "craetor") {
+            return res.status(401).json({ status: false, message: "Invaid role for Event Creation"});
+        }
+        const { eventType} = req.body;
+        const gameid = req.body.gameId;
+
+        if (!eventType) {
+            return res.status(400).json({ status: false, message: "Event data is required"});
+        }
+        const eventExists = await dbservices.Creator.eventexists(gameid ,eventType)
+        if (eventExists) {
+            return res.status(400).json({ status: false, message: "Event already exists for this game"});
+        }
+        const eventId = `event_${this.generateId()}`; // Assuming `generateId` is defined elsewhere
+        const event = await dbservices.Creator.registerEvent(gameid,eventId ,eventType)
+        res.status(200).json({
+            status: true,
+            message: "Event created successfully",
+            event: event
+        })
+        
+    }catch(error){
+        res.status(500).json({
+            status: false,
+            message: error.message || "Unexpected error occurred",
+        })
     }
+   }
+   
 }

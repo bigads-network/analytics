@@ -1,8 +1,7 @@
-// import { User } from "../../controllers/user";
-import User from "./user";
 import Creator from "./creator";
+import User from "./user"
 
 export default{
-   User,
-   Creator
+   Creator,
+   User
 }

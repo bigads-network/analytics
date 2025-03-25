@@ -1,585 +1,271 @@
 import {Request , Response } from 'express';
-import dbservices from '../services/dbservices';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createWalletClient, http } from 'viem';
 import { generateAuthTokens } from '../config/token';
-import DiamSdk from "diamnet-sdk"
-import axios from 'axios';
 import { sha512_256 } from 'js-sha512';
 import { ethers } from 'ethers';
-import { createSmartAccountClient, Paymaster } from '@biconomy/account';
-import { chainIdToBundlerUrl, chainIdToChainName, providerUrl } from '../config/envconfig';
-
-
+import { createSmartAccountClient, Paymaster, PaymasterMode,BiconomySmartAccountV2 } from '@biconomy/account';
+// import {
+//     createSmartAccountClient,
+//     createBicoPaymasterClient,
+//     toNexusAccount,
+//   } from '@biconomy/abstractjs';
+import { chainIdToBundlerUrl, chainIdToChainName, envConfigs } from '../config/envconfig';
+import { generateGameToken } from '../config/gameToken';
+import dbservices from '../services/dbservices';
+import { polygonAmoy } from 'viem/chains';
 
 export default class User{
 
+    static generateId = () => Math.random().toString(36).substr(2, 8).toUpperCase();
 
-  static generateId = () => Math.random().toString(36).substr(2, 8).toUpperCase();
-
-  static registerUser: any = async (req: Request, res: Response) => {
-    try {
-        const { appId, deviceId, maAddress } = req.body;
-        const walletAddress = maAddress || '';
-
-        let userExist, message = "User Logged In", userId, saAddress, token;
-
-        if (walletAddress.startsWith('0x')) {
-            if (!appId || !deviceId || !maAddress) {
-                return res.status(400).json({ 
-                    status: false, 
-                    message: "Missing required fields: appId, deviceId, maAddress" 
-                });
-            }
-
-            userExist = await dbservices.User.userExists(maAddress);
-
-            if (!userExist) {
-                const chainId = parseInt(process.env.CHAINID || "80002");
-                if (!chainId) {
-                    throw new Error("Missing or invalid chainId in environment variables");
-                }
-
-                userId = `user_${this.generateId()}`;  
-                const privKey = sha512_256(appId + deviceId + userId);  
-                const rpcHttpProvider = new ethers.providers.JsonRpcProvider(process.env.PROVIDER_URL);
-                if (!rpcHttpProvider) {
-                    return res.status(500).json({ status: false, message: "Error creating RPC provider" });
-                }
-
-                const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
-                if (!wallet) {
-                    return res.status(500).json({ status: false, message: "Error creating wallet" });
-                }
-
-                const account: any = privateKeyToAccount(wallet.privateKey as any);
-                const chainName = chainIdToChainName[chainId];
-                const client = createWalletClient({
-                    account,
-                    chain: chainName,
-                    transport: http(),
-                });
-
-                const eoa = client.account.address;
-                const bundlerUrl = chainIdToBundlerUrl[chainId];
-                const Paymaster_key = process.env.PAYMASTERAPI_KEY;
-
-                const smartAccount = await createSmartAccountClient({
-                    signer: client,
-                    bundlerUrl,
-                    chainId,
-                    biconomyPaymasterApiKey: Paymaster_key
-                });
-                saAddress = await smartAccount.getAccountAddress();
-
-                const saveResult = await dbservices.User.saveDetails(userId, appId, deviceId, saAddress, maAddress);
-                if (!saveResult) {
-                    throw new Error("Error saving user details");
-                }
-
-                userExist = saveResult;
-                message = "User registered Successfully";
-            }
-
-            token = await generateAuthTokens({userId: userExist.id, role: userExist.role});
-
-            return res.status(200).send({
-                message,
-                data: { 
-                    id: userExist.id,
-                    userId: userExist.userId, 
-                    role: userExist.role, 
-                    appId, 
-                    deviceId, 
-                    saAddress: userExist.saAddress, 
-                    maAddress: userExist.maAddress 
-                },
-                token,
-            });
-        } else {
-            // Diamante-based flow
-            if (!appId || !deviceId) {
-                return res.status(400).json({
-                    status: false,
-                    message: "Missing required fields: appId, deviceId",
-                });
-            }
-
-            userExist = await dbservices.User.userExists(maAddress);
-            
-            if (!userExist) {
-                userId = `user_${this.generateId()}`;
-                const privKey = this.stringToRawEd25519Seed(appId + deviceId + userId);
-                const diamnetKeypair = DiamSdk.Keypair.fromRawEd25519Seed(privKey);
-                saAddress = diamnetKeypair.publicKey();
-                await axios.get(`https://friendbot.diamcircle.io/?addr=${saAddress}`);
-
-                const saveResult = await dbservices.User.saveDetails(userId, appId, deviceId, saAddress, maAddress);
-                if (!saveResult) {
-                    throw new Error("Error saving user details");
-                }
-                userExist = saveResult;
-                message = "User registered Successfully";
-            }
-
-            token = await generateAuthTokens({
-                userId: userExist.id,
-                role: userExist.role,
-            });
-
-            return res.status(200).send({
-                message,
-                data: {
-                    id: userExist.id,
-                    userId: userExist.userId,
-                    role: userExist.role,
-                    appId,
-                    deviceId,
-                    saAddress: userExist.saAddress,
-                    maAddress: userExist.maAddress 
-                },
-                token,
-            });
-        }
-    } catch (error: any) {
-        console.error("Unexpected error:", error);
-        return res.status(500).json({ 
-            status: false, 
-            message: error.message || "Unexpected error occurred" 
-        });
-    }
-  };
-
-  static requestCreator = async(req:Request, res:Response):Promise<any> => {
-  try {
-    const { maAddress } = req.body;
-    
-    // Check if user exists
-    const user = await dbservices.User.userExists(maAddress);
-    console.log(user.id ,"userid")
-    if (!user) {
-      return res.status(404).json({ status: false, message: "User not found" });
-    }
-
-    // Check if user already has a pending request
-    const existingRequest = await dbservices.User.getCreatorRequest(maAddress);
-    if (existingRequest) {
-      if (existingRequest.status === 'pending') {
-        return res.status(400).json({ 
-          status: false, 
-          message: "You already have a pending creator request" 
-        });
-      } else if (existingRequest.status === 'approved') {
-        return res.status(400).json({ 
-          status: false, 
-          message: "You are already a creator" 
-        });
-      }
-    }
-
-    // Create new creator request
-    const creatorRequest = await dbservices.User.createCreatorRequest( user.id ,maAddress);
-    if (!creatorRequest) {
-      return res.status(404).json({ 
-        status: false, 
-        message: "Failed to create creator request" 
-      });
-    }
-
-    return res.status(200).json({ 
-      status: true, 
-      message: "Creator request created", 
-      data: creatorRequest 
-    });
-    
-  } catch (error) {
-    return res.status(500).json({ 
-      status: false, 
-      message: error.message || "Unexpected error occurred" 
-    });
-  }
-  };
-
-  static sendEvents = async (req: Request, res: Response): Promise<any> => {
-    const {  wallet_address } = req.body;
-    const eventId: any = req.body.eventId;
-
-    console.log(process.env.PROVIDER_URL ,"providerrrrrr")
-    try {
-        let userId: string | null = null;
-        let token, saAddress;
-        
-        if (wallet_address.startsWith('0x')) {
-            // Original Ethereum-based flow
-            if (req["user"] === null) {
-                const { appId, deviceId } = req.body;
-                if (!appId || !deviceId) {
-                    return res.status(400).json({
-                        status: false,
-                        message: "Missing required fields: appId, deviceId",
-                    });
-                }
-
-                let userExist = await dbservices.User.userExists(wallet_address);
-                if (!userExist) {
-                    const chainId = parseInt(process.env.CHAINID || "80002");
-                    if (!chainId) {
-                        throw new Error("Missing or invalid chainId in environment variables");
-                    }
-
-                    userId = `user_${this.generateId()}`;
-                    const privKey = sha512_256(appId + deviceId + userId);
-                    const rpcHttpProvider = new ethers.providers.JsonRpcProvider(process.env.PROVIDER_URL);
-                    if (!rpcHttpProvider) {
-                        return res.status(500).json({ status: false, message: "Error creating RPC provider" });
-                    }
-
-                    const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
-                    if (!wallet) {
-                        return res.status(500).json({ status: false, message: "Error creating wallet" });
-                    }
-
-                    const account: any = privateKeyToAccount(wallet.privateKey as any);
-                    const chainName = chainIdToChainName[chainId];
-                    const client = createWalletClient({
-                        account,
-                        chain: chainName,
-                        transport: http(),
-                    });
-
-                    const eoa = client.account.address;
-                    const bundlerUrl = chainIdToBundlerUrl[chainId];
-                    const Paymaster_key = process.env.PAYMASTERAPI_KEY;
-
-                    const smartAccount = await createSmartAccountClient({
-                        signer: client,
-                        bundlerUrl,
-                        chainId,
-                        biconomyPaymasterApiKey: Paymaster_key,
-                    });
-
-                    saAddress = await smartAccount.getAccountAddress();
-
-                    const saveResult = await dbservices.User.saveDetails(userId, appId, deviceId, saAddress);
-                    if (!saveResult) {
-                        throw new Error("Error saving user details");
-                    }
-                    userExist = saveResult;
-                }
-                userId = userExist.id;
-
-                token = await generateAuthTokens({
-                    userId: userExist.id,
-                    role: userExist.role,
-                });
-            } else {
-                userId = req["user"].userId;
-            }
-
-            if (!userId) {
-                return res.status(401).json({ message: "User authentication failed." });
-            }
-
-            const eventId: any = req.body.eventId;
-            const gameId = req.body.gameId as any;
-            const gameObject = await dbservices.User.gameObject(gameId);
-            const gameeID = await dbservices.User.getGameID(gameId);
-            const getevent = await dbservices.User.getEventById(eventId);
-            const checkEventwithgame = await dbservices.User.checkEvent(eventId, gameId);
-            if (checkEventwithgame.length === 0) {
-                return res.status(404).json({ message: "Event for game not found." });
-            }
-
-            const gameSaAddress = gameeID.gameSaAddress;
-            const creatorID = gameeID.createrId;
-            const generateGameId = gameeID.gameId;
-
-            if (!getevent || !gameeID) {
-                return res.status(404).json({ message: "Event not found." });
-            }
-
-            if (!gameeID.isApproved) {
-                return res.status(403).json({ message: "Game is not approved for sending events" });
-            }
-
-            const chainId = parseInt(process.env.CHAINID || "80002");
-            const privKey = sha512_256(gameObject + generateGameId + creatorID);
-
-            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(process.env.PROVIDER_URL);
-            if (!rpcHttpProvider) {
-                return res.status(500).json({ status: false, message: "Error creating RPC provider" });
-            }
-
-            const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
-            if (!wallet) {
-                return res.status(500).json({ status: false, message: "Error creating wallet" });
-            }
-
-            const account: any = privateKeyToAccount(wallet.privateKey as any);
-            const chainName = chainIdToChainName[chainId];
-            const client = createWalletClient({
-                account,
-                chain: chainName,
-                transport: http(process.env.PROVIDER_URL),
-            });
-
-            const eoa = client.account.address;
-            const bundlerUrl = chainIdToBundlerUrl[chainId];
-            const Paymaster_key = process.env.PAYMASTERAPI_KEY;
-
-            const smartAccount = await createSmartAccountClient({
-                signer: client,
-                bundlerUrl,
-                chainId,
-                biconomyPaymasterApiKey: Paymaster_key,
-            });
-
-            saAddress = await smartAccount.getAccountAddress();
- 
-            const userDetails = await dbservices.User.getuserdetailsbyId(userId, gameId);
-            const sa_address = userDetails[0].saAddress;
-            const provider = new ethers.providers.JsonRpcProvider(process.env.PROVIDER_URL);
-            const datetime = new Date().toISOString();
-            const contractAddress = process.env.contract_addrss
-            console.log(contractAddress ,"contract")
-            const abi = [
-                {
-                    "type": "function",
-                    "name": "storeMetadata",
-                    "inputs": [
-                        {
-                            "name": "metadata",
-                            "type": "string",
-                            "internalType": "string"
-                        },
-                        {
-                            "name": "gameId",
-                            "type": "uint256",
-                            "internalType": "uint256"
-                        }
-                    ],
-                    "outputs": [],
-                    "stateMutability": "nonpayable"
-                },
-                {
-                    "type": "event",
-                    "name": "MetadataStored",
-                    "inputs": [
-                        {
-                            "name": "sender",
-                            "type": "address",
-                            "indexed": true,
-                            "internalType": "address"
-                        },
-                        {
-                            "name": "gameId",
-                            "type": "uint256",
-                            "indexed": true,
-                            "internalType": "uint256"
-                        },
-                        {
-                            "name": "metadata",
-                            "type": "string",
-                            "indexed": false,
-                            "internalType": "string"
-                        }
-                    ],
-                    "anonymous": false
-                }
-            ]
-            const contract = new ethers.Contract(contractAddress, abi, wallet);
-            console.log(contract ,"contract addresssss")
-            const metadataJson = JSON.stringify({...userDetails, eventId, datetime })            
-            const iface = new ethers.utils.Interface(abi);
-            const calldata = iface.encodeFunctionData("storeMetadata", [metadataJson, gameId]);
-            console.log("Raw calldata:", calldata);
-
-            const tx: any = {
-                to: sa_address,
-                contractAddress: contractAddress,
-                data:calldata,
-                value: "0",
-            };
-
-            const txResponse = await smartAccount.sendTransaction(tx);
-            const txReceipt: any = await txResponse.wait();
-            console.log(txReceipt ,"tx")
-            const transactionHash = txReceipt.receipt.transactionHash;
-
-            const saveTransactionDetails = await dbservices.User.saveTransactionDetails(
-                gameId,
-                gameeID.createrId,
-                userId,
-                getevent.id,
-                transactionHash,
-                "0",
-                gameSaAddress,
-                sa_address
-            );
-
-            return res.status(200).json({
+    static games= async(req: Request, res: Response): Promise<any> =>{
+        try {
+            const games = await dbservices.User.getGames()
+            return res.json({
                 status: true,
-                message: "Event sent successfully.",
-                data: saveTransactionDetails,
-                token: token,
-                // tx:tx
-            });
-        } else {
-            // Diamante-based flow
-            if (req["user"] === null) {
-                const { appId, deviceId } = req.body;
-                if (!appId || !deviceId) {
-                    return res.status(400).json({
-                        status: false,
-                        message: "Missing required fields: appId, deviceId",
-                    });
-                }
-
-                let userExist = await dbservices.User.userExists(wallet_address);
-                if (!userExist) {
-                    userId = `user_${this.generateId()}`;
-                    const privKey = this.stringToRawEd25519Seed(appId + deviceId + userId);
-                    const diamnetKeypair = DiamSdk.Keypair.fromRawEd25519Seed(privKey);
-                    const saAddress = diamnetKeypair.publicKey();
-
-                    await axios.get(`https://friendbot.diamcircle.io/?addr=${saAddress}`);
-
-                    const saveResult = await dbservices.User.saveDetails(
-                        userId,
-                        appId,
-                        deviceId,
-                        saAddress
-                    );
-
-                    if (!saveResult) {
-                        throw new Error("Error saving user details");
-                    }
-
-                    userExist = saveResult;
-                }
-
-                userId = userExist.id;
-
-                token = await generateAuthTokens({
-                    userId: userExist.id,
-                    role: userExist.role,
-                });
-            } else {
-                userId = req["user"].userId;
-            }
-
-            if (!userId) {
-                return res.status(401).json({ message: "User authentication failed." });
-            }
-
-            const user = await dbservices.User.userExists(wallet_address);
-            if (!user) {
-              return res.status(404).json({ status: false, message: "User not found" });
-          }
-            if(user.id !== userId){
-              return res.status(403).json({ status: false, message: 'wallet addres is not associated with the userid' });
-            }
-
-            const gameId = req.body.gameId as any;
-            const gameObject = await dbservices.User.gameObject(gameId);
-            const gameeID = await dbservices.User.getGameID(gameId);
-            const getevent = await dbservices.User.getEventById(eventId);
-            const checkEventwithgame = await dbservices.User.checkEvent(eventId, gameId);
-            console.log(checkEventwithgame)
-            if (checkEventwithgame.length === 0) {
-                return res.status(404).json({ message: "Event for game not found." });
-            }
-
-            const gameSaAddress = gameeID.gameSaAddress;
-            const creatorID = gameeID.createrId;
-            const generateGameId = gameeID.gameId;
-
-            if (!getevent || !gameeID) {
-                return res.status(404).json({ message: "Event not found." });
-            }
-
-            if (!gameeID.isApproved) {
-                return res.status(403).json({ message: "Game is not approved for sending events" });
-            }
-
-            const server = new DiamSdk.Aurora.Server("https://diamtestnet.diamcircle.io/");
-            const privKey = this.stringToRawEd25519Seed(gameObject + generateGameId + creatorID);
-            const diamnetKeypair = DiamSdk.Keypair.fromRawEd25519Seed(privKey);
-            const saAddress = diamnetKeypair.publicKey();
-            const saAddress_secret = diamnetKeypair.secret();
-
-            const sourceAccount = await server.loadAccount(saAddress);
-            const userDetails = await dbservices.User.getuserdetailsbyId(userId, gameId);
-            const sa_address = userDetails[0].saAddress;
-            const datetime = new Date().toISOString();
-
-            const transaction = new DiamSdk.TransactionBuilder(sourceAccount, {
-                fee: DiamSdk.BASE_FEE,
-                networkPassphrase: DiamSdk.Networks.TESTNET,
+                message: "Game List Fetched Successfully",
+                data: games
             })
-                .addOperation(
-                    DiamSdk.Operation.payment({
-                        destination: sa_address,
-                        asset: DiamSdk.Asset.native(),
-                        amount: "0",
-                    })
-                )
-                .addMemo(
-                    DiamSdk.Memo.text(
-                        JSON.stringify({ ...userDetails, eventId, datetime }).slice(0, 28)
-                    )
-                )
-                .setTimeout(180)
-                .build();
-
-            transaction.sign(diamnetKeypair);
-
-            const result = await server.submitTransaction(transaction);
-            const transactionHash = result.hash;
-
-            const saveTransactionDetails = await dbservices.User.saveTransactionDetails(
-                gameId,
-                gameeID.createrId,
-                userId,
-                getevent.id,
-                transactionHash,
-                "0",
-                gameSaAddress,
-                sa_address
-            );
-
-            return res.status(200).json({
-                status: true,
-                message: "Event sent successfully.",
-                data: saveTransactionDetails,
-                token: token
-            });
-        }
-    } catch (error: any) {
-        console.error("Unexpected error:", error);
-        return res.status(500).json({
+        } catch (error) {
+          res.status(500).json({
             status: false,
             message: error.message || "Unexpected error occurred",
-        });
+          })  
+        }
     }
-  };
 
-  static getCreatorRequestStatus = async(req:Request , res:Response): Promise<any>=>{
-      try{
-         const status = await dbservices.User.getCreatorRequestStatus(parseInt(req.params.userId))
-         res.status(200).json({ status: true, message:"creator request status fetch successful" , data: status})
-      }catch(error:any){
-        console.error("Unexpected error:", error);
-        return res.status(500).json({ status: false, message: error || "Unexpected error occurred" });
+    static events = async(req: Request, res: Response): Promise<any> =>{
+      try {
+          const events = await dbservices.User.getEvents()
+          return res.json({
+            status: true,
+            message: "Event List Fetched Successfully",
+            data: events
+          })
+      } catch (error) {
+        res.status(500).json({
+          status: false,
+          message: error.message || "Unexpected error occurred",
+        })  
       }
+    }
+
+    static fireEvent = async(req: Request, res: Response): Promise<any>=>{
+    try {
+    const abi = [
+    {
+    type: "function",
+    name: "storeMetadata",
+    inputs: [
+      {
+        name: "metadata",
+        type: "string",
+        internalType: "string",
+      },
+      {
+        name: "gameId",
+        type: "uint256",
+        internalType: "uint256",
+      },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+    },
+    {
+    type: "event",
+    name: "MetadataStored",
+    inputs: [
+      {
+        name: "sender",
+        type: "address",
+        indexed: true,
+        internalType: "address",
+      },
+      {
+        name: "gameId",
+        type: "uint256",
+        indexed: true,
+        internalType: "uint256",
+      },
+      {
+        name: "metadata",
+        type: "string",
+        indexed: false,
+        internalType: "string",
+      },
+    ],
+    anonymous: false,
+    },
+    ];
+    const eventId = req.params.eventId
+    const {gameId ,id } = await dbservices.User.getGameid(eventId)
+    const eventCheck = await dbservices.User.eventCheck(gameId ,eventId)
+      if(!eventCheck){
+        return res.status(400).json({ status: false, message: "Event does not exist for this game"});
+      }
+    console.log(gameId , id ,".................gameid .id");     
+    const { devicedata } = req.body;
+    if (!devicedata) {
+            return res.status(400).json({ status: false, message: "Device data is required" });
+        }
+    let userExist = await dbservices.User.userExits(devicedata);
+    let userId, saAddress ;
+    const gameDetails = await dbservices.User.getGameDetails(gameId)
+      const gameName = gameDetails.Gamename;
+      const gameType = gameDetails.Gametype;
+      const CreatedgameId=gameDetails.gameId
+
+    if(userExist){
+    console.log("existssssssss................................................................")
+    if(gameDetails.creatorId=== userExist.id){
+        return res.status(500).send({ status:false ,message : "cannot fire event for own game "})
+      }
+      const chainId = parseInt(envConfigs.chainId);
+      if (!chainId) {
+          throw new Error("Missing or invalid chainId in environment variables");
+      }
+      userId =userExist.userId ;
+      const privKey = "0x" + sha512_256(userId) ;
+
+      console.log(privKey, "priva...........");
+      const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
+
+    const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
+
+    const wallet_address = await wallet.getAddress();
+    const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
+
+    const client = createWalletClient({
+      account,
+      chain: polygonAmoy,
+      transport: http(),
+    });
+
+    const smartAccount = await createSmartAccountClient({
+      signer: client,
+      bundlerUrl:envConfigs.chain80002,
+      biconomyPaymasterApiKey: envConfigs.paymaster_apikey,
+    });
+
+    saAddress = await smartAccount.getAccountAddress();
+    const datetime = new Date().toISOString();
+    const contractAddress = envConfigs.contractAddress;
+    const metadata = JSON.stringify({ ...userExist, id, datetime });
+    const iface = new ethers.utils.Interface(abi);
+    const calldata = iface.encodeFunctionData("storeMetadata", [
+      metadata,
+      gameId,
+    ]);
+    const tx = {
+      to: contractAddress,
+      data: calldata,
+      value: "0",
+    };
+    const txResponse = await smartAccount.sendTransaction(tx, {
+      paymasterServiceData: {
+        mode: PaymasterMode.SPONSORED,
+      },
+    });
+
+    const userOpReceipt = await txResponse.wait();
+      const transactionHash = userOpReceipt.receipt.transactionHash;
+
+    const saveTransactionDetails = await dbservices.User.saveTransactionDetails(
+      gameId,
+      userExist.id,
+      id,
+      transactionHash,
+      "polygon",
+        "0",          
+        );
+          return res.status(200).json({
+          status: true,
+          message: "Event Fired Successfully",
+          transactionDetails : saveTransactionDetails,
+          user:userExist
+        })
+    }     
+
+    if(!userExist){
+      const chainId = parseInt(envConfigs.chainId);
+      if (!chainId) {
+          throw new Error("Missing or invalid chainId in environment variables");
+      }
+    console.log("inside................")
+    userId = `user_${this.generateId()}`;
+    const privKey = "0x" + sha512_256(userId)
+    // const source = "1086651866" + "sushilIsKing";
+    // const privKey = "0x" + sha512_256(source);
+
+    console.log(privKey, "priva...........");
+    const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
+
+    const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
+
+    const wallet_address = await wallet.getAddress();
+    const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
+
+    const client = createWalletClient({
+    account,
+    chain: polygonAmoy,
+    transport: http(),
+    });
+
+    const smartAccount = await createSmartAccountClient({
+    signer: client,
+    bundlerUrl:envConfigs.chain80002,
+    biconomyPaymasterApiKey: envConfigs.paymaster_apikey,
+    });
+
+    saAddress = await smartAccount.getAccountAddress();
+    console.log(saAddress, "Account................................");
+    const saveResult = await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
+
+    userExist = saveResult
+    const datetime = new Date().toISOString();
+    const contractAddress = envConfigs.contractAddress;
+    const metadata = JSON.stringify({ ...userExist, id, datetime });
+    const iface = new ethers.utils.Interface(abi);
+    const calldata = iface.encodeFunctionData("storeMetadata", [metadata,gameId]);
+    const tx = {
+    to: contractAddress,
+    data: calldata,
+    value: "0",
+    };
+
+    const txResponse = await smartAccount.sendTransaction(tx, {
+    paymasterServiceData: {
+    mode: PaymasterMode.SPONSORED,
+    },
+    });
+    console.log(txResponse, "txResponse...............");
+
+    const userOpReceipt = await txResponse.wait();
+    console.log("userOpReceipt...........", userOpReceipt);
+    const transactionHash = userOpReceipt.receipt.transactionHash;
+
+    const saveTransactionDetails = await dbservices.User.saveTransactionDetails(
+    gameId,
+    userExist.id,
+    id,
+    transactionHash,
+    "polygon",
+    "0",          
+    );
+    return res.status(200).json({
+      status: true,
+      message: "Event Fired Successfully",
+      transactionDetails : saveTransactionDetails,
+      user:userExist
+    })
   }
-
-  static stringToRawEd25519Seed(str: string): Buffer {
-    const hash = sha512_256(str);
-    return Buffer.from(hash, 'hex');
-   }
-   
+    } catch (error) {
+      console.log(error ,"Exception")
+      res.status(500).json({
+        status: false,
+        message: error.message || "Unexpected error occurred",
+      })
+    }
+  }  
 }
-
-
-

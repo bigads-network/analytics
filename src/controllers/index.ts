@@ -1,10 +1,8 @@
 
-import User from "./user"
-import Admin from "./admin"
 import Creator from "./creator"
+import User from "./user"
 
 export default{
-   User,
-   Admin,
-   Creator
+   Creator,
+   User
 }

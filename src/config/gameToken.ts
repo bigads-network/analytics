@@ -1,7 +1,8 @@
 import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import { envConfigs } from './envconfig';
 
-const secretKey = process.env.GAME_JWT_SECRET ;
+const secretKey = envConfigs.jwtsecret ;
 
 export const generateGameToken = (gameId: number | string): string => {
   
@@ -16,8 +17,7 @@ export const generateGameToken = (gameId: number | string): string => {
   
 
   export const authenticateGameToken = (req: Request, res: Response, next: NextFunction): void => {
-    const token = req.headers['game_authorization_token'] as string;
-    
+    const token = req.headers['game_authorization_token'] as string;    
     if (!token) {
       res.status(401).json({ message: "Token is missing from gameAuthorization header" });
       return; // Ensure the function exits after sending a response
