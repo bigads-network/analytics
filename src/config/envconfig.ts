@@ -37,15 +37,12 @@ export const envConfigs = {
 export const chainIdToChainName: any = {
   137: polygon,
   80002:polygonAmoy,
-  84532:baseSepolia
 };
 
-export const providerUrl=process.env.PROVIDER_URL; // polygon
 
 export const chainIdToBundlerUrl:any ={
   137:envConfigs.chain137,
   80002:envConfigs.chain80002,
-  84532:envConfigs.chain84532
 }
 
 

@@ -36,6 +36,7 @@ export const events = pgTable('events', {
   eventId: varchar('event_id').unique(),
   gameId: integer('game_id').references(() => games.id),
   eventType: varchar('event_type'),
+  eventdescription: varchar('event_description'),
   createdAt: timestamp('created_at').defaultNow(),
 },
 (table) => [{

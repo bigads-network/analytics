@@ -1,7 +1,6 @@
 import {Request , Response } from 'express';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createWalletClient, http } from 'viem';
-import { generateAuthTokens } from '../config/token';
 import { sha512_256 } from 'js-sha512';
 import { ethers } from 'ethers';
 import { createSmartAccountClient, Paymaster, PaymasterMode,BiconomySmartAccountV2 } from '@biconomy/account';
@@ -104,20 +103,15 @@ export default class User{
       if(!eventCheck){
         return res.status(400).json({ status: false, message: "Event does not exist for this game"});
       }
-    console.log(gameId , id ,".................gameid .id");     
     const { devicedata } = req.body;
     if (!devicedata) {
             return res.status(400).json({ status: false, message: "Device data is required" });
         }
     let userExist = await dbservices.User.userExits(devicedata);
     let userId, saAddress ;
-    const gameDetails = await dbservices.User.getGameDetails(gameId)
-      const gameName = gameDetails.Gamename;
-      const gameType = gameDetails.Gametype;
-      const CreatedgameId=gameDetails.gameId
+    const gameDetails = await dbservices.User.getGameDetails(gameId ,eventId)
 
     if(userExist){
-    console.log("existssssssss................................................................")
     if(gameDetails.creatorId=== userExist.id){
         return res.status(500).send({ status:false ,message : "cannot fire event for own game "})
       }
@@ -128,30 +122,42 @@ export default class User{
       userId =userExist.userId ;
       const privKey = "0x" + sha512_256(userId) ;
 
-      console.log(privKey, "priva...........");
       const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
 
     const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
 
     const wallet_address = await wallet.getAddress();
     const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
+    const chainName = chainIdToChainName[chainId];
+    if (!chainName) {
+        return res.status(500).json({ status: false, message: "Unsupported chainId" });
+    }
 
     const client = createWalletClient({
       account,
-      chain: polygonAmoy,
+      chain: chainName,
       transport: http(),
     });
 
+    const bundlerUrl = chainIdToBundlerUrl[chainId];
+    if (!bundlerUrl) {
+        return res.status(500).json({ status: false, message: "Unsupported chainId for bundler" });
+    }
+
     const smartAccount = await createSmartAccountClient({
       signer: client,
-      bundlerUrl:envConfigs.chain80002,
+      bundlerUrl:bundlerUrl,
       biconomyPaymasterApiKey: envConfigs.paymaster_apikey,
     });
 
     saAddress = await smartAccount.getAccountAddress();
     const datetime = new Date().toISOString();
     const contractAddress = envConfigs.contractAddress;
-    const metadata = JSON.stringify({ ...userExist, id, datetime });
+    const metadata = JSON.stringify({ 
+      role:userExist.role,
+      saAddress:userExist.saAddress, gameId:gameDetails.id,
+      eventId:gameDetails.events[0].id
+    });
     const iface = new ethers.utils.Interface(abi);
     const calldata = iface.encodeFunctionData("storeMetadata", [
       metadata,
@@ -169,21 +175,22 @@ export default class User{
     });
 
     const userOpReceipt = await txResponse.wait();
-      const transactionHash = userOpReceipt.receipt.transactionHash;
+    const transactionHash = userOpReceipt.receipt.transactionHash;
 
     const saveTransactionDetails = await dbservices.User.saveTransactionDetails(
       gameId,
       userExist.id,
       id,
       transactionHash,
-      "polygon",
+      chainName.name,
         "0",          
         );
           return res.status(200).json({
           status: true,
           message: "Event Fired Successfully",
           transactionDetails : saveTransactionDetails,
-          user:userExist
+          user:userExist,
+          timestamp: datetime
         })
     }     
 
@@ -192,40 +199,47 @@ export default class User{
       if (!chainId) {
           throw new Error("Missing or invalid chainId in environment variables");
       }
-    console.log("inside................")
     userId = `user_${this.generateId()}`;
     const privKey = "0x" + sha512_256(userId)
-    // const source = "1086651866" + "sushilIsKing";
-    // const privKey = "0x" + sha512_256(source);
 
-    console.log(privKey, "priva...........");
+
     const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
 
     const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
 
     const wallet_address = await wallet.getAddress();
     const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
-
+    const chainName = chainIdToChainName[chainId];
+    if (!chainName) {
+        return res.status(500).json({ status: false, message: "Unsupported chainId" });
+    }
     const client = createWalletClient({
     account,
-    chain: polygonAmoy,
+    chain: chainName,
     transport: http(),
     });
 
+    const bundlerUrl = chainIdToBundlerUrl[chainId];
+    if (!bundlerUrl) {
+        return res.status(500).json({ status: false, message: "Unsupported chainId for bundler" });
+    }
     const smartAccount = await createSmartAccountClient({
     signer: client,
-    bundlerUrl:envConfigs.chain80002,
+    bundlerUrl:bundlerUrl,
     biconomyPaymasterApiKey: envConfigs.paymaster_apikey,
     });
 
     saAddress = await smartAccount.getAccountAddress();
-    console.log(saAddress, "Account................................");
     const saveResult = await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
 
     userExist = saveResult
     const datetime = new Date().toISOString();
     const contractAddress = envConfigs.contractAddress;
-    const metadata = JSON.stringify({ ...userExist, id, datetime });
+    const metadata = JSON.stringify({ 
+      role:userExist.role,
+      saAddress:userExist.saAddress, gameId:gameDetails.id,
+      eventId:gameDetails.events[0].id
+    });
     const iface = new ethers.utils.Interface(abi);
     const calldata = iface.encodeFunctionData("storeMetadata", [metadata,gameId]);
     const tx = {
@@ -239,10 +253,8 @@ export default class User{
     mode: PaymasterMode.SPONSORED,
     },
     });
-    console.log(txResponse, "txResponse...............");
 
     const userOpReceipt = await txResponse.wait();
-    console.log("userOpReceipt...........", userOpReceipt);
     const transactionHash = userOpReceipt.receipt.transactionHash;
 
     const saveTransactionDetails = await dbservices.User.saveTransactionDetails(
@@ -250,22 +262,36 @@ export default class User{
     userExist.id,
     id,
     transactionHash,
-    "polygon",
+    chainName.name,
     "0",          
     );
     return res.status(200).json({
       status: true,
       message: "Event Fired Successfully",
       transactionDetails : saveTransactionDetails,
-      user:userExist
+      user:userExist,
+      timestamp: datetime
     })
   }
     } catch (error) {
-      console.log(error ,"Exception")
       res.status(500).json({
         status: false,
         message: error.message || "Unexpected error occurred",
       })
     }
-  }  
+  } 
+  
+  
+  // static test =async(req:Request , res:Response )=>{
+  //    try {
+  //     const gameId = req.params.gameId
+  //     const eventId = "event_TWSX1M9G"
+  //     const gameDetails = await dbservices.User.getGameDetails(gameId ,eventId)
+  //     const metadata = JSON.stringify(gameDetails)
+  //     console.log(metadata)
+  //     res.status(200).json({status: true, message: "Game details" ,detals: gameDetails})
+  //    } catch (error) {
+  //     res.status(500).json({status: false, message:"Unexpected error occurred"})
+  //    }
+  // }
 }

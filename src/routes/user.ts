@@ -7,6 +7,7 @@ const router=express.Router()
 
 
 
+// router.get('/test/:gameId',controllers.User.test)
 
 router.get('/game', controllers.User.games)
 router.get('/events', controllers.User.events)

@@ -45,7 +45,6 @@ export default class Creator{
             }
 
             const wallet_address = await wallet.getAddress();
-            // 0xefBDeC8c2fec7B63a68a6dD31eC07327D0cF7a88 wallet_address
             console.log(wallet_address, "wallet_address");
 
             const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);

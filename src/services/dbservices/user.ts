@@ -48,14 +48,50 @@ export default class User {
         }
     }
 
-    static getGameDetails = async(gameId: any):Promise<any>=>{
+    // static getGameDetails = async(gameId: any):Promise<any>=>{
+    //     try {
+    //         const data = await postgreDb.select({
+    //             Gamename:games.Gamename,
+    //             Gametype:games.Gametype,
+    //             description:games.description,
+    //             creatorId:games.creatorId
+    //         }).from(games).where(eq(games.id, gameId))
+    //         return data[0]
+    //     } catch (error) {
+    //         throw new Error(error.message)
+    //     }
+    // }
+
+     static getGameDetails = async(gameId: any , eventId: any): Promise<any>=>{
         try {
-            const data = await postgreDb.select().from(games).where(eq(games.id, gameId))
-            return data[0]
+            const data = await postgreDb.query.games.findFirst({
+                where: eq(games.id, gameId),
+                columns:{
+                    id:true,
+                    Gamename:true,
+                    gameId: true,
+                    Gametype:true,
+                    description:true,
+                    creatorId:true,
+                },
+                with:{
+                    events:{
+                        where:eq(events.eventId, eventId),
+                        columns:{
+                            id:true,
+                            eventId:true,
+                            eventType:true,
+                            eventdescription:true
+                        }
+                    }
+                    
+                }
+            })
+            return data
         } catch (error) {
-            throw new Error(error.message)
+            throw new Error(error)
         }
-    }
+     }
 
     static userExits = async(deviceDta: any): Promise<any> => {
         try {
