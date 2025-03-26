@@ -27,6 +27,7 @@ export default class creator {
        static eventSchema = z.object({
         body: z.object({
           eventType: z.string(),
+          eventDescription: z.string(),
         }).strict(),
         params: z.object({}).strict(),
         query: z.object({}).strict(),

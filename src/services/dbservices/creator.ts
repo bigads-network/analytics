@@ -92,17 +92,19 @@ export default class Creator {
         }
     }
 
-    static registerEvent = async(gameId: any, eventId: any, eventType: any): Promise<any> => {
+    static registerEvent = async(gameId: any, eventId: any, eventType: any ,eventDescription:any): Promise<any> => {
         try {
             const result =  await postgreDb.insert(events).values({
                 gameId: gameId,
                 eventId: eventId,
                 eventType: eventType,
+                eventdescription:eventDescription
             }).returning({
                 id: events.id,
                 gameId: events.gameId,
                 eventId: events.eventId,
-                eventType: events.eventType,              
+                eventType: events.eventType,
+                eventdescription: events.eventdescription              
             })
             return result[0];
             } catch (error) {

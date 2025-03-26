@@ -267,6 +267,10 @@ paths:
                   type: string
                   description: The type of event being created.
                   example: TekkenChampionship
+                eventDescription:
+                  type: string
+                  description: The description event being created.
+                  example: TekkenChampionship                  
       responses:
         "200":
           description: Event created successfully.
@@ -288,6 +292,10 @@ paths:
                         type: string
                         description: The ID of the created event.
                         example: event_A4I40CEH
+                      eventdescription:
+                        type: string
+                        description: The  description of the created event.
+                        example:  description                       
         "400":
           description: Bad Request - Invalid input data.
           content:

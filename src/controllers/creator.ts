@@ -200,7 +200,7 @@ export default class Creator{
         if (!creatorId || role!== "craetor") {
             return res.status(401).json({ status: false, message: "Invaid role for Event Creation"});
         }
-        const { eventType} = req.body;
+        const { eventType ,eventDescription} = req.body;
         const gameid = req.body.gameId;
 
         if (!eventType) {
@@ -211,7 +211,7 @@ export default class Creator{
             return res.status(400).json({ status: false, message: "Event already exists for this game"});
         }
         const eventId = `event_${this.generateId()}`; // Assuming `generateId` is defined elsewhere
-        const event = await dbservices.Creator.registerEvent(gameid,eventId ,eventType)
+        const event = await dbservices.Creator.registerEvent(gameid,eventId ,eventType ,eventDescription)
         res.status(200).json({
             status: true,
             message: "Event created successfully",
