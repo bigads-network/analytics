@@ -97,8 +97,12 @@ export default class User{
     anonymous: false,
     },
     ];
+    console.log("................................")
     const eventId = req.params.eventId
     const {gameId ,id } = await dbservices.User.getGameid(eventId)
+    if(!gameId || !id){
+      return res.status(400).json({ status: false, message: "Invalid Game or Event ID"});
+    }
     const eventCheck = await dbservices.User.eventCheck(gameId ,eventId)
       if(!eventCheck){
         return res.status(400).json({ status: false, message: "Event does not exist for this game"});
@@ -132,7 +136,6 @@ export default class User{
     if (!chainName) {
         return res.status(500).json({ status: false, message: "Unsupported chainId" });
     }
-
     const client = createWalletClient({
       account,
       chain: chainName,
