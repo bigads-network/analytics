@@ -3,6 +3,7 @@ CREATE TABLE "events" (
 	"event_id" varchar,
 	"game_id" integer,
 	"event_type" varchar,
+	"event_description" varchar,
 	"created_at" timestamp DEFAULT now(),
 	CONSTRAINT "events_id_unique" UNIQUE("id"),
 	CONSTRAINT "events_event_id_unique" UNIQUE("event_id")

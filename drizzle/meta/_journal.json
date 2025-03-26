@@ -5,15 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1742970807383,
-      "tag": "0000_useful_tinkerer",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1742980281298,
-      "tag": "0001_flat_ego",
+      "when": 1743021196641,
+      "tag": "0000_flashy_hawkeye",
       "breakpoints": true
     }
   ]

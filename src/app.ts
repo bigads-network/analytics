@@ -24,6 +24,7 @@ app.use("/", router);
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views')); // Adjust the path based on your project structure
 
+
 app.listen(envConfigs.port, () => {
   logger.info(`Server started on ${envConfigs.port}`);
 })

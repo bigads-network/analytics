@@ -20,6 +20,7 @@ export default class User {
                 columns:{
                     eventId:true,
                     eventType:true,
+                    eventdescription:true
                 },
                 with:{
                     game:{
@@ -111,7 +112,6 @@ export default class User {
 
     static saveUser = async(userId: any, devicedata: any, saAddress: any, wallet_address: any): Promise<any> => {
         try {
-            console.log(userId, devicedata, saAddress, wallet_address ,"created save")
             const result =  await postgreDb.insert(users).values({
                 userId: userId,
                 devicedata: devicedata,
@@ -150,7 +150,7 @@ export default class User {
         amount,
     ):Promise<any>=>{
         try {
-            console.log(userId ,gameId ,eventId ,transactionHash,transaction_chain ,amount)
+            // console.log(userId ,gameId ,eventId ,transactionHash,transaction_chain ,amount)
             const result =  await postgreDb.insert(transactions).values({
                 gameId: gameId,
                 UserId: userId,
@@ -167,7 +167,7 @@ export default class User {
                 transaction_chain: transactions.transactionChain,
                 amount: transactions.amount,
             })
-            console.log(result[0] ,"ressssssulttttt")
+            // console.log(result[0] ,"ressssssulttttt")
             return result[0];
         } catch (error) {
            throw new Error

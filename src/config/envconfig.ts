@@ -16,6 +16,8 @@ const envVarsSchema = z.object({
   CHAINID137:z.string(),
   CHAINID84532:z.string(),
   TELEGRAM_TOKEN:z.string(),
+  BUNDLER_URL:z.string(),
+  PAYMASTERAPI_KEY_URL:z.string(),
 });
 
 const envVars = envVarsSchema.parse(process.env);
@@ -31,7 +33,9 @@ export const envConfigs = {
   chain80002:envVars.CHAINID80002,
   chain137:envVars.CHAINID137,
   chain84532 :envVars.CHAINID84532,
-  telegram_token:envVars.TELEGRAM_TOKEN
+  telegram_token:envVars.TELEGRAM_TOKEN,
+  bundlerUrl:envVars.BUNDLER_URL,
+  paymaster_apikey_url : envVars.PAYMASTERAPI_KEY_URL,
 };
 
 export const chainIdToChainName: any = {

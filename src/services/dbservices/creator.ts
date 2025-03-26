@@ -20,7 +20,7 @@ export default class Creator {
 
     static saveCreator = async(userId: any, devicedata: any, saAddress: any, wallet_address: any): Promise<any> => {
         try {
-            console.log(userId, devicedata, saAddress, wallet_address ,"created save")
+            // console.log(userId, devicedata, saAddress, wallet_address ,"created save")
             const result =  await postgreDb.insert(users).values({
                 userId: userId,
                 devicedata: devicedata,
@@ -70,8 +70,8 @@ export default class Creator {
                 Gamename: games.Gamename,
                 Gametype: games.Gametype,
                 description: games.description,
-                saAddress:games.gameSaAddress,
-                walletAddress:games.walletAddress
+                // saAddress:games.gameSaAddress,
+                // walletAddress:games.walletAddress
             })
             return result[0];
             } catch (error) {

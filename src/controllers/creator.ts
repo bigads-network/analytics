@@ -5,9 +5,14 @@ import { createWalletClient, http } from 'viem';
 import { generateAuthTokens } from '../config/token';
 import { sha512_256 } from 'js-sha512';
 import { ethers } from 'ethers';
-import { createSmartAccountClient, Paymaster } from '@biconomy/account';
+import {
+    createSmartAccountClient,
+    createBicoPaymasterClient,
+    toNexusAccount,
+  } from '@biconomy/abstractjs';
 import { chainIdToBundlerUrl, chainIdToChainName, envConfigs } from '../config/envconfig';
 import { generateGameToken } from '../config/gameToken';
+import { polygon } from 'viem/chains';
 
 export default class Creator{
    
@@ -26,10 +31,10 @@ export default class Creator{
         let userId, saAddress, token;
 
         if (!userExist) {
-            const chainId = parseInt(envConfigs.chainId || "80002");
-            if (!chainId) {
-                throw new Error("Missing or invalid chainId in environment variables");
-            }
+            // const chainId = parseInt(envConfigs.chainId || "80002");
+            // if (!chainId) {
+            //     throw new Error("Missing or invalid chainId in environment variables");
+            // }
 
             userId = `creator_${this.generateId()}`; // Assuming `generateId` is defined elsewhere
             const privKey = sha512_256(devicedata + userId);
@@ -45,40 +50,51 @@ export default class Creator{
             }
 
             const wallet_address = await wallet.getAddress();
-            console.log(wallet_address, "wallet_address");
+            // console.log(wallet_address, "wallet_address");
 
             const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
-            const chainName = chainIdToChainName[chainId];
-            if (!chainName) {
-                return res.status(500).json({ status: false, message: "Unsupported chainId" });
-            }
+            const chainName = polygon;
+            const bundlerUrl =envConfigs.bundlerUrl
+            const paymasterUrl = envConfigs.paymaster_apikey_url
+            // if (!chainName) {
+            //     return res.status(500).json({ status: false, message: "Unsupported chainId" });
+            // }
 
-            const client = createWalletClient({
-                account,
-                chain: chainName,
-                transport: http(),
-            });
+            // const client = createWalletClient({
+            //     account,
+            //     chain: chainName,
+            //     transport: http(),
+            // });
 
 
-            const bundlerUrl = chainIdToBundlerUrl[chainId];
-            if (!bundlerUrl) {
-                return res.status(500).json({ status: false, message: "Unsupported chainId for bundler" });
-            }
-            const Paymaster_key = envConfigs.paymaster_apikey;
-            if (!Paymaster_key) {
-                return res.status(500).json({ status: false, message: "Missing Paymaster API key" });
-            }
+            // const bundlerUrl = chainIdToBundlerUrl[chainId];
+            // if (!bundlerUrl) {
+            //     return res.status(500).json({ status: false, message: "Unsupported chainId for bundler" });
+            // }
+            // const Paymaster_key = envConfigs.paymaster_apikey;
+            // if (!Paymaster_key) {
+            //     return res.status(500).json({ status: false, message: "Missing Paymaster API key" });
+            // }
 
-            const smartAccount = await createSmartAccountClient({
-                signer: client,
-                bundlerUrl,
-                chainId,
-                biconomyPaymasterApiKey: Paymaster_key,
-            });
+            // const smartAccount = await createSmartAccountClient({
+            //     signer: client,
+            //     bundlerUrl,
+            //     chainId,
+            //     biconomyPaymasterApiKey: Paymaster_key,
+            // });
 
-            saAddress = await smartAccount.getAccountAddress();
-            console.log(saAddress ,"Account................................");
-            //0xcf03387269ec267bEEF77d932deB4437e811D459 Account................................
+            const nexusClient = createSmartAccountClient({
+                account: await toNexusAccount({
+                  signer: account,
+                  chain: chainName,
+                  transport: http(),
+                }),
+                transport: http(bundlerUrl),
+                paymaster: createBicoPaymasterClient({ paymasterUrl }),
+              });
+
+              saAddress = await nexusClient.account.address;
+            //   console.log(saAddress ,"Account................................");
             const saveResult = await dbservices.Creator.saveCreator(userId, devicedata, saAddress, wallet_address);
 
             if (!saveResult) {
@@ -127,10 +143,10 @@ export default class Creator{
         let message = "Game Already exists";
         let saAddress;
         if (!gameExist) {
-            const chainId = parseInt(envConfigs.chainId || "80002");
-            if (!chainId) {
-                throw new Error("Missing or invalid chainId in environment variables");
-            }
+            // const chainId = parseInt(envConfigs.chainId || "80002");
+            // if (!chainId) {
+            //     throw new Error("Missing or invalid chainId in environment variables");
+            // }
             
             const gameId = `game_${this.generateId()}`;
             const privKey = sha512_256(gameId + gameName +gameType);
@@ -146,28 +162,24 @@ export default class Creator{
             }
             const wallet_address = await wallet.getAddress();
 
-            console.log("wallet" , wallet_address)
+            // console.log("wallet" , wallet_address)
             const account: any = privateKeyToAccount(wallet.privateKey as any);
-            const chainName = chainIdToChainName[chainId];
-            const client = createWalletClient({
-                account,
+
+            const bundlerUrl =envConfigs.bundlerUrl
+            const paymasterUrl = envConfigs.paymaster_apikey_url
+            const chainName = polygon
+            const nexusClient = createSmartAccountClient({
+              account: await toNexusAccount({
+                signer: account,
                 chain: chainName,
                 transport: http(),
+              }),
+              transport: http(bundlerUrl),
+              paymaster: createBicoPaymasterClient({ paymasterUrl }),
             });
     
-            const eoa = client.account.address;
-            const bundlerUrl = chainIdToBundlerUrl[chainId];
-            const Paymaster_key = envConfigs.paymaster_apikey;
-    
-            const smartAccount = await createSmartAccountClient({
-                signer: client,
-                bundlerUrl,
-                chainId,
-                biconomyPaymasterApiKey: Paymaster_key
-            });
-    
-            saAddress = await smartAccount.getAccountAddress();
-    console.log(saAddress ,"saAddress................................................................");
+              saAddress = await nexusClient.account.address;
+            //   console.log(saAddress ,"saAddress................................................................");
             const saveResult = await dbservices.Creator.registerGame(creatorId, gameId, gameName, gameType, description , saAddress ,wallet_address);
             if (!saveResult) {
                 throw new Error("Error saving user details");
