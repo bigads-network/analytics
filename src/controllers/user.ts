@@ -101,6 +101,23 @@ export default class User{
       }
     }
 
+    static GetGameTransacttion = async(req:Request, res:Response):Promise<any>=>{
+      try {
+        const gameId = req.params.gameId 
+        const transaction = await dbservices.User.getGameTransacttion(gameId)
+        return res.json({
+          status: true,
+          message: "Transaction List Fetched Successfully",
+          transactions: transaction
+        })
+      } catch (error) {
+        res.status(500).json({
+          status: false,
+          message: error.message || "Unexpected error occurred",
+        }) 
+      }
+    }
+
   //   static fireEvent = async(req: Request, res: Response): Promise<any>=>{
   //   try {
   //   const abi = [

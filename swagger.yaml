@@ -888,3 +888,83 @@ paths:
                   message:
                     type: string
                     example: "Internal server error, please try again later"
+
+  /user/game/transaction/{gameId}:
+    get:
+      tags:
+        - user
+      summary: Fetch User Transactions by ID
+      description: Retrieves transactions of a specific game
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "game_WKC7KDJB"
+      responses:
+        '200':
+          description: User Transactions Fetched Successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Transaction List Fetched Successfully"
+                  transactions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                          example: 3
+                        userTransaction:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              transactionHash:
+                                type: string
+                                example: "0xd724fce613fa0f6f851a26d9f0ac2e5cf587b3f5db0215d28623c8593cde5358"
+                              transactionChain:
+                                type: string
+                                example: "Polygon"
+                              amount:
+                                type: string
+                                example: "0"
+                              createdAt:
+                                type: string
+                                format: date-time
+                                example: "2025-03-26T21:21:04.363Z"
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Invalid user ID provided"
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Internal server error, please try again later"

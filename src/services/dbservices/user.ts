@@ -119,7 +119,33 @@ export default class User {
 
         }
     }
+
+    //getGameTransacttion
     
+    static getGameTransacttion = async(gameId:any): Promise<any> => {
+        try {
+            const transaction = await postgreDb.query.games.findMany({
+              where : eq(gameId, games.gameId),
+              columns: {
+                id:true,
+              },
+              with:{
+                transactions:{
+                    columns:{
+                        transactionHash:true,
+                        transactionChain:true,
+                        amount:true,
+                        createdAt:true,
+                    }
+                }
+              }
+            })
+            return transaction
+        } catch (error) {
+            throw new Error(error.message)
+
+        }
+    }
 
     // static getGameDetails = async(gameId: any):Promise<any>=>{
     //     try {
