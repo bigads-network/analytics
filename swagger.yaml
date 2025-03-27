@@ -627,3 +627,183 @@ paths:
                   message:
                     type: string
                     example: "Internal server error"
+
+  /user/transactions:
+    get:
+      tags:
+        - user
+      summary: Fetch User Transactions
+      description: Retrieves a list of user transactions
+      responses:
+        '200':
+          description: Transaction List Fetched Successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Transaction List Fetched Successfully"
+                  transactions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        transactionHash:
+                          type: string
+                          example: "0x92d3c02793b84b82c20453481ab4ed624d62c434d6b8c4c5e61c37b7257474f0"
+                        transactionChain:
+                          type: string
+                          example: "Polygon"
+                        user:
+                          type: object
+                          properties:
+                            userId:
+                              type: string
+                              example: "user_ZMY4L039"
+                            walletAddress:
+                              type: string
+                              example: "0x5D8b9dED91Bc5bF016d9fB7eD6A4f91e13497DB0"
+                            saAddress:
+                              type: string
+                              example: "0xA7A012bfa6325BF118a231a5D5f975310B81ADB1"
+                        game:
+                          type: object
+                          properties:
+                            gameId:
+                              type: string
+                              example: "game_Y46HAQ31"
+                            Gamename:
+                              type: string
+                              example: "Spider Hero Man 3d"
+                            Gametype:
+                              type: string
+                              example: "City Fighting Action"
+                            description:
+                              type: string
+                              example: "Get ready for the ultimate Spider Hero 3D fighting experience! Step into the shoes of a legendary superhero and take on crime in an open-world city full of gangsters, villains, and dangerous bosses. Use your spider powers, web-slinging skills, and high-flying combat moves to restore justice and save the city!"
+                        event:
+                          type: object
+                          properties:
+                            eventId:
+                              type: string
+                              example: "event_943K9IL6"
+                            eventType:
+                              type: string
+                              example: "Crime Fighting Missions"
+                            eventdescription:
+                              type: string
+                              example: "Stop bank robberies, car thefts, and gang fights."
+                  counts:
+                    type: integer
+                    example: 67
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Invalid request parameters"
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Internal server error, please try again later"
+
+  /user/transacttion/{userId}:
+    get:
+      tags:
+        - user
+      summary: Fetch User Transactions by ID
+      description: Retrieves transactions of a specific user
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "user_ZMY4L039"
+      responses:
+        '200':
+          description: User Transactions Fetched Successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Transaction List Fetched Successfully"
+                  transactions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                          example: 3
+                        userTransaction:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              transactionHash:
+                                type: string
+                                example: "0xd724fce613fa0f6f851a26d9f0ac2e5cf587b3f5db0215d28623c8593cde5358"
+                              transactionChain:
+                                type: string
+                                example: "Polygon"
+                              amount:
+                                type: string
+                                example: "0"
+                              createdAt:
+                                type: string
+                                format: date-time
+                                example: "2025-03-26T21:21:04.363Z"
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Invalid user ID provided"
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Internal server error, please try again later"

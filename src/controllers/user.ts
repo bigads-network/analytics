@@ -50,6 +50,41 @@ export default class User{
       }
     }
 
+
+    static transactions = async(req: Request , res:Response):Promise<any>=>{
+      try {
+        const transaction = await dbservices.User.getTransactions()
+        return res.json({
+          status: true,
+          message: "Transaction List Fetched Successfully",
+          transactions: transaction.transactions,
+          counts: transaction.counts[0].count
+        })
+      } catch (error) {
+        res.status(500).json({
+          status: false,
+          message: error.message || "Unexpected error occurred",
+        }) 
+      }
+    }
+
+    static GetUserTransacttion = async(req: Request, res: Response): Promise<any>=>{
+      try {
+        const userId = req.params.userId
+        const transaction = await dbservices.User.getUserTransacttion(userId)
+        return res.json({
+          status: true,
+          message: "Transaction List Fetched Successfully",
+          transactions: transaction
+        })
+      } catch (error) {
+        res.status(500).json({
+          status: false,
+          message: error.message || "Unexpected error occurred",
+        }) 
+      }
+    }
+
   //   static fireEvent = async(req: Request, res: Response): Promise<any>=>{
   //   try {
   //   const abi = [

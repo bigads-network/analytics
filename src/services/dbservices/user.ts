@@ -47,6 +47,78 @@ export default class User {
         }
     }
 
+    static getTransactions = async():Promise<any>=>{
+        try {
+            const transaction = await postgreDb.query.transactions.findMany({
+                columns: {
+                transactionHash: true,
+                transactionChain: true,
+                },
+                with:{
+                    user:{
+                        columns:{
+                            userId:true,
+                            walletAddress:true,
+                            saAddress:true,
+                        }
+                    },
+                    game:{
+                        columns:{
+                            gameId:true,
+                            Gamename:true,
+                            Gametype:true,
+                            description:true,
+                        }
+                    },
+                    event:{
+                        columns:{
+                            eventId:true,
+                            eventType:true,
+                            eventdescription:true,
+                        }
+                    }
+                }
+        })
+
+        const counts =await postgreDb
+        .select({
+        count: count(transactions.id),
+        })
+        .from(transactions);
+
+        return { transactions: transaction , counts: counts}
+        } catch (error) {
+            throw new Error(error.message)
+        }
+    }
+
+
+    static getUserTransacttion = async(userId:any): Promise<any> => {
+        try {
+            const transaction = await postgreDb.query.users.findMany({
+              where : eq(userId, users.userId),
+              columns: {
+                id:true,
+              },
+              with:{
+                userTransaction:{
+                    columns:{
+                        transactionHash:true,
+                        transactionChain:true,
+                        amount:true,
+                        createdAt:true,
+                    }
+                }
+              }
+            })
+            return transaction
+        } catch (error) {
+            throw new Error(error.message)
+
+        }
+    }
+    
+
     // static getGameDetails = async(gameId: any):Promise<any>=>{
     //     try {
     //         const data = await postgreDb.select({
