@@ -387,11 +387,11 @@ paths:
                           description: Timestamp when the game was created.
                           example: "2025-03-22T12:25:28.656Z"
                         transactionCount:
-                          type: number
+                          type: string
                           description: A number of transaction happen on the game
                           example: 73
                         usersPlayed:
-                          type: number
+                          type: string
                           description: number of user played the game
                           example: 10
         "401":
@@ -1026,3 +1026,90 @@ paths:
                   message:
                     type: string
                     example: "Internal server error"
+
+  /user/event/transaction/{eventId}:
+    get:
+      tags:
+        - user       
+      summary: Fetch transactions for a specific event
+      description: Retrieves a list of transactions associated with the given event ID.
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          description: The ID of the event
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Transaction list fetched successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Transaction List Fetched Successfully"
+                  transactions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                          example: 3
+                        transactions:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              transactionHash:
+                                type: string
+                                example: "0xd724fce613fa0f6f851a26d9f0ac2e5cf587b3f5db"
+                              transactionChain:
+                                type: string
+                                example: "Polygon"
+                              amount:
+                                type: string
+                                example: "0"
+                              createdAt:
+                                type: string
+                                format: date-time
+                                example: "2025-03-26T21:21:04.363Z"
+        "400":
+          description: Bad request (invalid event ID format)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                  message:
+                    type: string
+        "404":
+          description: Event not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                  message:
+                    type: string
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                  message:
+                    type: string

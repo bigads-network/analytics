@@ -129,6 +129,24 @@ export default class User{
       }
     }
 
+
+    static eventTransaction = async(req:Request, res: Response): Promise<any>=>{
+      try {
+        const eventId = req.params.eventId
+        const transaction = await dbservices.User.geteventTransacttion(eventId)
+        return res.json({
+          status: true,
+          message: "Transaction List Fetched Successfully",
+          transactions: transaction
+        })
+      } catch (error) {
+        res.status(500).json({
+          status: false,
+          message: error.message || "Unexpected error occurred",
+        }) 
+      }
+    }
+
     static GetGameTransacttion = async(req:Request, res:Response):Promise<any>=>{
       try {
         const gameId = req.params.gameId 
@@ -450,10 +468,6 @@ export default class User{
       if(gameDetails.creatorId=== userExist.id){
         return res.status(500).send({ status:false ,message : "cannot fire event for own game "})
       }
-      // const chainId = parseInt(envConfigs.chainId);
-      // if (!chainId) {
-      //     throw new Error("Missing or invalid chainId in environment variables");
-      // }
       userId =userExist.userId ;
       const privKey = "0x" + sha512_256(userId) ;
 
@@ -464,30 +478,7 @@ export default class User{
     const wallet_address = await wallet.getAddress();
     const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
 
-   
-
-    // const chainName = chainIdToChainName[chainId];
-    // if (!chainName) {
-    //     return res.status(500).json({ status: false, message: "Unsupported chainId" });
-    // }
-    // const client = createWalletClient({
-    //   account,
-    //   chain: chainName,
-    //   transport: http(),
-    // });
-
-    // const bundlerUrl = chainIdToBundlerUrl[chainId];
-    // if (!bundlerUrl) {
-    //     return res.status(500).json({ status: false, message: "Unsupported chainId for bundler" });
-    // }
-
-    // const smartAccount = await createSmartAccountClient({
-    //   signer: client,
-    //   bundlerUrl:bundlerUrl,
-    //   biconomyPaymasterApiKey: envConfigs.paymaster_apikey,
-    // });
     const chainName = polygon
-    // console.log(bundlerUrl,paymasterUrl ,"................................................................")
     const nexusClient = createSmartAccountClient({
       account: await toNexusAccount({
         signer: account,
@@ -511,11 +502,7 @@ export default class User{
       metadata,
       gameId,
     ]);
-    // const tx = {
-    //   to: contractAddress,
-    //   data: calldata,
-    //   value: "0",
-    // };
+
 
       //@ts-ignore
       const hash = await nexusClient.sendUserOperation({
@@ -552,10 +539,6 @@ export default class User{
     }     
 
     if(!userExist){
-      // const chainId = parseInt(envConfigs.chainId);
-      // if (!chainId) {
-      //     throw new Error("Missing or invalid chainId in environment variables");
-      // }
     userId = `user_${this.generateId()}`;
     const privKey = "0x" + sha512_256(userId)
 
@@ -566,10 +549,6 @@ export default class User{
 
     const wallet_address = await wallet.getAddress();
     const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
-    // const chainName = chainIdToChainName[chainId];
-    // if (!chainName) {
-    //     return res.status(500).json({ status: false, message: "Unsupported chainId" });
-    // }
 
     const chainName = polygon
     const nexusClient = createSmartAccountClient({
@@ -581,16 +560,6 @@ export default class User{
       transport: http(bundlerUrl),
       paymaster: createBicoPaymasterClient({ paymasterUrl }),
     });
-
-    // const bundlerUrl = chainIdToBundlerUrl[chainId];
-    // if (!bundlerUrl) {
-    //     return res.status(500).json({ status: false, message: "Unsupported chainId for bundler" });
-    // }
-    // const smartAccount = await createSmartAccountClient({
-    // signer: client,
-    // bundlerUrl:bundlerUrl,
-    // biconomyPaymasterApiKey: envConfigs.paymaster_apikey,
-    // });
 
     saAddress = await nexusClient.account.address;
     const saveResult = await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
@@ -605,18 +574,6 @@ export default class User{
     });
     const iface = new ethers.utils.Interface(abi);
     const calldata = iface.encodeFunctionData("storeMetadata", [metadata,gameId]);
-    // const tx = {
-    // to: contractAddress,
-    // data: calldata,
-    // value: "0",
-    // };
-
-    
-    // const txResponse = await smartAccount.sendTransaction(tx, {
-    // paymasterServiceData: {
-    // mode: PaymasterMode.SPONSORED,
-    // },
-    // });
 
           //@ts-ignore
           const hash = await nexusClient.sendUserOperation({
@@ -635,8 +592,6 @@ export default class User{
 
    const transactionHash = receipt.receipt.transactionHash;
 
-    // const userOpReceipt = await txResponse.wait();
-    // const transactionHash = userOpReceipt.receipt.transactionHash;
 
     const saveTransactionDetails = await dbservices.User.saveTransactionDetails(
     gameId,
