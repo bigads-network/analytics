@@ -67,6 +67,22 @@ export default class User{
       }
     }
 
+    static count = async(req: Request, res: Response): Promise<any>=>{
+      try {
+        const count = await dbservices.User.counts()
+        return res.json({
+          status: true,
+          message: "Details Fetched Successfully",
+          data: count
+        })
+      } catch (error) {
+        res.status(500).json({
+          status: false,
+          message: error.message || "Unexpected error occurred",
+        })
+      }
+    }
+
     static transactions = async(req: Request , res:Response):Promise<any>=>{
       try {
         const transaction = await dbservices.User.getTransactions()
@@ -83,6 +99,18 @@ export default class User{
         }) 
       }
     }
+
+
+    // static gameDetails = async(req: Request , res: Response):Promise<any>=>{
+    //   try {
+    //     const 
+    //   } catch (error) {
+    //     res.status(500).json({
+    //       status: false,
+    //       message: error.message || "Unexpected error occurred",
+    //     })  
+    //   }
+    // }
 
     static GetUserTransacttion = async(req: Request, res: Response): Promise<any>=>{
       try {
@@ -108,7 +136,7 @@ export default class User{
         return res.json({
           status: true,
           message: "Transaction List Fetched Successfully",
-          transactions: transaction
+          details: transaction
         })
       } catch (error) {
         res.status(500).json({

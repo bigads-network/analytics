@@ -365,22 +365,10 @@ paths:
                           type: integer
                           description: Unique identifier for the game.
                           example: 1
-                        creatorId:
-                          type: integer
-                          description: ID of the creator of the game.
-                          example: 1
                         gameId:
                           type: string
                           description: Unique game identifier.
                           example: "game_69HS62B2"
-                        walletAddress:
-                          type: string
-                          description: Wallet address associated with the game.
-                          example: "0x66fFE2b3d99F986E0d073e1815a250b273fEDFAD"
-                        gameSaAddress:
-                          type: string
-                          description: Smart contract address for the game.
-                          example: "0x61CbB7a3E853877000E48cB0f2800fed8b9Cd55C"
                         gameName:
                           type: string
                           description: Name of the game.
@@ -916,7 +904,7 @@ paths:
                   message:
                     type: string
                     example: "Transaction List Fetched Successfully"
-                  transactions:
+                  details:
                     type: array
                     items:
                       type: object
@@ -968,3 +956,65 @@ paths:
                   message:
                     type: string
                     example: "Internal server error, please try again later"
+
+  /user/count:
+    get:
+      summary: Get count of users, games, events, and transactions
+      description: Retrieves the total number of users, games, events, and transactions.
+      tags:
+        - user
+      responses:
+        200:
+          description: Successfully retrieved count details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Details Fetched Successfully"
+                  data:
+                    type: object
+                    properties:
+                      users:
+                        type: integer
+                        example: 55
+                      games:
+                        type: integer
+                        example: 5
+                      events:
+                        type: integer
+                        example: 10
+                      transactions:
+                        type: integer
+                        example: 161
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Invalid request parameters"
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Internal server error"

@@ -10,11 +10,61 @@ export default class User {
 
     static getGames = async():Promise<any>=>{
         try {
-            return await postgreDb.select().from(games)
+            return await postgreDb.select({
+                id:games.id,
+                gameId:games.gameId,
+                Gamename:games.Gamename,
+                Gametype: games.Gametype,
+                description: games.description,
+                createdAt: games.createdAt,
+            }).from(games)
         } catch (error) {
             throw new Error(error.message)
         }
     }
+
+
+
+    static counts = async():Promise<any>=>{
+        try {
+            return await postgreDb.transaction(async (tx) => {
+                const uniqueUsers = await tx
+                  .select({
+                    count: sql`count(distinct ${users.id})`,
+                  })
+                  .from(users);
+        
+                const uniqueGames = await tx
+                  .select({
+                    count: sql`count(distinct ${games.id})`,
+                  })
+                  .from(games);
+        
+                const uniqueEvents = await tx
+                  .select({
+                    count: sql`count(distinct ${events.id})`,
+                  })
+                  .from(events);
+
+                  const uniqueTransactions = await tx
+                  .select({
+                    count: sql`count(distinct ${transactions.id})`,
+                  })
+                  .from(transactions);
+
+                  return {
+                    users: Number(uniqueUsers[0].count),
+                    games: Number(uniqueGames[0].count),
+                    events: Number(uniqueEvents[0].count),
+                    transactions: Number(uniqueTransactions[0].count),
+                  }
+                })
+               
+        } catch (error) {
+            throw new Error(error.message)
+        }
+    }
+
 
     static getEvents = async():Promise<any>=>{
         try {
