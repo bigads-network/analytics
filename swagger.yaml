@@ -807,3 +807,84 @@ paths:
                   message:
                     type: string
                     example: "Internal server error, please try again later"
+
+  /user/self:
+    post:
+      tags:
+        - user      
+      summary: Fetch User Details
+      description: Retrieves user details based on device data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                devicedata:
+                  type: object
+                  properties:
+                    deviceId:
+                      type: string
+                      example: "IQOO-neo7_55550e8400-e29b-41d4-a716-446655440000"
+                    OS:
+                      type: string
+                      example: "android"
+      responses:
+        '200':
+          description: User Details Fetched Successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Details Fetched Successfully"
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                        example: 1
+                      userId:
+                        type: string
+                        example: "creator_B7THRNNO"
+                      role:
+                        type: string
+                        example: "creator"
+                      saAddress:
+                        type: string
+                        example: "0x80E404F33754F447f139529cdc65De508AB780c9"
+                      walletAddress:
+                        type: string
+                        example: "0xcfE197a570b086dc7dF69332c5c3a73C40F23F20"
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Invalid user ID provided"
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Internal server error, please try again later"

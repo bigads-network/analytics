@@ -6,6 +6,8 @@ dotenv.config();
 
 export default class User {
 
+
+
     static getGames = async():Promise<any>=>{
         try {
             return await postgreDb.select().from(games)

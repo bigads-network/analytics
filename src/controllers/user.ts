@@ -50,6 +50,22 @@ export default class User{
       }
     }
 
+    static self = async(req: Request, res: Response): Promise<any>=>{
+      try {
+        const {devicedata} = req.body
+        const details = await dbservices.User.userExits(devicedata)
+        return res.json({
+          status: true,
+          message: "Details Fetched Successfully",
+          data: details
+        })
+      } catch (error) {
+        res.status(500).json({
+          status: false,
+          message: error.message || "Unexpected error occurred",
+        })
+      }
+    }
 
     static transactions = async(req: Request , res:Response):Promise<any>=>{
       try {
