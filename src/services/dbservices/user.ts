@@ -14,14 +14,22 @@ export default class User {
                 id:games.id,
                 gameId:games.gameId,
                 Gamename:games.Gamename,
-                Gametype: games.Gametype,
+                Gametype: games.Gametype, 
                 description: games.description,
                 createdAt: games.createdAt,
-            }).from(games)
+                transactionCount: sql<number>`count(distinct ${transactions.id})`.as('transaction_count'),
+                usersPlayed: sql<number>`count(distinct ${transactions.UserId})`.as('users_played')
+            })
+            .from(games)
+            .leftJoin(transactions, eq(transactions.gameId, games.id))
+            .groupBy(games.id, games.gameId, games.Gamename, games.Gametype, games.description, games.createdAt)
+            .orderBy(games.id);
         } catch (error) {
             throw new Error(error.message)
         }
     }
+    
+
 
 
 
