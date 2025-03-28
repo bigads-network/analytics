@@ -505,13 +505,14 @@ paths:
       tags:
         - user    
       summary: Fire an event
-      description: Triggers an event, saves transaction details, and returns user information.
+      description: Accepts an event and queues it for processing. Returns immediate acknowledgement.
       parameters:
         - name: eventId
           in: path
           required: true
           schema:
             type: string
+          example: "event_123"
       requestBody:
         required: true
         content:
@@ -530,7 +531,7 @@ paths:
                       example: "android"
       responses:
         200:
-          description: Event fired successfully
+          description: Event accepted and queued for processing
           content:
             application/json:
               schema:
@@ -541,49 +542,11 @@ paths:
                     example: true
                   message:
                     type: string
-                    example: "Event Fired Successfully"
-                  transactionDetails:
-                    type: object
-                    properties:
-                      id:
-                        type: integer
-                        example: 2
-                      gameId:
-                        type: integer
-                        example: 4
-                      userId:
-                        type: integer
-                        example: 52
-                      eventId:
-                        type: integer
-                        example: 3
-                      transactionHash:
-                        type: string
-                        example: "0x1c0b3d66a19eb55b17119549f56fc9e94ecbdfba3d7aae4bb4741e9d1e65a03a"
-                      transaction_chain:
-                        type: string
-                        example: "polygon"
-                      amount:
-                        type: string
-                        example: "0"
-                  user:
-                    type: object
-                    properties:
-                      id:
-                        type: integer
-                        example: 42
-                      userId:
-                        type: string
-                        example: "user_16YJIPST"
-                      role:
-                        type: string
-                        example: "user"
-                      saAddress:
-                        type: string
-                        example: "0x8d8D9956e5CcCF5e2BdB9DAA7Bc13fdA04Bba1Eb"
-                      walletAddress:
-                        type: string
-                        example: "0xD011790342443fc5d4D642d89e02fD9D6196326F"
+                    example: "Event received and queued for processing"
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2025-03-28T13:03:59.565Z"
         400:
           description: Bad request, missing or invalid parameters
           content:

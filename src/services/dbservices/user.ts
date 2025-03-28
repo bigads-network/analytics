@@ -101,6 +101,7 @@ export default class User {
     static getGameid = async(eventId:string):Promise<any>=>{
         try {
             const data = await postgreDb.select().from(events).where(eq(events.eventId,eventId))
+            if(!data.length) throw new Error('No event found')
             return data[0]
         } catch (error) {
             throw new Error(error.message)
