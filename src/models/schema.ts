@@ -49,7 +49,7 @@ export const transactions :any = pgTable('transactions', {
   gameId:integer('game_id').references(() => games.id),  // for get track of game transaction has done
   UserId: integer('user_id').references(() => users.id), // for the track of user which is playing the game
   eventId: integer('event_id').references(() => events.id), // for the track of event
-  transactionHash: varchar('transaction_hash').unique(),
+  transactionHash: varchar('transaction_hash'),
   transactionChain: varchar('transaction_chain').notNull(),
   amount: varchar('amount'),
   createdAt: timestamp('created_at').defaultNow(),

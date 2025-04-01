@@ -1,0 +1,1 @@
+ALTER TABLE "transactions" DROP CONSTRAINT "transactions_transaction_hash_unique";

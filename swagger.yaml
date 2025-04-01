@@ -542,11 +542,17 @@ paths:
                     example: true
                   message:
                     type: string
-                    example: "Event received and queued for processing"
+                    example: "Event suubmiited successfully"
                   timestamp:
                     type: string
                     format: date-time
-                    example: "2025-03-28T13:03:59.565Z"
+                    example: "2025-04-01T13:10:23.277Z"
+                  eventId:
+                    type: string
+                    example: "event_H68C2D9Y"
+                  userId:
+                    type: string
+                    example: "user_RH8U0WUN"
         400:
           description: Bad request, missing or invalid parameters
           content:

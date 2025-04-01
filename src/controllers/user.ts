@@ -14,212 +14,115 @@ import dbservices from '../services/dbservices';
 import { polygon, polygonAmoy } from 'viem/chains';
 
 
-const transactionQueue: Array<{
-  userId: string;
-  devicedata: any;
-  gameId: number;
-  eventId: number;
-  gameDetails: any;
-  userExist?: any;
-  res?: Response;
-}> = [];
+const BATCH_SIZE = 50; // Process when a user has 4 transactions
+const BATCH_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
 
-let isProcessing = false;
-const BATCH_SIZE = 50;
-const BATCH_DELAY_MS = 2 * 60 * 1000; // 2 minutes
-
-// ABI definition
-const abi = [
-  {
-    type: "function",
-    name: "storeMetadata",
-    inputs: [
-      {
-        name: "metadata",
-        type: "string",
-        internalType: "string",
-      },
-      {
-        name: "gameId",
-        type: "uint256",
-        internalType: "uint256",
-      },
-    ],
-    outputs: [],
-    stateMutability: "nonpayable",
-  },
-  {
-    type: "event",
-    name: "MetadataStored",
-    inputs: [
-      {
-        name: "sender",
-        type: "address",
-        indexed: true,
-        internalType: "address",
-      },
-      {
-        name: "gameId",
-        type: "uint256",
-        indexed: true,
-        internalType: "uint256",
-      },
-      {
-        name: "metadata",
-        type: "string",
-        indexed: false,
-        internalType: "string",
-      },
-    ],
-    anonymous: false,
-  },
-];
-
-// Background processor
-async function processTransactionQueue() {
-  if (isProcessing || transactionQueue.length === 0) return;
-  
-  isProcessing = true;
-  // console.log(`[Queue Processor] Starting to process queue with ${transactionQueue.length} items`);
-  
-  try {
-    while (transactionQueue.length > 0) {
-      const batch = transactionQueue.splice(0, Math.min(BATCH_SIZE, transactionQueue.length));
-      // console.log(`[Queue Processor] Processing batch of ${batch.length} transactions`);
-      
-      // Process the batch
-      await processTransactionBatch(batch);
-      
-      // console.log(`[Queue Processor] Batch processed. Remaining in queue: ${transactionQueue.length}`);
-      
-      // Wait before processing next batch if there are more
-      if (transactionQueue.length > 0) {
-        // console.log(`[Queue Processor] Waiting ${BATCH_DELAY_MS/1000} seconds before next batch`);
-        await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
-      }
-    }
-  } catch (error) {
-    // console.error('[Queue Processor] Error processing transaction queue:', error);
-  } finally {
-    isProcessing = false;
-    console.log('[Queue Processor] Queue processing completed');
-  }
+// Structure to track each user's batch and timeout
+interface UserBatch {
+    transactions: {
+        userId: string;
+        gameId: number;
+        eventId: number;
+        metadata: string;
+        userData: any;
+    }[];
+    timeout: NodeJS.Timeout | null;
 }
 
-async function processTransactionBatch(batch: any[]) {
-  console.log(`[Batch Processor] Starting batch processing for ${batch.length} transactions`);
-  
-  const processingPromises = batch.map(async (item, index) => {
-    const startTime = Date.now();
-    // console.log(`[Batch Item ${index}] Starting processing for user ${item.userId}`);
-    
+const userBatches: Record<string, UserBatch> = {};
+
+// Helper function to process a single user's batch
+async function processUserBatch(userId: string) {
+    const userBatch = userBatches[userId];
+    if (!userBatch || userBatch.transactions.length === 0) return;
+
+    // Take a copy of the transactions and clear the user's batch
+    const transactionsToProcess = [...userBatch.transactions];
+    userBatch.transactions = [];
+    userBatch.timeout = null;
+
     try {
-      const { userId, devicedata, gameId, eventId, gameDetails, userExist } = item;
-      
-      // Generate private key
-      // console.log(`[Batch Item ${index}] Generating private key for user ${userId}`);
-      const privKey = "0x" + sha512_256(userId);
-      
-      // Set up provider and wallet
-      // console.log(`[Batch Item ${index}] Setting up provider and wallet`);
-      const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
-      const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
-      const wallet_address = await wallet.getAddress();
-      const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
-      
-      // console.log(`[Batch Item ${index}] Wallet address: ${wallet_address}`);
-      
-      // Create smart account client
-      // console.log(`[Batch Item ${index}] Creating smart account client`);
-      const chainName = polygon;
-      const nexusClient = createSmartAccountClient({
-        account: await toNexusAccount({
-          signer: account,
-          chain: chainName,
-          transport: http(),
-        }),
-        transport: http(envConfigs.bundlerUrl),
-        paymaster: createBicoPaymasterClient({ paymasterUrl: envConfigs.paymaster_apikey_url }),
-      });
+        const firstTx = transactionsToProcess[0];
+        const privKey = "0x" + sha512_256(userId);
+        const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
+        const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
+        const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
+        const chainName = polygon;
+        
+        const bundlerUrl = envConfigs.bundlerUrl;
+        const paymasterUrl = envConfigs.paymaster_apikey_url;
+        
+        const nexusClient = createSmartAccountClient({
+            account: await toNexusAccount({
+                signer: account,
+                chain: chainName,
+                transport: http(),
+            }),
+            transport: http(bundlerUrl),
+            paymaster: createBicoPaymasterClient({paymasterUrl}),
+        });
 
-      const saAddress = await nexusClient.account.address;
-      // console.log(`[Batch Item ${index}] Smart account address: ${saAddress}`);
-      
-      // Create new user if doesn't exist
-      if (!userExist) {
-        console.log(`[Batch Item ${index}] Creating new user record`);
-         var newUserId =await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
-      }
-      
-      // Prepare transaction data
-      // console.log(`[Batch Item ${index}] Preparing transaction data`);
-      const contractAddress = envConfigs.contractAddress;
-      const metadata = JSON.stringify({ 
-        role: userExist?.role || 'user',
-        saAddress,
-        gameId: gameDetails.id,
-        eventId: gameDetails.events[0].id
-      });
+        const contractAddress = envConfigs.contractAddress;
+        const abi = [
+            {
+                type: "function",
+                name: "storeMetadata",
+                inputs: [
+                    { name: "metadata", type: "string", internalType: "string" },
+                    { name: "gameId", type: "uint256", internalType: "uint256" },
+                ],
+                outputs: [],
+                stateMutability: "nonpayable",
+            },
+            {
+                type: "event",
+                name: "MetadataStored",
+                inputs: [
+                    { name: "sender", type: "address", indexed: true, internalType: "address" },
+                    { name: "gameId", type: "uint256", indexed: true, internalType: "uint256" },
+                    { name: "metadata", type: "string", indexed: false, internalType: "string" },
+                ],
+                anonymous: false,
+            },
+        ];
 
-      // console.log(`[Batch Item ${index}] Sending user operation`);
-      //@ts-ignore
-      const hash = await nexusClient.sendUserOperation({
-        calls: [{
-          to: contractAddress as `0x${string}`,
-          value: 0n,
-          abi: abi,
-          functionName: 'storeMetadata',
-          args: [metadata, gameId],
-        }],
-      });
+        // Prepare all calls for this user
+        const calls = transactionsToProcess.map(tx => ({
+            to: contractAddress as `0x${string}`,
+            value: 0n,
+            abi: abi,
+            functionName: 'storeMetadata',
+            args: [tx.metadata, tx.gameId],
+        }));
+        
+        // @ts-ignore
+        const hash = await nexusClient.sendUserOperation({
+            calls: calls,
+        });
 
-      // console.log(`[Batch Item ${index}] User operation hash: ${hash}`);
-      
-      // Wait for receipt
-      // console.log(`[Batch Item ${index}] Waiting for transaction receipt`);
-      const receipt = await nexusClient.waitForUserOperationReceipt({ hash });
-      const transactionHash = receipt.receipt.transactionHash;
+        const receipt = await nexusClient.waitForUserOperationReceipt({hash});
+        const transactionHash = receipt.receipt.transactionHash;
 
-      console.log(`[Batch Item ${index}] Transaction hash: ${transactionHash} with status  response ${receipt.success}`);
-      console.log(`[Batch Item ${index}] Saving transaction details to DB`);
-      const  data=await dbservices.User.saveTransactionDetails(
-        gameId,
-        userExist?.id || newUserId.id,
-        eventId,
-        transactionHash,
-        chainName.name,
-        "0"
-      );
-      
-      console.log(`successfully done the transaction for ${data.id} for the gameId ${gameId} and userId${userExist?.id || userId}`);
-      console.log(`[Batch Item ${index}] Transaction completed successfully in ${(Date.now() - startTime)/1000} seconds`);
-      
-      // Send success response if available
-      // if (item.res) {
-      //   item.res.status(200).json({
-      //     status: true,
-      //     message: "Event processed successfully",
-      //     transactionHash,
-      //     user: { ...(userExist || { userId, saAddress }),
-      //     timestamp: new Date().toISOString()
-      // }});
-      // }
+        // Save all transactions for this user
+        for (const tx of transactionsToProcess) {
+            await dbservices.User.saveTransactionDetails(
+                tx.gameId,
+                tx.userData.id,
+                tx.eventId,
+                transactionHash,
+                chainName.name,
+                "0",
+            );
+        }
+    
+        console.log(`Successfully processed ${transactionsToProcess.length} transactions for user ${userId}`);
     } catch (error) {
-      console.error(`[Batch Item ${index}] Error processing transaction:`, error);
-      // if (item.res) {
-      //   item.res.status(500).json({
-      //     status: false,
-      //     message: "Error processing transaction",
-      //     error: error.message
-      //   });
-      // }
+        console.error(`Error processing batch for user ${userId}:`, error);
+        // You might want to implement retry logic or error reporting here
     }
-  });
-
-  console.log('[Batch Processor] Awaiting all batch promises');
-  await Promise.all(processingPromises);
-  console.log('[Batch Processor] Batch processing complete');
 }
+
+
 
 
 export default class User{
@@ -373,6 +276,7 @@ export default class User{
     }
 
   // static fireEvent = async(req: Request, res: Response): Promise<any>=>{
+  //   console.log("Event fired")
   //   try {
   //   const abi = [
   //   {
@@ -426,11 +330,11 @@ export default class User{
   //   }
   //   const eventCheck = await dbservices.User.eventCheck(gameId ,eventId)
   //     if(!eventCheck){
-  //       return res.status(400).json({ status: false, message: "Event does not exist for this game"});
+  //     return res.status(400).json({ status: false, message: "Event does not exist for this game"});
   //     }
   //   const { devicedata } = req.body;
   //   if (!devicedata) {
-  //           return res.status(400).json({ status: false, message: "Device data is required" });
+  //     return res.status(400).json({ status: false, message: "Device data is required" });
   //       }
   //   let userExist = await dbservices.User.userExits(devicedata);
   //   let userId, saAddress ;
@@ -589,68 +493,138 @@ export default class User{
   //   }
   // } 
 
+
   static fireEvent = async (req: Request, res: Response): Promise<any> => {
-   try {
-    console.log()
-     const eventId = req.params.eventId;     
-     const { gameId, id } = await dbservices.User.getGameid(eventId);
-     console.log(`[Event Controller] Processing event ID: ${eventId}`);
-     if (!gameId || !id) {
-       return res.status(400).json({ status: false, message: "Invalid Game or Event ID" });
-     }
+    try {
+        const eventId = req.params.eventId;
+        const {gameId, id} = await dbservices.User.getGameid(eventId);
+        
+        if (!gameId || !id) {
+            return res.status(400).json({status: false, message: "Invalid Game or Event ID"});
+        }
 
-     const eventCheck = await dbservices.User.eventCheck(gameId, eventId);
-     if (!eventCheck) {
-       return res.status(400).json({ status: false, message: "Event does not exist for this game" });
-     }
+        const eventCheck = await dbservices.User.eventCheck(gameId, eventId);
+        if (!eventCheck) {
+            return res.status(400).json({status: false, message: "Event does not exist for this game"});
+        }
 
-     const { devicedata } = req.body;
-     if (!devicedata) {
-       return res.status(400).json({ status: false, message: "Device data is required" });
-     }
+        const {devicedata} = req.body;
+        if (!devicedata) {
+            return res.status(400).json({status: false, message: "Device data is required"});
+        }
 
-     const gameDetails = await dbservices.User.getGameDetails(gameId, eventId);
-     let userExist = await dbservices.User.userExits(devicedata);
+        let userExist = await dbservices.User.userExits(devicedata);
+        const gameDetails = await dbservices.User.getGameDetails(gameId, eventId);
 
-     if (userExist && gameDetails.creatorId === userExist.id) {
-       return res.status(500).send({ status: false, message: "Cannot fire event for own game" });
-     }
+        if (userExist) {
+            if (gameDetails.creatorId === userExist.id) {
+                return res.status(500).send({status: false, message: "Cannot fire event for own game"});
+            }
+        }
 
-     // Create queue item
-     const queueItem = {
-       userId: userExist ? userExist.userId : `user_${this.generateId()}`,
-       devicedata,
-       gameId,
-       eventId: id,
-       gameDetails,
-       userExist,
-       res
-     };
+        const userId = userExist ? userExist.userId : `user_${this.generateId()}`;
+        const datetime = new Date().toISOString();
 
-     // Add to queue
-     console.log(`[Event Controller] Adding event to queue. Queue size: ${transactionQueue.length + 1}`);
-     transactionQueue.push(queueItem);
+        // Prepare metadata with unique hash for each event
+        const metadata = JSON.stringify({
+            role: userExist?.role,
+            saAddress: userExist?.saAddress,
+            gameId: gameDetails.id,
+            eventId: gameDetails.events[0].id,
+        });
 
-     // Start processing if not already running
-     if (!isProcessing) {
-      //  console.log('[Event Controller] Starting queue processor');
-       processTransactionQueue().catch(console.error);
-     }
+        // If user doesn't exist, create them first (synchronously since we need the user data)
+        if (!userExist) {
+            const privKey = "0x" + sha512_256(userId);
+            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
+            const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
+            const wallet_address = await wallet.getAddress();
+            const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
+            
+            const chainName = polygon;
+            const bundlerUrl = envConfigs.bundlerUrl;
+            const paymasterUrl = envConfigs.paymaster_apikey_url;
+            
+            const nexusClient = createSmartAccountClient({
+                account: await toNexusAccount({
+                    signer: account,
+                    chain: chainName,
+                    transport: http(),
+                }),
+                transport: http(bundlerUrl),
+                paymaster: createBicoPaymasterClient({paymasterUrl}),
+            });
 
-    //  console.log('[Event Controller] Sending 202 accepted response');
-     return res.status(200).json({
-       status: true,
-       message: "Event submitted successfully  ",
-       // queuePosition: transactionQueue.length,
-       timestamp: new Date().toISOString()
-     });
+            const saAddress = await nexusClient.account.address;
+            userExist = await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
+        }
 
-   } catch (error) {
-     return res.status(500).json({
-       status: false,
-       message: error.message || "Unexpected error occurred",
-     });
-   }
- };
+        // Initialize user's batch if it doesn't exist
+        if (!userBatches[userId]) {
+            userBatches[userId] = {
+                transactions: [],
+                timeout: null
+            };
+        }
+
+        const userBatch = userBatches[userId];
+
+        // Add transaction to user's batch
+        userBatch.transactions.push({
+            userId,
+            gameId,
+            eventId: id,
+            metadata,
+            userData: userExist
+        });
+
+        // Clear existing timeout if it exists
+        if (userBatch.timeout) {
+            clearTimeout(userBatch.timeout);
+        }
+
+        // Set new timeout for this user's batch
+        userBatch.timeout = setTimeout(() => {
+            processUserBatch(userId).finally(() => {
+                if (userBatches[userId] && userBatches[userId].transactions.length === 0) {
+                    delete userBatches[userId];
+                }
+            });
+        }, BATCH_TIMEOUT_MS);
+
+        // Process immediately if batch size reached
+        if (userBatch.transactions.length >= BATCH_SIZE) {
+            clearTimeout(userBatch.timeout);
+            processUserBatch(userId).finally(() => {
+                if (userBatches[userId] && userBatches[userId].transactions.length === 0) {
+                    delete userBatches[userId];
+                }
+            });
+        }
+
+        // Immediate response with tracking information
+        return res.status(202).json({
+            status: true,
+            message: "Event submitted  successfully",
+            eventId: eventId,
+            // gameId: gameId,
+            userId: userId,
+            timestamp: datetime,
+            // batchInfo: {
+            //     currentUserBatchSize: userBatch.transactions.length,
+            //     willProcessAt: userBatch.transactions.length >= BATCH_SIZE 
+            //         ? "Immediately (batch size reached)"
+            //         : `Within ${BATCH_TIMEOUT_MS/1000} seconds if no more events`
+            // }
+        });
+
+    } catch (error) {
+        console.error('Error in fireEvent:', error);
+        res.status(500).json({
+            status: false,
+            message: error.message || "Unexpected error occurred",
+        });
+    }
+}
 
 }

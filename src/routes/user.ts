@@ -18,6 +18,7 @@ router.get('/event/transaction/:eventId', controllers.User.eventTransaction)
 router.get('/transacttion/:userId', controllers.User.GetUserTransacttion)
 router.get("/game/transaction/:gameId",controllers.User.GetGameTransacttion)
 router.post('/fireEvent/:eventId' ,validateRequest(validators.user.fireEvent),controllers.User.fireEvent)
+// router.post('/fireEvent/:eventId' , controllers.Test.fireEvent)
 
 
 export default router
