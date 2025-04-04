@@ -281,7 +281,7 @@ static allEventblockchain = async (req, res):Promise<any> => {
               type: "event",
             }
           ];
-        const CONTRACT_ADDRESS = "0x30632A3c801031A5D6A1B3589966B60Ee2FBc301";
+        const CONTRACT_ADDRESS = envConfigs.contractAddress;
         const provider = new ethers.providers.JsonRpcProvider("https://polygon-mainnet.g.alchemy.com/v2/demo");
         const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
         const filter = contract.filters.MetadataStored();
@@ -310,7 +310,7 @@ static allEventblockchain = async (req, res):Promise<any> => {
 
 static dune = async (req:Request , res: Response):Promise<any> => {
     try {
-        const dune = new DuneClient("G8yUpITJwWURW4nmaRDsuTqARSordceN");
+        const dune = new DuneClient(process.env.DUNE_API_KEY);
         const query_result:any= await dune.getLatestResult({queryId: 4910363});
         res.status(200).json({ status: true,  count :query_result.result.rows.length ,data: query_result.result.rows });
         // res.status(200).json({status: true,count:query_result?.data.result.rows.length, data: query_result.data.result.rows});
