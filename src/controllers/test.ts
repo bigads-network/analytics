@@ -269,89 +269,35 @@ export default class Test {
 static allEventblockchain = async (req, res):Promise<any> => {
     try {
 
-        const abi = [
+        const ABI = [
             {
-                "anonymous": false,
-                "inputs": [
-                    {
-                        "indexed": true,
-                        "internalType": "address",
-                        "name": "user",
-                        "type": "address"
-                    },
-                    {
-                        "indexed": true,
-                        "internalType": "uint256",
-                        "name": "gameId",
-                        "type": "uint256"
-                    },
-                    {
-                        "indexed": false,
-                        "internalType": "string",
-                        "name": "metadata",
-                        "type": "string"
-                    }
-                ],
-                "name": "MetadataStored",
-                "type": "event"
-            },
-            {
-                "inputs": [
-                    {
-                        "internalType": "address",
-                        "name": "user",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "string",
-                        "name": "metadata",
-                        "type": "string"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "gameId",
-                        "type": "uint256"
-                    }
-                ],
-                "name": "storeMetadata",
-                "outputs": [],
-                "stateMutability": "nonpayable",
-                "type": "function"
+              anonymous: false,
+              inputs: [
+                { indexed: true, internalType: "address", name: "user", type: "address" },
+                { indexed: true, internalType: "uint256", name: "gameId", type: "uint256" },
+                { indexed: false, internalType: "string", name: "metadata", type: "string" },
+              ],
+              name: "MetadataStored",
+              type: "event",
             }
-        ]
+          ];
+        const CONTRACT_ADDRESS = "0x30632A3c801031A5D6A1B3589966B60Ee2FBc301";
         const provider = new ethers.providers.JsonRpcProvider("https://polygon-mainnet.g.alchemy.com/v2/demo");
-        const contractAddress = envConfigs.contractAddress;
-        const contract = new ethers.Contract(contractAddress, abi, provider);
-
-        const latestBlock = await provider.getBlockNumber();
+        const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
         const filter = contract.filters.MetadataStored();
-        
-        // Fetch all events (you can add query params for block range)
+        const latestBlock = await provider.getBlockNumber();
         const events = await contract.queryFilter(filter, 0, latestBlock);
-
-        // Format response
-        // const formattedEvents = events.map((event, index) => ({
-        //     eventNumber: index + 1,
-        //     blockNumber: event.blockNumber,
-        //     transactionHash: event.transactionHash,
-        //     sender: event.args.sender,
-        //     gameId: event.args.gameId.toString(),
-        //     metadata: event.args.metadata,
-        //     fullEventData: {
-        //         ...event,
-        //         args: { // Explicitly include args to ensure serialization
-        //             sender: event.args.sender,
-        //             gameId: event.args.gameId.toString(),
-        //             metadata: event.args.metadata
-        //         }
-        //     }
-        // }));
-
-        res.json({
-            success: true,
-            count: events.length,
-            events: events
-        });
+    
+        const formattedEvents = events.map((event) => ({
+            user: event.args?.user,
+            gameId: event.args?.gameId.toString(),
+            metadata: event.args?.metadata,
+            blockNumber: event.blockNumber,
+            transactionHash: event.transactionHash,
+          }));
+      
+          res.json({ success: true, count: events.length,events: events , });
+      
     } catch (error) {
         console.error("API Error:", error);
         res.status(500).json({

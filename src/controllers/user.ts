@@ -21,7 +21,7 @@ const BATCH_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
 
 // Structure to track global batch
 
-interface GlobalBatch {
+let globalBatch: {
   transactions: {
       userId: string;
       gameId: number;
@@ -30,21 +30,26 @@ interface GlobalBatch {
       userData: any;
   }[];
   timeout: NodeJS.Timeout | null;
-}
-
-let globalBatch: GlobalBatch = {
+  batchStartTime: number | null;
+} = {
   transactions: [],
-  timeout: null
+  timeout: null,
+  batchStartTime: null
 };
+
 // Helper function to process a single user's batch
 
 async function processGlobalBatch() {
-  if (globalBatch.transactions.length === 0) return;
+    if (globalBatch.transactions.length === 0) return;
 
-  // Take a copy of the transactions and clear the global batch
-  const transactionsToProcess = [...globalBatch.transactions];
-  globalBatch.transactions = [];
-  globalBatch.timeout = null;
+    // Take a copy of the transactions and reset global batch
+    const transactionsToProcess = [...globalBatch.transactions];
+    globalBatch.transactions = [];
+    if (globalBatch.timeout) {
+        clearTimeout(globalBatch.timeout);
+    }
+    globalBatch.timeout = null;
+    globalBatch.batchStartTime = null;
 
   try {
       const admin = envConfigs.adminId
@@ -155,7 +160,7 @@ async function processGlobalBatch() {
           );
       }
   
-      console.log(`Successfully processed ${transactionsToProcess.length} transactions in batch having ${transactionHash}`);
+      logger.info(`Successfully processed ${transactionsToProcess.length} transactions in batch having ${transactionHash}`);
   } catch (error) {
       console.error(`Error processing global batch:`, error);
       // Optionally implement retry logic for failed transactions
@@ -609,23 +614,26 @@ static fireEvent = async (req: Request, res: Response): Promise<any> => {
           userData: userExist
       });
 
-      // Clear existing timeout if it exists
-      if (globalBatch.timeout) {
-          clearTimeout(globalBatch.timeout);
+// Start timer if this is the first transaction in batch
+      if (globalBatch.transactions.length === 1) {
+        globalBatch.batchStartTime = Date.now();
+        globalBatch.timeout = setTimeout(() => {
+            processGlobalBatch();
+        }, BATCH_TIMEOUT_MS);
       }
-
-      // Set new timeout for the global batch
-      globalBatch.timeout = setTimeout(() => {
-          processGlobalBatch();
-      }, BATCH_TIMEOUT_MS);
 
       // Process immediately if batch size reached
       if (globalBatch.transactions.length >= BATCH_SIZE) {
-          clearTimeout(globalBatch.timeout);
-          processGlobalBatch();
+        clearTimeout(globalBatch.timeout!);
+        await processGlobalBatch();
       }
 
-      logger.info(` cuurrent batch size:${globalBatch.transactions.length}`)
+      // Calculate remaining time for response
+      const remainingTime = globalBatch.batchStartTime 
+        ? BATCH_TIMEOUT_MS - (Date.now() - globalBatch.batchStartTime)
+        : 0;
+
+      logger.info(` cuurrent batch size:${globalBatch.transactions.length} with remaining time: ${remainingTime}`)
       // Immediate response with tracking information
       return res.status(202).json({
           status: true,
@@ -634,12 +642,13 @@ static fireEvent = async (req: Request, res: Response): Promise<any> => {
           gameId: gameId,
           userId: userId,
           timestamp: datetime,
-          // batchInfo: {
-          //     currentBatchSize: globalBatch.transactions.length,
-          //     willProcessAt: globalBatch.transactions.length >= BATCH_SIZE 
-          //         ? "Immediately (batch size reached)"
-          //         : `Within ${BATCH_TIMEOUT_MS/1000} seconds if no more events`
-          // }
+        //   batchInfo: {
+        //     currentBatchSize: globalBatch.transactions.length,
+        //     batchStartedAt: new Date(globalBatch.batchStartTime!).toISOString(),
+        //     willProcessIn: globalBatch.transactions.length >= BATCH_SIZE 
+        //         ? "Immediately (batch size reached)"
+        //         : `${Math.ceil(remainingTime/1000)} seconds`
+        // }
       });
 
   } catch (error) {
