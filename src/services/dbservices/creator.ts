@@ -40,6 +40,40 @@ export default class Creator {
         }
     }
 
+    static saveAdmin = async(userId: any, devicedata: any, saAddress: any, wallet_address: any): Promise<any> => {
+        try {
+            // console.log(userId, devicedata, saAddress, wallet_address ,"created save")
+            const result =  await postgreDb.insert(users).values({
+                userId: userId,
+                devicedata: devicedata,
+                role:"admin",
+                walletAddress:wallet_address,
+                saAddress:saAddress,
+            }).returning({
+                userId:users.userId,
+                id:users.id,
+                role:users.role,
+                saAddress:users.saAddress,
+                walletAddress:users.walletAddress
+            })
+            return result[0];
+            } catch (error) {
+           throw new Error
+        }
+    }
+
+    static getdetails =async(adminId:any): Promise<any> => {
+        try {
+            const result = await postgreDb.select()
+            .from(users)
+            .where(eq(users.userId ,adminId));
+            return result[0]
+        } catch (error) {
+           throw new Error
+        }
+    }
+ 
+
     static gameExists = async(craetorId: any , name:any ,type:any): Promise<any> => {
         try {
             const result = await postgreDb.select()

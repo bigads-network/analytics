@@ -27,15 +27,10 @@ export default class Creator{
         }
 
         let userExist = await dbservices.Creator.creatorExits(devicedata);
-        let message = "User Logged In";
+        let message = "Creator Logged In";
         let userId, saAddress, token;
 
         if (!userExist) {
-            // const chainId = parseInt(envConfigs.chainId || "80002");
-            // if (!chainId) {
-            //     throw new Error("Missing or invalid chainId in environment variables");
-            // }
-
             userId = `creator_${this.generateId()}`; // Assuming `generateId` is defined elsewhere
             const privKey = sha512_256(devicedata + userId);
             const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
@@ -56,32 +51,6 @@ export default class Creator{
             const chainName = polygon;
             const bundlerUrl =envConfigs.bundlerUrl
             const paymasterUrl = envConfigs.paymaster_apikey_url
-            // if (!chainName) {
-            //     return res.status(500).json({ status: false, message: "Unsupported chainId" });
-            // }
-
-            // const client = createWalletClient({
-            //     account,
-            //     chain: chainName,
-            //     transport: http(),
-            // });
-
-
-            // const bundlerUrl = chainIdToBundlerUrl[chainId];
-            // if (!bundlerUrl) {
-            //     return res.status(500).json({ status: false, message: "Unsupported chainId for bundler" });
-            // }
-            // const Paymaster_key = envConfigs.paymaster_apikey;
-            // if (!Paymaster_key) {
-            //     return res.status(500).json({ status: false, message: "Missing Paymaster API key" });
-            // }
-
-            // const smartAccount = await createSmartAccountClient({
-            //     signer: client,
-            //     bundlerUrl,
-            //     chainId,
-            //     biconomyPaymasterApiKey: Paymaster_key,
-            // });
 
             const nexusClient = createSmartAccountClient({
                 account: await toNexusAccount({
@@ -102,7 +71,86 @@ export default class Creator{
             }
 
             userExist = saveResult;
-            message = "User registered Successfully";
+            message = "Creator registered Successfully";
+        }
+
+        token = await generateAuthTokens({ userId: userExist.id, role: userExist.role });
+
+        return res.status(200).json({
+            status: true,
+            message,
+            data: {
+                id: userExist.id,
+                userId: userExist.userId,
+                role: userExist.role,
+                devicedata,
+                saAddress: userExist.saAddress,
+                walletAddress: userExist.walletAddress,
+            },
+            token,
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: error.message || "Unexpected error occurred",
+        });
+    }
+   };
+
+   static AdminRegister = async (req: Request, res: Response):Promise<any> => {
+    try {
+        const { devicedata } = req.body;
+        console.log(devicedata ,"device")
+        if (!devicedata) {
+            return res.status(400).json({ status: false, message: "Device data is required" });
+        }
+
+        let userExist = await dbservices.Creator.creatorExits(devicedata);
+        let message = "Admin Logged In";
+        let userId, saAddress, token;
+
+        if (!userExist) {
+            userId = `admin_${this.generateId()}`; // Assuming `generateId` is defined elsewhere
+            const privKey = sha512_256(devicedata + userId);
+            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
+
+            if (!rpcHttpProvider) {
+                return res.status(500).json({ status: false, message: "Error creating RPC provider" });
+            }
+
+            const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
+            if (!wallet) {
+                return res.status(500).json({ status: false, message: "Error creating wallet" });
+            }
+
+            const wallet_address = await wallet.getAddress();
+            // console.log(wallet_address, "wallet_address");
+
+            const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
+            const chainName = polygon;
+            const bundlerUrl =envConfigs.bundlerUrl
+            const paymasterUrl = envConfigs.paymaster_apikey_url
+
+            const nexusClient = createSmartAccountClient({
+                account: await toNexusAccount({
+                  signer: account,
+                  chain: chainName,
+                  transport: http(),
+                }),
+                transport: http(bundlerUrl),
+                paymaster: createBicoPaymasterClient({ paymasterUrl }),
+              });
+
+              saAddress = await nexusClient.account.address;
+            //   console.log(saAddress ,"Account................................");
+            const saveResult = await dbservices.Creator.saveAdmin(userId, devicedata, saAddress, wallet_address);
+
+            if (!saveResult) {
+                throw new Error("Error saving user details");
+            }
+
+            userExist = saveResult;
+            message = "Admin registered Successfully";
         }
 
         token = await generateAuthTokens({ userId: userExist.id, role: userExist.role });

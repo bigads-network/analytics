@@ -7,121 +7,160 @@ import {
     createSmartAccountClient,
     createBicoPaymasterClient,
     toNexusAccount,
+    Logger,
   } from '@biconomy/abstractjs';
 import { chainIdToBundlerUrl, chainIdToChainName, envConfigs } from '../config/envconfig';
 import { generateGameToken } from '../config/gameToken';
 import dbservices from '../services/dbservices';
 import { polygon, polygonAmoy } from 'viem/chains';
+import logger from '../config/logger';
 
 
 const BATCH_SIZE = 50; // Process when a user has 4 transactions
 const BATCH_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
 
-// Structure to track each user's batch and timeout
-interface UserBatch {
-    transactions: {
-        userId: string;
-        gameId: number;
-        eventId: number;
-        metadata: string;
-        userData: any;
-    }[];
-    timeout: NodeJS.Timeout | null;
+// Structure to track global batch
+
+interface GlobalBatch {
+  transactions: {
+      userId: string;
+      gameId: number;
+      eventId: number;
+      metadata: string;
+      userData: any;
+  }[];
+  timeout: NodeJS.Timeout | null;
 }
 
-const userBatches: Record<string, UserBatch> = {};
-
+let globalBatch: GlobalBatch = {
+  transactions: [],
+  timeout: null
+};
 // Helper function to process a single user's batch
-async function processUserBatch(userId: string) {
-    const userBatch = userBatches[userId];
-    if (!userBatch || userBatch.transactions.length === 0) return;
 
-    // Take a copy of the transactions and clear the user's batch
-    const transactionsToProcess = [...userBatch.transactions];
-    userBatch.transactions = [];
-    userBatch.timeout = null;
+async function processGlobalBatch() {
+  if (globalBatch.transactions.length === 0) return;
 
-    try {
-        const firstTx = transactionsToProcess[0];
-        const privKey = "0x" + sha512_256(userId);
-        const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
-        const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
-        const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
-        const chainName = polygon;
-        
-        const bundlerUrl = envConfigs.bundlerUrl;
-        const paymasterUrl = envConfigs.paymaster_apikey_url;
-        
-        const nexusClient = createSmartAccountClient({
-            account: await toNexusAccount({
-                signer: account,
-                chain: chainName,
-                transport: http(),
-            }),
-            transport: http(bundlerUrl),
-            paymaster: createBicoPaymasterClient({paymasterUrl}),
-        });
+  // Take a copy of the transactions and clear the global batch
+  const transactionsToProcess = [...globalBatch.transactions];
+  globalBatch.transactions = [];
+  globalBatch.timeout = null;
 
-        const contractAddress = envConfigs.contractAddress;
-        const abi = [
-            {
-                type: "function",
-                name: "storeMetadata",
-                inputs: [
-                    { name: "metadata", type: "string", internalType: "string" },
-                    { name: "gameId", type: "uint256", internalType: "uint256" },
-                ],
-                outputs: [],
-                stateMutability: "nonpayable",
-            },
-            {
-                type: "event",
-                name: "MetadataStored",
-                inputs: [
-                    { name: "sender", type: "address", indexed: true, internalType: "address" },
-                    { name: "gameId", type: "uint256", indexed: true, internalType: "uint256" },
-                    { name: "metadata", type: "string", indexed: false, internalType: "string" },
-                ],
-                anonymous: false,
-            },
-        ];
+  try {
+      const admin = envConfigs.adminId
+      const adminAccountDetails = await dbservices.Creator.getdetails(admin);
+      if (!adminAccountDetails) {
+          throw new Error("Admin account not found in database");
+      }
+      const privKey = sha512_256(adminAccountDetails.devicedata + adminAccountDetails.userId);
+      const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
+      const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
+      const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
+      const chainName = polygon;
+      
+      const bundlerUrl = envConfigs.bundlerUrl;
+      const paymasterUrl = envConfigs.paymaster_apikey_url;
+      
+      const nexusClient = createSmartAccountClient({
+          account: await toNexusAccount({
+              signer: account,
+              chain: chainName,
+              transport: http(),
+          }),
+          transport: http(bundlerUrl),
+          paymaster: createBicoPaymasterClient({paymasterUrl}),
+      });
 
-        // Prepare all calls for this user
-        const calls = transactionsToProcess.map(tx => ({
-            to: contractAddress as `0x${string}`,
-            value: 0n,
-            abi: abi,
-            functionName: 'storeMetadata',
-            args: [tx.metadata, tx.gameId],
-        }));
-        
-        // @ts-ignore
-        const hash = await nexusClient.sendUserOperation({
-            calls: calls,
-        });
+      console.log(nexusClient.account.address , "Account")
+      const contractAddress = envConfigs.contractAddress;
+      const abi = [
+          {
+              "anonymous": false,
+              "inputs": [
+                  {
+                      "indexed": true,
+                      "internalType": "address",
+                      "name": "user",
+                      "type": "address"
+                  },
+                  {
+                      "indexed": true,
+                      "internalType": "uint256",
+                      "name": "gameId",
+                      "type": "uint256"
+                  },
+                  {
+                      "indexed": false,
+                      "internalType": "string",
+                      "name": "metadata",
+                      "type": "string"
+                  }
+              ],
+              "name": "MetadataStored",
+              "type": "event"
+          },
+          {
+              "inputs": [
+                  {
+                      "internalType": "address",
+                      "name": "user",
+                      "type": "address"
+                  },
+                  {
+                      "internalType": "string",
+                      "name": "metadata",
+                      "type": "string"
+                  },
+                  {
+                      "internalType": "uint256",
+                      "name": "gameId",
+                      "type": "uint256"
+                  }
+              ],
+              "name": "storeMetadata",
+              "outputs": [],
+              "stateMutability": "nonpayable",
+              "type": "function"
+          }
+      ]
 
-        const receipt = await nexusClient.waitForUserOperationReceipt({hash});
-        const transactionHash = receipt.receipt.transactionHash;
+      // Prepare all calls for the batch
+      const calls = transactionsToProcess.map(tx => ({
+          to: contractAddress as `0x${string}`,
+          value: 0n,
+          abi: abi,
+          functionName: 'storeMetadata',
+          args: [tx.userData.saAddress ,tx.metadata, tx.gameId],
+      }));
 
-        // Save all transactions for this user
-        for (const tx of transactionsToProcess) {
-            await dbservices.User.saveTransactionDetails(
-                tx.gameId,
-                tx.userData.id,
-                tx.eventId,
-                transactionHash,
-                chainName.name,
-                "0",
-            );
-        }
-    
-        console.log(`Successfully processed ${transactionsToProcess.length} transactions for user ${userId}`);
-    } catch (error) {
-        console.error(`Error processing batch for user ${userId}:`, error);
-        // You might want to implement retry logic or error reporting here
-    }
+      console.log(calls ,"call")
+      
+      // @ts-ignore
+      const hash = await nexusClient.sendUserOperation({
+          calls: calls,
+      });
+
+      const receipt = await nexusClient.waitForUserOperationReceipt({hash});
+      const transactionHash = receipt.receipt.transactionHash;
+
+      // Save all transactions in the batch
+      for (const tx of transactionsToProcess) {
+          await dbservices.User.saveTransactionDetails(
+              tx.gameId,
+              tx.userData.id,
+              tx.eventId,
+              transactionHash,
+              chainName.name,
+              "0",
+          );
+      }
+  
+      console.log(`Successfully processed ${transactionsToProcess.length} transactions in batch having ${transactionHash}`);
+  } catch (error) {
+      console.error(`Error processing global batch:`, error);
+      // Optionally implement retry logic for failed transactions
+  }
 }
-
 
 
 
@@ -494,137 +533,122 @@ export default class User{
   // } 
 
 
-  static fireEvent = async (req: Request, res: Response): Promise<any> => {
-    try {
-        const eventId = req.params.eventId;
-        const {gameId, id} = await dbservices.User.getGameid(eventId);
-        
-        if (!gameId || !id) {
-            return res.status(400).json({status: false, message: "Invalid Game or Event ID"});
-        }
 
-        const eventCheck = await dbservices.User.eventCheck(gameId, eventId);
-        if (!eventCheck) {
-            return res.status(400).json({status: false, message: "Event does not exist for this game"});
-        }
 
-        const {devicedata} = req.body;
-        if (!devicedata) {
-            return res.status(400).json({status: false, message: "Device data is required"});
-        }
+static fireEvent = async (req: Request, res: Response): Promise<any> => {
+  try {
+      const eventId = req.params.eventId;
+      const {gameId, id} = await dbservices.User.getGameid(eventId);
+      
+      if (!gameId || !id) {
+          return res.status(400).json({status: false, message: "Invalid Game or Event ID"});
+      }
 
-        let userExist = await dbservices.User.userExits(devicedata);
-        const gameDetails = await dbservices.User.getGameDetails(gameId, eventId);
+      const eventCheck = await dbservices.User.eventCheck(gameId, eventId);
+      if (!eventCheck) {
+          return res.status(400).json({status: false, message: "Event does not exist for this game"});
+      }
 
-        if (userExist) {
-            if (gameDetails.creatorId === userExist.id) {
-                return res.status(500).send({status: false, message: "Cannot fire event for own game"});
-            }
-        }
+      const {devicedata} = req.body;
+      if (!devicedata) {
+          return res.status(400).json({status: false, message: "Device data is required"});
+      }
 
-        const userId = userExist ? userExist.userId : `user_${this.generateId()}`;
-        const datetime = new Date().toISOString();
+      let userExist = await dbservices.User.userExits(devicedata);
+      const gameDetails = await dbservices.User.getGameDetails(gameId, eventId);
 
-        // Prepare metadata with unique hash for each event
-        const metadata = JSON.stringify({
-            role: userExist?.role,
-            saAddress: userExist?.saAddress,
-            gameId: gameDetails.id,
-            eventId: gameDetails.events[0].id,
-        });
+      if (userExist) {
+          if (gameDetails.creatorId === userExist.id) {
+              return res.status(500).send({status: false, message: "Cannot fire event for own game"});
+          }
+      }
 
-        // If user doesn't exist, create them first (synchronously since we need the user data)
-        if (!userExist) {
-            const privKey = "0x" + sha512_256(userId);
-            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
-            const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
-            const wallet_address = await wallet.getAddress();
-            const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
-            
-            const chainName = polygon;
-            const bundlerUrl = envConfigs.bundlerUrl;
-            const paymasterUrl = envConfigs.paymaster_apikey_url;
-            
-            const nexusClient = createSmartAccountClient({
-                account: await toNexusAccount({
-                    signer: account,
-                    chain: chainName,
-                    transport: http(),
-                }),
-                transport: http(bundlerUrl),
-                paymaster: createBicoPaymasterClient({paymasterUrl}),
-            });
+      const userId = userExist ? userExist.userId : `user_${this.generateId()}`;
+      const datetime = new Date().toISOString();
 
-            const saAddress = await nexusClient.account.address;
-            userExist = await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
-        }
 
-        // Initialize user's batch if it doesn't exist
-        if (!userBatches[userId]) {
-            userBatches[userId] = {
-                transactions: [],
-                timeout: null
-            };
-        }
+      // If user doesn't exist, create them first
+      if (!userExist) {
+          const privKey = "0x" + sha512_256(userId);
+          const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
+          const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
+          const wallet_address = await wallet.getAddress();
+          const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
+          
+          const chainName = polygon;
+          const bundlerUrl = envConfigs.bundlerUrl;
+          const paymasterUrl = envConfigs.paymaster_apikey_url;
+          
+          const nexusClient = createSmartAccountClient({
+              account: await toNexusAccount({
+                  signer: account,
+                  chain: chainName,
+                  transport: http(),
+              }),
+              transport: http(bundlerUrl),
+              paymaster: createBicoPaymasterClient({paymasterUrl}),
+          });
 
-        const userBatch = userBatches[userId];
+          const saAddress = await nexusClient.account.address;
+          userExist = await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
+      }
+     
+      const metadata = JSON.stringify({
+          role: userExist?.role,
+          // smartAccountAddress: userExist?.saAddress,
+          gameId: gameDetails.id,
+          eventId: gameDetails.events[0].id,
+      });
 
-        // Add transaction to user's batch
-        userBatch.transactions.push({
-            userId,
-            gameId,
-            eventId: id,
-            metadata,
-            userData: userExist
-        });
+      // Add transaction to global batch
+      globalBatch.transactions.push({
+          userId,
+          gameId,
+          eventId: id,
+          metadata,
+          userData: userExist
+      });
 
-        // Clear existing timeout if it exists
-        if (userBatch.timeout) {
-            clearTimeout(userBatch.timeout);
-        }
+      // Clear existing timeout if it exists
+      if (globalBatch.timeout) {
+          clearTimeout(globalBatch.timeout);
+      }
 
-        // Set new timeout for this user's batch
-        userBatch.timeout = setTimeout(() => {
-            processUserBatch(userId).finally(() => {
-                if (userBatches[userId] && userBatches[userId].transactions.length === 0) {
-                    delete userBatches[userId];
-                }
-            });
-        }, BATCH_TIMEOUT_MS);
+      // Set new timeout for the global batch
+      globalBatch.timeout = setTimeout(() => {
+          processGlobalBatch();
+      }, BATCH_TIMEOUT_MS);
 
-        // Process immediately if batch size reached
-        if (userBatch.transactions.length >= BATCH_SIZE) {
-            clearTimeout(userBatch.timeout);
-            processUserBatch(userId).finally(() => {
-                if (userBatches[userId] && userBatches[userId].transactions.length === 0) {
-                    delete userBatches[userId];
-                }
-            });
-        }
+      // Process immediately if batch size reached
+      if (globalBatch.transactions.length >= BATCH_SIZE) {
+          clearTimeout(globalBatch.timeout);
+          processGlobalBatch();
+      }
 
-        // Immediate response with tracking information
-        return res.status(202).json({
-            status: true,
-            message: "Event submitted  successfully",
-            eventId: eventId,
-            // gameId: gameId,
-            userId: userId,
-            timestamp: datetime,
-            // batchInfo: {
-            //     currentUserBatchSize: userBatch.transactions.length,
-            //     willProcessAt: userBatch.transactions.length >= BATCH_SIZE 
-            //         ? "Immediately (batch size reached)"
-            //         : `Within ${BATCH_TIMEOUT_MS/1000} seconds if no more events`
-            // }
-        });
+      logger.info(` cuurrent batch size:${globalBatch.transactions.length}`)
+      // Immediate response with tracking information
+      return res.status(202).json({
+          status: true,
+          message: "Event received and being processed",
+          eventId: eventId,
+          gameId: gameId,
+          userId: userId,
+          timestamp: datetime,
+          // batchInfo: {
+          //     currentBatchSize: globalBatch.transactions.length,
+          //     willProcessAt: globalBatch.transactions.length >= BATCH_SIZE 
+          //         ? "Immediately (batch size reached)"
+          //         : `Within ${BATCH_TIMEOUT_MS/1000} seconds if no more events`
+          // }
+      });
 
-    } catch (error) {
-        console.error('Error in fireEvent:', error);
-        res.status(500).json({
-            status: false,
-            message: error.message || "Unexpected error occurred",
-        });
-    }
+  } catch (error) {
+      console.error('Error in fireEvent:', error);
+      res.status(500).json({
+          status: false,
+          message: error.message || "Unexpected error occurred",
+      });
+  }
 }
 
 }

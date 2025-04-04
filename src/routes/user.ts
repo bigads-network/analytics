@@ -17,8 +17,12 @@ router.get('/count' , controllers.User.count)
 router.get('/event/transaction/:eventId', controllers.User.eventTransaction)
 router.get('/transacttion/:userId', controllers.User.GetUserTransacttion)
 router.get("/game/transaction/:gameId",controllers.User.GetGameTransacttion)
-router.post('/fireEvent/:eventId' ,validateRequest(validators.user.fireEvent),controllers.User.fireEvent)
+router.post('/fireEvent/:eventId',validateRequest(validators.user.fireEvent),controllers.User.fireEvent)
 // router.post('/fireEvent/:eventId' , controllers.Test.fireEvent)
+// router.get('/Blockchain', controllers.Test.allEventblockchain)
+// router.get('/dune', controllers.Test.dune)
+// router.get('/test', controllers.Test.test)
+
 
 
 export default router

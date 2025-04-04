@@ -28,4 +28,3 @@ app.set('views', path.join(__dirname, 'views')); // Adjust the path based on you
 app.listen(envConfigs.port, () => {
   logger.info(`Server started on ${envConfigs.port}`);
 })
-
