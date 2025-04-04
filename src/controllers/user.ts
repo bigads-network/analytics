@@ -71,7 +71,7 @@ async function processGlobalBatch() {
           paymaster: createBicoPaymasterClient({paymasterUrl}),
       });
 
-      console.log(nexusClient.account.address , "Account")
+      // console.log(nexusClient.account.address , "Account")
       const contractAddress = envConfigs.contractAddress;
       const abi = [
           {
@@ -133,7 +133,7 @@ async function processGlobalBatch() {
           args: [tx.userData.saAddress ,tx.metadata, tx.gameId],
       }));
 
-      console.log(calls ,"call")
+      // console.log(calls ,"call")
       
       // @ts-ignore
       const hash = await nexusClient.sendUserOperation({
