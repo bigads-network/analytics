@@ -351,7 +351,6 @@ export default class User {
                 amount: transactions.amount,
                 time:transactions.createdAt
             })
-            console.log(result[0] ,"ressssssulttttt")
             return result[0];
         } catch (error) {
            throw new Error

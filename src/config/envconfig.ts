@@ -19,6 +19,7 @@ const envVarsSchema = z.object({
   BUNDLER_URL:z.string(),
   PAYMASTERAPI_KEY_URL:z.string(),
   ADMINID:z.string(),
+  DUNE_API_KEY:z.string()
 });
 
 const envVars = envVarsSchema.parse(process.env);
@@ -37,7 +38,8 @@ export const envConfigs = {
   telegram_token:envVars.TELEGRAM_TOKEN,
   bundlerUrl:envVars.BUNDLER_URL,
   paymaster_apikey_url : envVars.PAYMASTERAPI_KEY_URL,
-  adminId:envVars.ADMINID
+  adminId:envVars.ADMINID,
+  duneApikey:envVars.DUNE_API_KEY
 };
 
 export const chainIdToChainName: any = {
