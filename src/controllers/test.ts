@@ -266,9 +266,49 @@ export default class Test {
 
 
 
-static allEventblockchain = async (req, res):Promise<any> => {
-    try {
+// static allEventblockchain = async (req, res):Promise<any> => {
+//     try {
 
+//         const ABI = [
+//             {
+//               anonymous: false,
+//               inputs: [
+//                 { indexed: true, internalType: "address", name: "user", type: "address" },
+//                 { indexed: true, internalType: "uint256", name: "gameId", type: "uint256" },
+//                 { indexed: false, internalType: "string", name: "metadata", type: "string" },
+//               ],
+//               name: "MetadataStored",
+//               type: "event",
+//             }
+//           ];
+//         const CONTRACT_ADDRESS = envConfigs.contractAddress;
+//         const provider = new ethers.providers.JsonRpcProvider("https://polygon-mainnet.g.alchemy.com/v2/demo");
+//         const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
+//         const filter = contract.filters.MetadataStored();
+//         const latestBlock = await provider.getBlockNumber();
+//         const events = await contract.queryFilter(filter, 0, latestBlock);
+    
+//         const formattedEvents = events.map((event) => ({
+//             user: event.args?.user,
+//             gameId: event.args?.gameId.toString(),
+//             metadata: event.args?.metadata,
+//             blockNumber: event.blockNumber,
+//             transactionHash: event.transactionHash,
+//           }));
+      
+//           res.json({ success: true, count: events.length ,events:events });
+      
+//     } catch (error) {
+//         console.error("API Error:", error);
+//         res.status(500).json({
+//             success: false,
+//             error: error.message
+//         });
+//     }
+// }
+
+static allEventblockchain = async (req, res): Promise<any> => {
+    try {
         const ABI = [
             {
               anonymous: false,
@@ -280,24 +320,43 @@ static allEventblockchain = async (req, res):Promise<any> => {
               name: "MetadataStored",
               type: "event",
             }
-          ];
+          ];      
         const CONTRACT_ADDRESS = envConfigs.contractAddress;
         const provider = new ethers.providers.JsonRpcProvider("https://polygon-mainnet.g.alchemy.com/v2/demo");
         const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
+        
+        const days = parseInt(req.query.days as string) || 30;
+        const endBlock = await provider.getBlockNumber();
+        const endBlockData = await provider.getBlock(endBlock);
+        const startTimestamp = endBlockData.timestamp - (days * 24 * 60 * 60);
+        const startBlock = Math.max(0, endBlock - Math.floor(days * 6500));
+        
         const filter = contract.filters.MetadataStored();
-        const latestBlock = await provider.getBlockNumber();
-        const events = await contract.queryFilter(filter, 0, latestBlock);
-    
-        const formattedEvents = events.map((event) => ({
-            user: event.args?.user,
-            gameId: event.args?.gameId.toString(),
-            metadata: event.args?.metadata,
-            blockNumber: event.blockNumber,
-            transactionHash: event.transactionHash,
-          }));
-      
-          res.json({ success: true, count: events.length,events: events , });
-      
+        const events = await contract.queryFilter(filter, startBlock, endBlock);
+        
+        // Group by day/hour for the graph
+        const dailyStats: Record<string, number> = {};
+        
+        // Need to fetch block timestamps (this might be slow - consider using a service like The Graph)
+        for (const event of events) {
+            const block = await provider.getBlock(event.blockNumber);
+            const date = new Date(block.timestamp * 1000);
+            const dayKey = `${date.getFullYear()}-${date.getMonth()+1}-${date.getDate()}`;
+            
+            dailyStats[dayKey] = (dailyStats[dayKey] || 0) + 1;
+        }
+        
+        // Convert to array format for charts
+        const graphData = Object.entries(dailyStats).map(([date, count]) => ({
+            date,
+            count
+        }));
+        
+        res.json({ 
+            success: true, 
+            data: graphData 
+        });
+        
     } catch (error) {
         console.error("API Error:", error);
         res.status(500).json({
@@ -311,7 +370,21 @@ static allEventblockchain = async (req, res):Promise<any> => {
 static dune = async (req:Request , res: Response):Promise<any> => {
     try {
         const dune = new DuneClient(process.env.DUNE_API_KEY);
-        const query_result:any= await dune.getLatestResult({queryId: 4910363});
+        // const query_result:any= await dune.getLatestResult({queryId: 4910363}); // all data
+        const query_result:any= await dune.getLatestResult({queryId: 4934352}); // Active user
+        res.status(200).json({ status: true,  count :query_result.result.rows.length ,data: query_result.result.rows });
+        // res.status(200).json({status: true,count:query_result?.data.result.rows.length, data: query_result.data.result.rows});
+    } catch (error) {
+        console.error("API Error:", error);
+        res.status(500).json({status: false , message :"error fetching data "})
+    }
+}
+
+
+static duneEventsdata = async (req:Request , res: Response):Promise<any> => {
+    try {
+        const dune = new DuneClient(process.env.DUNE_API_KEY);
+        const query_result:any= await dune.getLatestResult({queryId: 4962378}); // all data
         res.status(200).json({ status: true,  count :query_result.result.rows.length ,data: query_result.result.rows });
         // res.status(200).json({status: true,count:query_result?.data.result.rows.length, data: query_result.data.result.rows});
     } catch (error) {
@@ -333,5 +406,55 @@ static test = async(req:Request, res:Response):Promise<any>=>{
     }
 }
 
+static totalTransactionsperdat = async(req:Request , res:Response):Promise<any>=>{
+    try {
+    const startdateString = req.query.startdate as string;
+    const endDateString = req.query.endDate as string
+    if (!startdateString||!endDateString ) {
+        return res.status(400).json({
+            success: false,
+            message: 'Date parameter is required (format: YYYY-MM-DD)'
+        });
+    }
+            
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startdateString)) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid date format. Please use YYYY-MM-DD'
+        });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(endDateString)) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid date format. Please use YYYY-MM-DD'
+        });
+    }
+
+    // Parse the date (will be interpreted as local time)
+    const startdate = new Date(startdateString); // Pass the date you want to query
+    const iststartDate = new Date(startdate.getTime() - 5.5 * 60 * 60 * 1000);
+    
+    const endDate = new Date(endDateString)
+    const istendDate = new Date(endDate.getTime() - 5.5 * 60 * 60 * 1000);
+    console.log(iststartDate ,istendDate ,"time")
+    // const count = await dbservices.User.perDayTransactions(date);
+    // "2025-04-09T02:00:00", // Start: April 9, 2 AM IST
+    // "2025-04-10T10:00:00"  // End: April 10, 10 AM IST
+    const startTime="2025-04-09T02:00:00" ;
+    const endTime= "2025-04-10T14:00:00" ;
+    const count = await dbservices.User.perDayTransactions(startTime , endTime);
+    return res.status(200).json({
+        success: true,
+        count: {
+            startdate: startdateString,
+            endDate:endDateString,
+            transactionCount: count
+        }
+    });        
+    } catch (error) {
+        res.status(500).json({status: false , message :"error fetching data "})
+
+    }
+}
 
 }

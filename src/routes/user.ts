@@ -20,8 +20,10 @@ router.get("/game/transaction/:gameId",controllers.User.GetGameTransacttion)
 router.post('/fireEvent/:eventId',validateRequest(validators.user.fireEvent),controllers.User.fireEvent)
 // router.post('/fireEvent/:eventId' , controllers.Test.fireEvent)
 // router.get('/Blockchain', controllers.Test.allEventblockchain)
-// router.get('/dune', controllers.Test.dune)
+router.get('/duneActiveUser', controllers.Test.dune)
+router.get('/duneActiveEvents', controllers.Test.duneEventsdata)
 // router.get('/test', controllers.Test.test)
+router.get("/transactions/day", controllers.Test.totalTransactionsperdat)
 
 
 

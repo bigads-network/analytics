@@ -4,3 +4,4 @@ logs
 app.log
 views
 .env.example
+src/testingscript.ts

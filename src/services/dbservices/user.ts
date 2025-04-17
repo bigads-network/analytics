@@ -1,4 +1,4 @@
-import {and, count, countDistinct, desc, eq, inArray, isNull, sql} from "drizzle-orm";
+import {and, between, count, countDistinct, desc, eq, gte, inArray, isNull, lte, sql} from "drizzle-orm";
 import postgreDb from "../../config/db";
 import dotenv from "dotenv";
 import { events, games, transactions, users } from "../../models/schema";
@@ -349,11 +349,35 @@ export default class User {
                 transactionHash: transactions.transactionHash,
                 transaction_chain: transactions.transactionChain,
                 amount: transactions.amount,
+                time:transactions.createdAt
             })
-            // console.log(result[0] ,"ressssssulttttt")
+            console.log(result[0] ,"ressssssulttttt")
             return result[0];
         } catch (error) {
            throw new Error
+        }
+    }
+
+
+    static perDayTransactions = async(startTime:any , endTime:any):Promise<any>=>{
+        try {
+            const result = await postgreDb.select({
+                TransactionHashCount: sql<number>`count(DISTINCT ${transactions.transactionHash})`.mapWith(Number),
+                count: sql<number>`count(*)::int`
+            })
+  .from(transactions)
+  .where(
+    between(
+      transactions.createdAt,
+      new Date(startTime), // April 9 2AM IST in UTC (2AM - 5:30)
+      new Date(endTime)  // April 10 10AM IST in UTC (10AM - 5:30)
+    )
+  );
+  console.log("..........")
+
+  return result ;
+} catch (error) {
+          throw new Error  
         }
     }
 }
