@@ -371,7 +371,7 @@ static dune = async (req:Request , res: Response):Promise<any> => {
     try {
         const dune = new DuneClient(envConfigs.duneApikey);
         // const query_result:any= await dune.getLatestResult({queryId: 4910363}); // all data
-        const query_result:any= await dune.getLatestResult({queryId: 4934352}); // Active user
+        const query_result:any= await dune.getLatestResult({queryId: 5084990}); // Active user
         res.status(200).json({ status: true,  count :query_result.result.rows.length ,data: query_result.result.rows });
         // res.status(200).json({status: true,count:query_result?.data.result.rows.length, data: query_result.data.result.rows});
     } catch (error) {
@@ -384,7 +384,7 @@ static dune = async (req:Request , res: Response):Promise<any> => {
 static duneEventsdata = async (req:Request , res: Response):Promise<any> => {
     try {
         const dune = new DuneClient(envConfigs.duneApikey);
-        const query_result:any= await dune.getLatestResult({queryId: 4962378}); // all data
+        const query_result:any= await dune.getLatestResult({queryId: 5084986}); // all data
         res.status(200).json({ status: true,  count :query_result.result.rows.length ,data: query_result.result.rows });
         // res.status(200).json({status: true,count:query_result?.data.result.rows.length, data: query_result.data.result.rows});
     } catch (error) {
