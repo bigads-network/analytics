@@ -19,7 +19,10 @@ const envVarsSchema = z.object({
   BUNDLER_URL:z.string(),
   PAYMASTERAPI_KEY_URL:z.string(),
   ADMINID:z.string(),
-  DUNE_API_KEY:z.string()
+  DUNE_API_KEY:z.string(),
+  ADMIN_PRIVATEKEY_XDC:z.string(),
+  PROVIDER_URL_XDC:z.string(),
+  CONTRACT_ADDRESS_XDC:z.string()
 });
 
 const envVars = envVarsSchema.parse(process.env);
@@ -39,7 +42,10 @@ export const envConfigs = {
   bundlerUrl:envVars.BUNDLER_URL,
   paymaster_apikey_url : envVars.PAYMASTERAPI_KEY_URL,
   adminId:envVars.ADMINID,
-  duneApikey:envVars.DUNE_API_KEY
+  duneApikey:envVars.DUNE_API_KEY,
+  adminPrivatKey_Xdc:envVars.ADMIN_PRIVATEKEY_XDC,
+  provider_url_xdc :envVars.PROVIDER_URL_XDC,
+  contract_address_xdc : envVars.CONTRACT_ADDRESS_XDC
 };
 
 export const chainIdToChainName: any = {

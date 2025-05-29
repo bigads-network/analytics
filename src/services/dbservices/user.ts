@@ -295,6 +295,7 @@ export default class User {
 
     static saveUser = async(userId: any, devicedata: any, saAddress: any, wallet_address: any): Promise<any> => {
         try {
+            console.log(userId, devicedata, saAddress, wallet_address ,"in dbservicesss")
             const result =  await postgreDb.insert(users).values({
                 userId: userId,
                 devicedata: devicedata,
@@ -307,6 +308,7 @@ export default class User {
                 saAddress:users.saAddress,
                 walletAddress:users.walletAddress
             })
+            console.log(result[0] ,"resuktttt")
             return result[0];
             } catch (error) {
            throw new Error

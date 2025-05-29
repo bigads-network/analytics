@@ -4,7 +4,6 @@
     import { envConfigs } from "./envconfig";
     import logger from "./logger";
 
-    
     export const client = new Client(envConfigs.db_url);
     client
     .connect()

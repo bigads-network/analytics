@@ -1,18 +1,13 @@
 import {Request , Response } from 'express';
 import dbservices from '../services/dbservices';
-import { privateKeyToAccount } from 'viem/accounts';
-import { createWalletClient, http } from 'viem';
+
 import { generateAuthTokens } from '../config/token';
 import { sha512_256 } from 'js-sha512';
 import { ethers } from 'ethers';
-import {
-    createSmartAccountClient,
-    createBicoPaymasterClient,
-    toNexusAccount,
-  } from '@biconomy/abstractjs';
+import { ModularSdk, EtherspotBundler, sleep } from "@etherspot/modular-sdk";
 import { chainIdToBundlerUrl, chainIdToChainName, envConfigs } from '../config/envconfig';
 import { generateGameToken } from '../config/gameToken';
-import { polygon } from 'viem/chains';
+import { polygon, xdc } from 'viem/chains';
 
 export default class Creator{
    
@@ -32,38 +27,32 @@ export default class Creator{
 
         if (!userExist) {
             userId = `creator_${this.generateId()}`; // Assuming `generateId` is defined elsewhere
-            const privKey = sha512_256(devicedata + userId);
-            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
-
+            const privKey = "0x"+sha512_256(devicedata + userId);
+            // console.log(privKey)
+            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_xdc);
+            const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
+            const wallet_address = await wallet.getAddress();
             if (!rpcHttpProvider) {
                 return res.status(500).json({ status: false, message: "Error creating RPC provider" });
             }
-
-            const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
             if (!wallet) {
                 return res.status(500).json({ status: false, message: "Error creating wallet" });
             }
 
-            const wallet_address = await wallet.getAddress();
             // console.log(wallet_address, "wallet_address");
 
-            const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
-            const chainName = polygon;
-            const bundlerUrl =envConfigs.bundlerUrl
-            const paymasterUrl = envConfigs.paymaster_apikey_url
+            const chainName = xdc;
 
-            const nexusClient = createSmartAccountClient({
-                account: await toNexusAccount({
-                  signer: account,
-                  chain: chainName,
-                  transport: http(),
-                }),
-                transport: http(bundlerUrl),
-                paymaster: createBicoPaymasterClient({ paymasterUrl }),
+            const modularSdk = new ModularSdk(privKey, {
+                chainId: 50, // XDC Mainnet
+                bundlerProvider: new EtherspotBundler(
+                  50,
+                  "etherspot_3ZmG9JseTT1MD3v9QgPezHKB"
+                ),
               });
 
-              saAddress = await nexusClient.account.address;
-            //   console.log(saAddress ,"Account................................");
+            const saAddress = await modularSdk.getCounterFactualAddress();
+              //   console.log(saAddress ,"Account................................");
             const saveResult = await dbservices.Creator.saveCreator(userId, devicedata, saAddress, wallet_address);
 
             if (!saveResult) {
@@ -100,7 +89,6 @@ export default class Creator{
    static AdminRegister = async (req: Request, res: Response):Promise<any> => {
     try {
         const { devicedata } = req.body;
-        console.log(devicedata ,"device")
         if (!devicedata) {
             return res.status(400).json({ status: false, message: "Device data is required" });
         }
@@ -111,38 +99,32 @@ export default class Creator{
 
         if (!userExist) {
             userId = `admin_${this.generateId()}`; // Assuming `generateId` is defined elsewhere
-            const privKey = sha512_256(devicedata + userId);
-            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
-
+            // const privKey ="0x63a2075b2432ec19652761fa4d3c585bf5ccb6360c5a5666ebb2e2b63929cc41";
+            const privKey = "0x"+sha512_256(userId)
+            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_xdc);
+            const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
+            const wallet_address = await wallet.getAddress();
             if (!rpcHttpProvider) {
                 return res.status(500).json({ status: false, message: "Error creating RPC provider" });
             }
-
-            const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
             if (!wallet) {
                 return res.status(500).json({ status: false, message: "Error creating wallet" });
             }
 
-            const wallet_address = await wallet.getAddress();
             // console.log(wallet_address, "wallet_address");
 
-            const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
-            const chainName = polygon;
-            const bundlerUrl =envConfigs.bundlerUrl
-            const paymasterUrl = envConfigs.paymaster_apikey_url
+            const chainName = xdc;
 
-            const nexusClient = createSmartAccountClient({
-                account: await toNexusAccount({
-                  signer: account,
-                  chain: chainName,
-                  transport: http(),
-                }),
-                transport: http(bundlerUrl),
-                paymaster: createBicoPaymasterClient({ paymasterUrl }),
+            const modularSdk = new ModularSdk(privKey, {
+                chainId: 50, // XDC Mainnet
+                bundlerProvider: new EtherspotBundler(
+                  50,
+                  "etherspot_3ZmG9JseTT1MD3v9QgPezHKB"
+                ),
               });
 
-              saAddress = await nexusClient.account.address;
-            //   console.log(saAddress ,"Account................................");
+            const saAddress = await modularSdk.getCounterFactualAddress();
+              //   console.log(saAddress ,"Account................................");
             const saveResult = await dbservices.Creator.saveAdmin(userId, devicedata, saAddress, wallet_address);
 
             if (!saveResult) {
@@ -178,16 +160,19 @@ export default class Creator{
 
    static gameRegister = async (req: Request, res: Response): Promise<any> => {
     try {
+        // console.log(".....................................................")
         const creatorId = req['user'].userId;
         const role = req['user'].role;
         if (!creatorId || role!== "craetor") {
             return res.status(401).json({ status: false, message: "Invaid role for Game Creation"});
         }
         const {gameName , gameType ,description}= req.body;
+        // console.log(gameName ,gameType ,description ,"req,body")
         if (!gameName || !gameType ||!description) {
             return res.status(400).json({ status: false, message: "Game data is required"});
         }
         let gameExist = await dbservices.Creator.gameExists(creatorId,gameName ,gameType );
+        // console.log(gameExist ,"gameExits")
         let message = "Game Already exists";
         let saAddress;
         if (!gameExist) {
@@ -195,38 +180,33 @@ export default class Creator{
             // if (!chainId) {
             //     throw new Error("Missing or invalid chainId in environment variables");
             // }
-            
+            console.log( " inside not gameExits")
+
             const gameId = `game_${this.generateId()}`;
-            const privKey = sha512_256(gameId + gameName +gameType);
-            
-            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
+            const privKey ="0x"+sha512_256(gameName+gameType +description);
+            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_xdc);
+            const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
+            const wallet_address = await wallet.getAddress();
             if (!rpcHttpProvider) {
                 return res.status(500).json({ status: false, message: "Error creating RPC provider" });
             }
-    
-            const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
             if (!wallet) {
                 return res.status(500).json({ status: false, message: "Error creating wallet" });
             }
-            const wallet_address = await wallet.getAddress();
 
-            // console.log("wallet" , wallet_address)
-            const account: any = privateKeyToAccount(wallet.privateKey as any);
+            // console.log(wallet_address, "wallet_address");
 
-            const bundlerUrl =envConfigs.bundlerUrl
-            const paymasterUrl = envConfigs.paymaster_apikey_url
-            const chainName = polygon
-            const nexusClient = createSmartAccountClient({
-              account: await toNexusAccount({
-                signer: account,
-                chain: chainName,
-                transport: http(),
-              }),
-              transport: http(bundlerUrl),
-              paymaster: createBicoPaymasterClient({ paymasterUrl }),
-            });
-    
-              saAddress = await nexusClient.account.address;
+            const chainName = xdc;
+
+            const modularSdk = new ModularSdk(privKey, {
+                chainId: 50, // XDC Mainnet
+                bundlerProvider: new EtherspotBundler(
+                  50,
+                  "etherspot_3ZmG9JseTT1MD3v9QgPezHKB"
+                ),
+              });
+
+            const saAddress = await modularSdk.getCounterFactualAddress();
             //   console.log(saAddress ,"saAddress................................................................");
             const saveResult = await dbservices.Creator.registerGame(creatorId, gameId, gameName, gameType, description , saAddress ,wallet_address);
             if (!saveResult) {
@@ -245,6 +225,7 @@ export default class Creator{
             gameToken : Gametoken
         })  
     } catch (error) {
+        console.log(error.message)
         res.status(500).json({
             status: false,
             message: error.message || "Unexpected error occurred",

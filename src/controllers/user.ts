@@ -2,6 +2,7 @@ import {Request , Response } from 'express';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createWalletClient, http } from 'viem';
 import { sha512_256 } from 'js-sha512';
+import { ModularSdk, EtherspotBundler, sleep } from "@etherspot/modular-sdk";
 import { ethers } from 'ethers';
 import {
     createSmartAccountClient,
@@ -12,7 +13,7 @@ import {
 import { chainIdToBundlerUrl, chainIdToChainName, envConfigs } from '../config/envconfig';
 import { generateGameToken } from '../config/gameToken';
 import dbservices from '../services/dbservices';
-import { polygon, polygonAmoy } from 'viem/chains';
+import { polygon, polygonAmoy, xdc } from 'viem/chains';
 import logger from '../config/logger';
 
 
@@ -52,101 +53,80 @@ async function processGlobalBatch() {
     globalBatch.batchStartTime = null;
 
   try {
-      const admin = envConfigs.adminId
-      const adminAccountDetails = await dbservices.Creator.getdetails(admin);
-      if (!adminAccountDetails) {
-          throw new Error("Admin account not found in database");
-      }
-      const privKey = sha512_256(adminAccountDetails.devicedata + adminAccountDetails.userId);
-      const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
+      // const admin = envConfigs.adminId
+      // const adminAccountDetails = await dbservices.Creator.getdetails(admin);
+      // if (!adminAccountDetails) {
+      //     throw new Error("Admin account not found in database");
+      // }
+      // const privKey = sha512_256(adminAccountDetails.devicedata + adminAccountDetails.userId);
+      const privKey =envConfigs.adminPrivatKey_Xdc;
+      const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_xdc);
       const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
-      const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
-      const chainName = polygon;
+      const wallet_address = await wallet.getAddress();
+      const privateKey = wallet.privateKey ;
+      const chainName = xdc;
       
-      const bundlerUrl = envConfigs.bundlerUrl;
-      const paymasterUrl = envConfigs.paymaster_apikey_url;
-      
-      const nexusClient = createSmartAccountClient({
-          account: await toNexusAccount({
-              signer: account,
-              chain: chainName,
-              transport: http(),
-          }),
-          transport: http(bundlerUrl),
-          paymaster: createBicoPaymasterClient({paymasterUrl}),
+      const modularSdk = new ModularSdk(privKey, {
+        chainId: 50, // XDC Mainnet
+        bundlerProvider: new EtherspotBundler(
+          50,
+          "etherspot_3ZmG9JseTT1MD3v9QgPezHKB"
+        ),
       });
 
-      // console.log(nexusClient.account.address , "Account")
-      const contractAddress = envConfigs.contractAddress;
+      const contractAddress = envConfigs.contract_address_xdc;
       const abi = [
-          {
-              "anonymous": false,
-              "inputs": [
-                  {
-                      "indexed": true,
-                      "internalType": "address",
-                      "name": "user",
-                      "type": "address"
-                  },
-                  {
-                      "indexed": true,
-                      "internalType": "uint256",
-                      "name": "gameId",
-                      "type": "uint256"
-                  },
-                  {
-                      "indexed": false,
-                      "internalType": "string",
-                      "name": "metadata",
-                      "type": "string"
-                  }
-              ],
-              "name": "MetadataStored",
-              "type": "event"
-          },
-          {
-              "inputs": [
-                  {
-                      "internalType": "address",
-                      "name": "user",
-                      "type": "address"
-                  },
-                  {
-                      "internalType": "string",
-                      "name": "metadata",
-                      "type": "string"
-                  },
-                  {
-                      "internalType": "uint256",
-                      "name": "gameId",
-                      "type": "uint256"
-                  }
-              ],
-              "name": "storeMetadata",
-              "outputs": [],
-              "stateMutability": "nonpayable",
-              "type": "function"
-          }
-      ]
+        "function balanceOf(address owner) view returns (uint256)",
+    "function decimals() view returns (uint8)",
+    "function symbol() view returns (string)",
+    "function transfer(address to, uint amount) returns (bool)",
+    "function approve(address spender, uint256 amount) returns (bool)",
+    "function mint(address to, uint256 amount) public",
+    "event Transfer(address indexed from, address indexed to, uint amount)",
+  ];
+  
+  const erc20Instance = new ethers.Contract(contractAddress, abi, );
+  const decimals = 18;
 
       // Prepare all calls for the batch
-      const calls = transactionsToProcess.map(tx => ({
-          to: contractAddress as `0x${string}`,
-          value: 0n,
-          abi: abi,
-          functionName: 'storeMetadata',
-          args: [tx.userData.saAddress ,tx.metadata, tx.gameId],
-      }));
+      const transactionData = erc20Instance.interface.encodeFunctionData(
+        "transfer",
+        [
+          "0xB37aA61E082Df3E722e6994CbB720E85f13d53Da",
+          ethers.utils.parseUnits("0", decimals),
+        ]
+      );
 
       // console.log(calls ,"call")
       
       // @ts-ignore
-      const hash = await nexusClient.sendUserOperation({
-          calls: calls,
+      await modularSdk.clearUserOpsFromBatch();
+      const userOpsBatch = await modularSdk.addUserOpsToBatch({
+        to: contractAddress,
+        data: transactionData,
       });
 
-      const receipt = await nexusClient.waitForUserOperationReceipt({hash});
-      const transactionHash = receipt.receipt.transactionHash;
+  const op = await modularSdk.estimate({
+    paymasterDetails: {
+      url: `https://arka.etherspot.io?apiKey=${"etherspot_3ZmG9JseTT1MD3v9QgPezHKB"}&chainId=${Number(
+        50
+      )}&useVp=true`,
+      context: { mode: "sponsor" },
+    },
+  });
+
+  const uoHash = await modularSdk.send(op);
+  // console.log(`UserOpHash: ..........${uoHash}`);
+
+  let userOpsReceipt = null;
+  const timeout = Date.now() + 600000; // 1 minute timeout
+  while (userOpsReceipt == null && Date.now() < timeout) {
+    await sleep(2);
+    const result = await modularSdk.getUserOpReceipt(uoHash);
+    // console.log("receipt................", result);
+    userOpsReceipt = result;
+  }
+  console.log("\x1b[33m%s\x1b[0m", `Transaction Receipt: `, userOpsReceipt);
 
       // Save all transactions in the batch
       for (const tx of transactionsToProcess) {
@@ -154,13 +134,13 @@ async function processGlobalBatch() {
               tx.gameId,
               tx.userData.id,
               tx.eventId,
-              transactionHash,
+              userOpsReceipt,
               chainName.name,
               "0",
           );
       }
   
-      logger.info(`Successfully processed ${transactionsToProcess.length} transactions in batch having ${transactionHash}`);
+      logger.info(`Successfully processed ${transactionsToProcess.length} transactions in batch having ${userOpsReceipt}`);
   } catch (error) {
       console.error(`Error processing global batch:`, error);
       // Optionally implement retry logic for failed transactions
@@ -574,30 +554,42 @@ static fireEvent = async (req: Request, res: Response): Promise<any> => {
 
       // If user doesn't exist, create them first
       if (!userExist) {
-          const privKey = "0x" + sha512_256(userId);
-          const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
-          const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
-          const wallet_address = await wallet.getAddress();
-          const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
-          
-          const chainName = polygon;
-          const bundlerUrl = envConfigs.bundlerUrl;
-          const paymasterUrl = envConfigs.paymaster_apikey_url;
-          
-          const nexusClient = createSmartAccountClient({
-              account: await toNexusAccount({
-                  signer: account,
-                  chain: chainName,
-                  transport: http(),
-              }),
-              transport: http(bundlerUrl),
-              paymaster: createBicoPaymasterClient({paymasterUrl}),
+        const privKey = "0x" + sha512_256(userId)
+        // const privKey ="0x63a2075b2432ec19652761fa4d3c585bf5ccb6360c5a5666ebb2e2b63929cc41";
+        const rpcHttpProvider = new ethers.providers.JsonRpcProvider("https://rpc.xdc.org");
+        const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
+        const wallet_address = await wallet.getAddress();
+        if (!rpcHttpProvider) {
+            return res.status(500).json({ status: false, message: "Error creating RPC provider" });
+        }
+        if (!wallet) {
+            return res.status(500).json({ status: false, message: "Error creating wallet" });
+        }
+
+        // console.log(wallet_address, "wallet_address");
+
+        const chainName = xdc;
+
+        const modularSdk = new ModularSdk(privKey, {
+            chainId: 50, // XDC Mainnet
+            bundlerProvider: new EtherspotBundler(
+              50,
+              "etherspot_3ZmG9JseTT1MD3v9QgPezHKB"
+            ),
           });
 
-          const saAddress = await nexusClient.account.address;
-          userExist = await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
+        const saAddress = await modularSdk.getCounterFactualAddress();
+            // console.log(saAddress ,"Account................................");
+        // const saveResult = await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
+
+        // if (!saveResult) {
+        //     throw new Error("Error saving user details");
+        // }
+
+        // userExist = saveResult;
+        userExist = await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
       }
-     
+
       const metadata = JSON.stringify({
           role: userExist?.role,
           // smartAccountAddress: userExist?.saAddress,
@@ -613,6 +605,7 @@ static fireEvent = async (req: Request, res: Response): Promise<any> => {
           metadata,
           userData: userExist
       });
+
 
 // Start timer if this is the first transaction in batch
       if (globalBatch.transactions.length === 1) {
@@ -642,13 +635,13 @@ static fireEvent = async (req: Request, res: Response): Promise<any> => {
           gameId: gameId,
           userId: userId,
           timestamp: datetime,
-        //   batchInfo: {
-        //     currentBatchSize: globalBatch.transactions.length,
-        //     batchStartedAt: new Date(globalBatch.batchStartTime!).toISOString(),
-        //     willProcessIn: globalBatch.transactions.length >= BATCH_SIZE 
-        //         ? "Immediately (batch size reached)"
-        //         : `${Math.ceil(remainingTime/1000)} seconds`
-        // }
+          batchInfo: {
+            currentBatchSize: globalBatch.transactions.length,
+            batchStartedAt: new Date(globalBatch.batchStartTime!).toISOString(),
+            willProcessIn: globalBatch.transactions.length >= BATCH_SIZE 
+                ? "Immediately (batch size reached)"
+                : `${Math.ceil(remainingTime/1000)} seconds`
+        }
       });
 
   } catch (error) {
