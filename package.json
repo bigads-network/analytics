@@ -20,6 +20,7 @@
     "@biconomy/account": "^4.0.2",
     "@biconomy/mexa": "^3.0.6",
     "@duneanalytics/client-sdk": "^0.2.5",
+    "@etherspot/modular-sdk": "^6.1.0",
     "@types/swagger-ui-express": "^4.1.7",
     "axios": "^1.7.9",
     "bcrypt": "^5.1.1",

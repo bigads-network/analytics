@@ -1,21 +1,24 @@
-import {Request , Response } from 'express';
-import { privateKeyToAccount } from 'viem/accounts';
-import { createWalletClient, http } from 'viem';
-import { sha512_256 } from 'js-sha512';
+import { Request, Response } from "express";
+import { privateKeyToAccount } from "viem/accounts";
+import { createWalletClient, http } from "viem";
+import { sha512_256 } from "js-sha512";
 import { ModularSdk, EtherspotBundler, sleep } from "@etherspot/modular-sdk";
-import { ethers } from 'ethers';
+import { ethers } from "ethers";
 import {
-    createSmartAccountClient,
-    createBicoPaymasterClient,
-    toNexusAccount,
-    Logger,
-  } from '@biconomy/abstractjs';
-import { chainIdToBundlerUrl, chainIdToChainName, envConfigs } from '../config/envconfig';
-import { generateGameToken } from '../config/gameToken';
-import dbservices from '../services/dbservices';
-import { polygon, polygonAmoy, xdc } from 'viem/chains';
-import logger from '../config/logger';
-
+  createSmartAccountClient,
+  createBicoPaymasterClient,
+  toNexusAccount,
+  Logger,
+} from "@biconomy/abstractjs";
+import {
+  chainIdToBundlerUrl,
+  chainIdToChainName,
+  envConfigs,
+} from "../config/envconfig";
+import { generateGameToken } from "../config/gameToken";
+import dbservices from "../services/dbservices";
+import { polygon, polygonAmoy, xdc } from "viem/chains";
+import logger from "../config/logger";
 
 const BATCH_SIZE = 50; // Process when a user has 4 transactions
 const BATCH_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
@@ -24,280 +27,344 @@ const BATCH_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
 
 let globalBatch: {
   transactions: {
-      userId: string;
-      gameId: number;
-      eventId: number;
-      metadata: string;
-      userData: any;
+    userId: string;
+    gameId: number;
+    eventId: number;
+    metadata: string;
+    userData: any;
   }[];
   timeout: NodeJS.Timeout | null;
   batchStartTime: number | null;
 } = {
   transactions: [],
   timeout: null,
-  batchStartTime: null
+  batchStartTime: null,
 };
 
 // Helper function to process a single user's batch
 
 async function processGlobalBatch() {
-    if (globalBatch.transactions.length === 0) return;
+  if (globalBatch.transactions.length === 0) return;
 
-    // Take a copy of the transactions and reset global batch
-    const transactionsToProcess = [...globalBatch.transactions];
-    globalBatch.transactions = [];
-    if (globalBatch.timeout) {
-        clearTimeout(globalBatch.timeout);
-    }
-    globalBatch.timeout = null;
-    globalBatch.batchStartTime = null;
+  // Take a copy of the transactions and reset global batch
+  const transactionsToProcess = [...globalBatch.transactions];
+  globalBatch.transactions = [];
+  if (globalBatch.timeout) {
+    clearTimeout(globalBatch.timeout);
+  }
+  globalBatch.timeout = null;
+  globalBatch.batchStartTime = null;
 
   try {
-      // const admin = envConfigs.adminId
-      // const adminAccountDetails = await dbservices.Creator.getdetails(admin);
-      // if (!adminAccountDetails) {
-      //     throw new Error("Admin account not found in database");
-      // }
-      // const privKey = sha512_256(adminAccountDetails.devicedata + adminAccountDetails.userId);
-      const privKey =envConfigs.adminPrivatKey_Xdc;
-      const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_xdc);
-      const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
-      const wallet_address = await wallet.getAddress();
-      const privateKey = wallet.privateKey ;
-      const chainName = xdc;
-      
-      const modularSdk = new ModularSdk(privKey, {
-        chainId: 50, // XDC Mainnet
-        bundlerProvider: new EtherspotBundler(
-          50,
-          "etherspot_3ZmG9JseTT1MD3v9QgPezHKB"
-        ),
-      });
+    // const admin = envConfigs.adminId
+    // const adminAccountDetails = await dbservices.Creator.getdetails(admin);
+    // if (!adminAccountDetails) {
+    //     throw new Error("Admin account not found in database");
+    // }
+    // const privKey = sha512_256(adminAccountDetails.devicedata + adminAccountDetails.userId);
+    const privKey = envConfigs.adminPrivatKey_Xdc;
+    const rpcHttpProvider = new ethers.providers.JsonRpcProvider(
+      envConfigs.provider_url_xdc
+    );
+    const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
+    const wallet_address = await wallet.getAddress();
+    const privateKey = wallet.privateKey;
+    const chainName = xdc;
 
-      const contractAddress = envConfigs.contract_address_xdc;
-      const abi = [
-        "function balanceOf(address owner) view returns (uint256)",
-    "function decimals() view returns (uint8)",
-    "function symbol() view returns (string)",
-    "function transfer(address to, uint amount) returns (bool)",
-    "function approve(address spender, uint256 amount) returns (bool)",
-    "function mint(address to, uint256 amount) public",
-    "event Transfer(address indexed from, address indexed to, uint amount)",
-  ];
-  
-  const erc20Instance = new ethers.Contract(contractAddress, abi, );
-  const decimals = 18;
+    const modularSdk = new ModularSdk(privKey, {
+      chainId: 50, // XDC Mainnet
+      bundlerProvider: new EtherspotBundler(
+        50,
+        "etherspot_3ZmG9JseTT1MD3v9QgPezHKB"
+      ),
+    });
+    const saAddress = await modularSdk.getCounterFactualAddress();
+    console.log(`saAddress -->`, saAddress);
 
-      // Prepare all calls for the batch
-      const transactionData = erc20Instance.interface.encodeFunctionData(
-        "transfer",
-        [
-          "0xB37aA61E082Df3E722e6994CbB720E85f13d53Da",
-          ethers.utils.parseUnits("0", decimals),
-        ]
-      );
+    const contractAddress = "0xE3f5564e633a84284f2A59DC49fF8f3ed17dF572";
+    const abi = [
+      {
+        anonymous: false,
+        inputs: [
+          {
+            indexed: true,
+            internalType: "address",
+            name: "sender",
+            type: "address",
+          },
+          {
+            indexed: true,
+            internalType: "uint256",
+            name: "gameId",
+            type: "uint256",
+          },
+          {
+            indexed: false,
+            internalType: "string",
+            name: "metadata",
+            type: "string",
+          },
+        ],
+        name: "MetadataStored",
+        type: "event",
+      },
+      {
+        inputs: [
+          {
+            internalType: "string",
+            name: "metadata",
+            type: "string",
+          },
+          {
+            internalType: "uint256",
+            name: "gameId",
+            type: "uint256",
+          },
+        ],
+        name: "storeMetadata",
+        outputs: [],
+        stateMutability: "nonpayable",
+        type: "function",
+      },
+    ];
 
-      // console.log(calls ,"call")
-      
-      // @ts-ignore
-      await modularSdk.clearUserOpsFromBatch();
-      const userOpsBatch = await modularSdk.addUserOpsToBatch({
+    const erc20Instance = new ethers.Contract(contractAddress, abi);
+    const decimals = 18;
+
+    for (const tx of transactionsToProcess) {
+      const encodedData = erc20Instance.encodeFunctionData("storeMetadata", [
+        tx.userData.walletAddress,
+        ethers.utils.parseUnits("0", decimals),
+      ]);
+
+      await modularSdk.addUserOpsToBatch({
         to: contractAddress,
-        data: transactionData,
+        data: encodedData,
+        value: 0n,
+        abi: abi,
+        functionName: "storeMetadata",
+        args: [tx.userData.saAddress, tx.metadata, tx.gameId],
       });
+    }
 
-  const op = await modularSdk.estimate({
-    paymasterDetails: {
-      url: `https://arka.etherspot.io?apiKey=${"etherspot_3ZmG9JseTT1MD3v9QgPezHKB"}&chainId=${Number(
-        50
-      )}&useVp=true`,
-      context: { mode: "sponsor" },
-    },
-  });
+    // Prepare all calls for the batch
+    //   const transactionData = erc20Instance.interface.encodeFunctionData(
+    //     "transfer",
+    //     [
+    //       "0xB37aA61E082Df3E722e6994CbB720E85f13d53Da",
+    //       ethers.utils.parseUnits("0", decimals),
+    //     ]
+    //   );
 
-  const uoHash = await modularSdk.send(op);
-  // console.log(`UserOpHash: ..........${uoHash}`);
+    //   // console.log(calls ,"call")
 
-  let userOpsReceipt = null;
-  const timeout = Date.now() + 600000; // 1 minute timeout
-  while (userOpsReceipt == null && Date.now() < timeout) {
-    await sleep(2);
-    const result = await modularSdk.getUserOpReceipt(uoHash);
-    // console.log("receipt................", result);
-    userOpsReceipt = result;
-  }
-  console.log("\x1b[33m%s\x1b[0m", `Transaction Receipt: `, userOpsReceipt);
+    //   // @ts-ignore
+    //   await modularSdk.clearUserOpsFromBatch();
+    //  await modularSdk.addUserOpsToBatch({
+    //     to: contractAddress,
+    //     data: transactionData,
+    //     value: 0n,
+    //   });
 
-      // Save all transactions in the batch
-      for (const tx of transactionsToProcess) {
-          await dbservices.User.saveTransactionDetails(
-              tx.gameId,
-              tx.userData.id,
-              tx.eventId,
-              userOpsReceipt,
-              chainName.name,
-              "0",
-          );
-      }
-  
-      logger.info(`Successfully processed ${transactionsToProcess.length} transactions in batch having ${userOpsReceipt}`);
+    const op = await modularSdk.estimate({
+      paymasterDetails: {
+        url: `https://arka.etherspot.io?apiKey=${"etherspot_3ZmG9JseTT1MD3v9QgPezHKB"}&chainId=${Number(
+          50
+        )}&useVp=true`,
+        context: { mode: "sponsor" },
+      },
+    });
+
+    const uoHash = await modularSdk.send(op);
+    // console.log(`UserOpHash: ..........${uoHash}`);
+
+    let userOpsReceipt = null;
+    const timeout = Date.now() + 600000; // 1 minute timeout
+    while (userOpsReceipt == null && Date.now() < timeout) {
+      await sleep(2);
+      const result = await modularSdk.getUserOpReceipt(uoHash);
+      // console.log("receipt................", result);
+      userOpsReceipt = result;
+    }
+    console.log("\x1b[33m%s\x1b[0m", `Transaction Receipt: `, userOpsReceipt);
+
+    // Save all transactions in the batch
+    for (const tx of transactionsToProcess) {
+      await dbservices.User.saveTransactionDetails(
+        tx.gameId,
+        tx.userData.id,
+        tx.eventId,
+        userOpsReceipt,
+        chainName.name,
+        "0"
+      );
+    }
+
+    logger.info(
+      `Successfully processed ${transactionsToProcess.length} transactions in batch having ${userOpsReceipt}`
+    );
   } catch (error) {
-      console.error(`Error processing global batch:`, error);
-      // Optionally implement retry logic for failed transactions
+    console.error(`Error processing global batch:`, error);
+    // Optionally implement retry logic for failed transactions
   }
 }
 
+export default class User {
+  static generateId = () =>
+    Math.random().toString(36).substr(2, 8).toUpperCase();
 
-
-export default class User{
-
-    static generateId = () => Math.random().toString(36).substr(2, 8).toUpperCase();
-
-    static games= async(req: Request, res: Response): Promise<any> =>{
-        try {
-            const games = await dbservices.User.getGames()
-            return res.json({
-                status: true,
-                message: "Game List Fetched Successfully",
-                data: games
-            })
-        } catch (error) {
-          res.status(500).json({
-            status: false,
-            message: error.message || "Unexpected error occurred",
-          })  
-        }
+  static games = async (req: Request, res: Response): Promise<any> => {
+    try {
+      const games = await dbservices.User.getGames();
+      return res.json({
+        status: true,
+        message: "Game List Fetched Successfully",
+        data: games,
+      });
+    } catch (error) {
+      res.status(500).json({
+        status: false,
+        message: error.message || "Unexpected error occurred",
+      });
     }
+  };
 
-    static events = async(req: Request, res: Response): Promise<any> =>{
-      try {
-          const events = await dbservices.User.getEvents()
-          return res.json({
-            status: true,
-            message: "Event List Fetched Successfully",
-            data: events
-          })
-      } catch (error) {
-        res.status(500).json({
-          status: false,
-          message: error.message || "Unexpected error occurred",
-        })  
-      }
+  static events = async (req: Request, res: Response): Promise<any> => {
+    try {
+      const events = await dbservices.User.getEvents();
+      return res.json({
+        status: true,
+        message: "Event List Fetched Successfully",
+        data: events,
+      });
+    } catch (error) {
+      res.status(500).json({
+        status: false,
+        message: error.message || "Unexpected error occurred",
+      });
     }
+  };
 
-    static self = async(req: Request, res: Response): Promise<any>=>{
-      try {
-        const {devicedata} = req.body
-        const details = await dbservices.User.userExits(devicedata)
-        return res.json({
-          status: true,
-          message: "Details Fetched Successfully",
-          data: details
-        })
-      } catch (error) {
-        res.status(500).json({
-          status: false,
-          message: error.message || "Unexpected error occurred",
-        })
-      }
+  static self = async (req: Request, res: Response): Promise<any> => {
+    try {
+      const { devicedata } = req.body;
+      const details = await dbservices.User.userExits(devicedata);
+      return res.json({
+        status: true,
+        message: "Details Fetched Successfully",
+        data: details,
+      });
+    } catch (error) {
+      res.status(500).json({
+        status: false,
+        message: error.message || "Unexpected error occurred",
+      });
     }
+  };
 
-    static count = async(req: Request, res: Response): Promise<any>=>{
-      try {
-        const count = await dbservices.User.counts()
-        return res.json({
-          status: true,
-          message: "Details Fetched Successfully",
-          data: count
-        })
-      } catch (error) {
-        res.status(500).json({
-          status: false,
-          message: error.message || "Unexpected error occurred",
-        })
-      }
+  static count = async (req: Request, res: Response): Promise<any> => {
+    try {
+      const count = await dbservices.User.counts();
+      return res.json({
+        status: true,
+        message: "Details Fetched Successfully",
+        data: count,
+      });
+    } catch (error) {
+      res.status(500).json({
+        status: false,
+        message: error.message || "Unexpected error occurred",
+      });
     }
+  };
 
-    static transactions = async(req: Request , res:Response):Promise<any>=>{
-      try {
-        const transaction = await dbservices.User.getTransactions()
-        return res.json({
-          status: true,
-          message: "Transaction List Fetched Successfully",
-          transactions: transaction.transactions,
-          counts: transaction.counts[0].count
-        })
-      } catch (error) {
-        res.status(500).json({
-          status: false,
-          message: error.message || "Unexpected error occurred",
-        }) 
-      }
+  static transactions = async (req: Request, res: Response): Promise<any> => {
+    try {
+      const transaction = await dbservices.User.getTransactions();
+      return res.json({
+        status: true,
+        message: "Transaction List Fetched Successfully",
+        transactions: transaction.transactions,
+        counts: transaction.counts[0].count,
+      });
+    } catch (error) {
+      res.status(500).json({
+        status: false,
+        message: error.message || "Unexpected error occurred",
+      });
     }
+  };
 
+  // static gameDetails = async(req: Request , res: Response):Promise<any>=>{
+  //   try {
+  //     const
+  //   } catch (error) {
+  //     res.status(500).json({
+  //       status: false,
+  //       message: error.message || "Unexpected error occurred",
+  //     })
+  //   }
+  // }
 
-    // static gameDetails = async(req: Request , res: Response):Promise<any>=>{
-    //   try {
-    //     const 
-    //   } catch (error) {
-    //     res.status(500).json({
-    //       status: false,
-    //       message: error.message || "Unexpected error occurred",
-    //     })  
-    //   }
-    // }
-
-    static GetUserTransacttion = async(req: Request, res: Response): Promise<any>=>{
-      try {
-        const userId = req.params.userId
-        const transaction = await dbservices.User.getUserTransacttion(userId)
-        return res.json({
-          status: true,
-          message: "Transaction List Fetched Successfully",
-          transactions: transaction
-        })
-      } catch (error) {
-        res.status(500).json({
-          status: false,
-          message: error.message || "Unexpected error occurred",
-        }) 
-      }
+  static GetUserTransacttion = async (
+    req: Request,
+    res: Response
+  ): Promise<any> => {
+    try {
+      const userId = req.params.userId;
+      const transaction = await dbservices.User.getUserTransacttion(userId);
+      return res.json({
+        status: true,
+        message: "Transaction List Fetched Successfully",
+        transactions: transaction,
+      });
+    } catch (error) {
+      res.status(500).json({
+        status: false,
+        message: error.message || "Unexpected error occurred",
+      });
     }
+  };
 
-
-    static eventTransaction = async(req:Request, res: Response): Promise<any>=>{
-      try {
-        const eventId = req.params.eventId
-        const transaction = await dbservices.User.geteventTransacttion(eventId)
-        return res.json({
-          status: true,
-          message: "Transaction List Fetched Successfully",
-          transactions: transaction
-        })
-      } catch (error) {
-        res.status(500).json({
-          status: false,
-          message: error.message || "Unexpected error occurred",
-        }) 
-      }
+  static eventTransaction = async (
+    req: Request,
+    res: Response
+  ): Promise<any> => {
+    try {
+      const eventId = req.params.eventId;
+      const transaction = await dbservices.User.geteventTransacttion(eventId);
+      return res.json({
+        status: true,
+        message: "Transaction List Fetched Successfully",
+        transactions: transaction,
+      });
+    } catch (error) {
+      res.status(500).json({
+        status: false,
+        message: error.message || "Unexpected error occurred",
+      });
     }
+  };
 
-    static GetGameTransacttion = async(req:Request, res:Response):Promise<any>=>{
-      try {
-        const gameId = req.params.gameId 
-        const transaction = await dbservices.User.getGameTransacttion(gameId)
-        return res.json({
-          status: true,
-          message: "Transaction List Fetched Successfully",
-          details: transaction
-        })
-      } catch (error) {
-        res.status(500).json({
-          status: false,
-          message: error.message || "Unexpected error occurred",
-        }) 
-      }
+  static GetGameTransacttion = async (
+    req: Request,
+    res: Response
+  ): Promise<any> => {
+    try {
+      const gameId = req.params.gameId;
+      const transaction = await dbservices.User.getGameTransacttion(gameId);
+      return res.json({
+        status: true,
+        message: "Transaction List Fetched Successfully",
+        details: transaction,
+      });
+    } catch (error) {
+      res.status(500).json({
+        status: false,
+        message: error.message || "Unexpected error occurred",
+      });
     }
+  };
 
   // static fireEvent = async(req: Request, res: Response): Promise<any>=>{
   //   console.log("Event fired")
@@ -393,7 +460,7 @@ export default class User{
   //   saAddress = await nexusClient.account.address;
   //   const datetime = new Date().toISOString();
   //   const contractAddress = envConfigs.contractAddress;
-  //   const metadata = JSON.stringify({ 
+  //   const metadata = JSON.stringify({
   //     role:userExist.role,
   //     saAddress:userExist.saAddress, gameId:gameDetails.id,
   //     eventId:gameDetails.events[0].id
@@ -404,10 +471,9 @@ export default class User{
   //     gameId,
   //   ]);
 
-
   //     //@ts-ignore
   //     const hash = await nexusClient.sendUserOperation({
-  //       calls: [ 
+  //       calls: [
   //         {
   //           to: contractAddress as `0x${string}`,
   //           value: 0n,
@@ -415,7 +481,7 @@ export default class User{
   //           functionName: 'storeMetadata',
   //           args: [metadata, gameId],
   //         },
-  //       ], 
+  //       ],
   //     });
 
   //    const receipt = await nexusClient.waitForUserOperationReceipt({ hash });
@@ -427,7 +493,7 @@ export default class User{
   //     id,
   //     transactionHash,
   //     chainName.name,
-  //       "0",          
+  //       "0",
   //       );
   //         return res.status(200).json({
   //         status: true,
@@ -436,12 +502,11 @@ export default class User{
   //         user:userExist,
   //         timestamp: datetime
   //       })
-  //   }     
+  //   }
 
   //   if(!userExist){
   //   userId = `user_${this.generateId()}`;
   //   const privKey = "0x" + sha512_256(userId)
-
 
   //   const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
 
@@ -467,7 +532,7 @@ export default class User{
   //   userExist = saveResult
   //   const datetime = new Date().toISOString();
   //   const contractAddress = envConfigs.contractAddress;
-  //   const metadata = JSON.stringify({ 
+  //   const metadata = JSON.stringify({
   //     role:userExist.role,
   //     saAddress:userExist.saAddress, gameId:gameDetails.id,
   //     eventId:gameDetails.events[0].id
@@ -477,7 +542,7 @@ export default class User{
 
   //         //@ts-ignore
   //         const hash = await nexusClient.sendUserOperation({
-  //           calls: [ 
+  //           calls: [
   //             {
   //               to: contractAddress as `0x${string}`,
   //               value: 0n,
@@ -485,13 +550,12 @@ export default class User{
   //               functionName: 'storeMetadata',
   //               args: [metadata, gameId],
   //             },
-  //           ], 
+  //           ],
   //         });
 
   //   const receipt = await nexusClient.waitForUserOperationReceipt({ hash });
 
   //  const transactionHash = receipt.receipt.transactionHash;
-
 
   //   const saveTransactionDetails = await dbservices.User.saveTransactionDetails(
   //   gameId,
@@ -499,7 +563,7 @@ export default class User{
   //   id,
   //   transactionHash,
   //   chainName.name,
-  //   "0",          
+  //   "0",
   //   );
   //   return res.status(200).json({
   //     status: true,
@@ -515,55 +579,66 @@ export default class User{
   //       message: error.message || "Unexpected error occurred",
   //     })
   //   }
-  // } 
+  // }
 
-
-
-
-static fireEvent = async (req: Request, res: Response): Promise<any> => {
-  try {
+  static fireEvent = async (req: Request, res: Response): Promise<any> => {
+    try {
       const eventId = req.params.eventId;
-      const {gameId, id} = await dbservices.User.getGameid(eventId);
-      
+      const { gameId, id } = await dbservices.User.getGameid(eventId);
+
       if (!gameId || !id) {
-          return res.status(400).json({status: false, message: "Invalid Game or Event ID"});
+        return res
+          .status(400)
+          .json({ status: false, message: "Invalid Game or Event ID" });
       }
 
       const eventCheck = await dbservices.User.eventCheck(gameId, eventId);
       if (!eventCheck) {
-          return res.status(400).json({status: false, message: "Event does not exist for this game"});
+        return res.status(400).json({
+          status: false,
+          message: "Event does not exist for this game",
+        });
       }
 
-      const {devicedata} = req.body;
+      const { devicedata } = req.body;
       if (!devicedata) {
-          return res.status(400).json({status: false, message: "Device data is required"});
+        return res
+          .status(400)
+          .json({ status: false, message: "Device data is required" });
       }
 
       let userExist = await dbservices.User.userExits(devicedata);
       const gameDetails = await dbservices.User.getGameDetails(gameId, eventId);
 
       if (userExist) {
-          if (gameDetails.creatorId === userExist.id) {
-              return res.status(500).send({status: false, message: "Cannot fire event for own game"});
-          }
+        if (gameDetails.creatorId === userExist.id) {
+          return res
+            .status(500)
+            .send({ status: false, message: "Cannot fire event for own game" });
+        }
       }
 
       const userId = userExist ? userExist.userId : `user_${this.generateId()}`;
       const datetime = new Date().toISOString();
 
-
       // If user doesn't exist, create them first
       if (!userExist) {
-        const privKey = "0x" + sha512_256(userId)
+        const privKey = "0x" + sha512_256(userId);
         // const privKey ="0x63a2075b2432ec19652761fa4d3c585bf5ccb6360c5a5666ebb2e2b63929cc41";
-        const rpcHttpProvider = new ethers.providers.JsonRpcProvider("https://rpc.xdc.org");
+        const rpcHttpProvider = new ethers.providers.JsonRpcProvider(
+          "https://rpc.xdc.org"
+        );
         const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
         const wallet_address = await wallet.getAddress();
         if (!rpcHttpProvider) {
-            return res.status(500).json({ status: false, message: "Error creating RPC provider" });
+          return res
+            .status(500)
+            .json({ status: false, message: "Error creating RPC provider" });
         }
         if (!wallet) {
-            return res.status(500).json({ status: false, message: "Error creating wallet" });
+          return res
+            .status(500)
+            .json({ status: false, message: "Error creating wallet" });
         }
 
         // console.log(wallet_address, "wallet_address");
@@ -571,15 +646,15 @@ static fireEvent = async (req: Request, res: Response): Promise<any> => {
         const chainName = xdc;
 
         const modularSdk = new ModularSdk(privKey, {
-            chainId: 50, // XDC Mainnet
-            bundlerProvider: new EtherspotBundler(
-              50,
-              "etherspot_3ZmG9JseTT1MD3v9QgPezHKB"
-            ),
-          });
+          chainId: 50, // XDC Mainnet
+          bundlerProvider: new EtherspotBundler(
+            50,
+            "etherspot_3ZmG9JseTT1MD3v9QgPezHKB"
+          ),
+        });
 
         const saAddress = await modularSdk.getCounterFactualAddress();
-            // console.log(saAddress ,"Account................................");
+        // console.log(saAddress ,"Account................................");
         // const saveResult = await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
 
         // if (!saveResult) {
@@ -587,31 +662,35 @@ static fireEvent = async (req: Request, res: Response): Promise<any> => {
         // }
 
         // userExist = saveResult;
-        userExist = await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
+        userExist = await dbservices.User.saveUser(
+          userId,
+          devicedata,
+          saAddress,
+          wallet_address
+        );
       }
 
       const metadata = JSON.stringify({
-          role: userExist?.role,
-          // smartAccountAddress: userExist?.saAddress,
-          gameId: gameDetails.id,
-          eventId: gameDetails.events[0].id,
+        role: userExist?.role,
+        // smartAccountAddress: userExist?.saAddress,
+        gameId: gameDetails.id,
+        eventId: gameDetails.events[0].id,
       });
 
       // Add transaction to global batch
       globalBatch.transactions.push({
-          userId,
-          gameId,
-          eventId: id,
-          metadata,
-          userData: userExist
+        userId,
+        gameId,
+        eventId: id,
+        metadata,
+        userData: userExist,
       });
 
-
-// Start timer if this is the first transaction in batch
+      // Start timer if this is the first transaction in batch
       if (globalBatch.transactions.length === 1) {
         globalBatch.batchStartTime = Date.now();
         globalBatch.timeout = setTimeout(() => {
-            processGlobalBatch();
+          processGlobalBatch();
         }, BATCH_TIMEOUT_MS);
       }
 
@@ -622,35 +701,44 @@ static fireEvent = async (req: Request, res: Response): Promise<any> => {
       }
 
       // Calculate remaining time for response
-      const remainingTime = globalBatch.batchStartTime 
+      const remainingTime = globalBatch.batchStartTime
         ? BATCH_TIMEOUT_MS - (Date.now() - globalBatch.batchStartTime)
         : 0;
 
-      logger.info(` cuurrent batch size:${globalBatch.transactions.length} with remaining time: ${remainingTime}`)
+      logger.info(
+        ` cuurrent batch size:${globalBatch.transactions.length} with remaining time: ${remainingTime}`
+      );
       // Immediate response with tracking information
       return res.status(202).json({
-          status: true,
-          message: "Event received and being processed",
-          eventId: eventId,
-          gameId: gameId,
-          userId: userId,
-          timestamp: datetime,
-          batchInfo: {
-            currentBatchSize: globalBatch.transactions.length,
-            batchStartedAt: new Date(globalBatch.batchStartTime!).toISOString(),
-            willProcessIn: globalBatch.transactions.length >= BATCH_SIZE 
-                ? "Immediately (batch size reached)"
-                : `${Math.ceil(remainingTime/1000)} seconds`
-        }
+        status: true,
+        message: "Event received and being processed",
+        eventId: eventId,
+        gameId: gameId,
+        userId: userId,
+        timestamp: datetime,
+        batchInfo: {
+          currentBatchSize: globalBatch.transactions.length,
+          batchStartedAt: new Date(globalBatch.batchStartTime!).toISOString(),
+          willProcessIn:
+            globalBatch.transactions.length >= BATCH_SIZE
+              ? "Immediately (batch size reached)"
+              : `${Math.ceil(remainingTime / 1000)} seconds`,
+        },
       });
-
-  } catch (error) {
-      console.error('Error in fireEvent:', error);
+    } catch (error) {
+      console.error("Error in fireEvent:", error);
       res.status(500).json({
-          status: false,
-          message: error.message || "Unexpected error occurred",
+        status: false,
+        message: error.message || "Unexpected error occurred",
       });
-  }
+    }
+  };
 }
 
-}
+export const xdcConfig = {
+  chainId: 50, // XDC Mainnet
+  rpcUrl: "https://rpc.xdc.org",
+  contractAddress: "YOUR_CONTRACT_ADDRESS",
+  bundlerUrl: "https://bundler.xdc.org",
+  // Add your XDC-specific configuration
+};
