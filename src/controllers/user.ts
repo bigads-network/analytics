@@ -5,14 +5,6 @@ import { sha512_256 } from "js-sha512";
 import { ModularSdk, EtherspotBundler, sleep } from "@etherspot/modular-sdk";
 import { ethers } from "ethers";
 import {
-  createSmartAccountClient,
-  createBicoPaymasterClient,
-  toNexusAccount,
-  Logger,
-} from "@biconomy/abstractjs";
-import {
-  chainIdToBundlerUrl,
-  chainIdToChainName,
   envConfigs,
 } from "../config/envconfig";
 import { generateGameToken } from "../config/gameToken";
@@ -20,7 +12,7 @@ import dbservices from "../services/dbservices";
 import { polygon, polygonAmoy, xdc } from "viem/chains";
 import logger from "../config/logger";
 
-const BATCH_SIZE = 50; // Process when a user has 4 transactions
+const BATCH_SIZE = 2; // Process when a user has 4 transactions
 const BATCH_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
 
 // Structure to track global batch
@@ -75,77 +67,89 @@ async function processGlobalBatch() {
       chainId: 50, // XDC Mainnet
       bundlerProvider: new EtherspotBundler(
         50,
-        "etherspot_3ZmG9JseTT1MD3v9QgPezHKB"
+        envConfigs.etherspot_api_Key
       ),
     });
     const saAddress = await modularSdk.getCounterFactualAddress();
     console.log(`saAddress -->`, saAddress);
 
-    const contractAddress = "0xE3f5564e633a84284f2A59DC49fF8f3ed17dF572";
+    const contractAddress = envConfigs.contract_address_xdc;
     const abi = [
       {
-        anonymous: false,
-        inputs: [
+        "anonymous": false,
+        "inputs": [
           {
-            indexed: true,
-            internalType: "address",
-            name: "sender",
-            type: "address",
+            "indexed": true,
+            "internalType": "address",
+            "name": "user",
+            "type": "address"
           },
           {
-            indexed: true,
-            internalType: "uint256",
-            name: "gameId",
-            type: "uint256",
+            "indexed": true,
+            "internalType": "uint256",
+            "name": "gameId",
+            "type": "uint256"
           },
           {
-            indexed: false,
-            internalType: "string",
-            name: "metadata",
-            type: "string",
-          },
+            "indexed": false,
+            "internalType": "string",
+            "name": "metadata",
+            "type": "string"
+          }
         ],
-        name: "MetadataStored",
-        type: "event",
+        "name": "MetadataStored",
+        "type": "event"
       },
       {
-        inputs: [
+        "inputs": [
           {
-            internalType: "string",
-            name: "metadata",
-            type: "string",
+            "internalType": "address",
+            "name": "user",
+            "type": "address"
           },
           {
-            internalType: "uint256",
-            name: "gameId",
-            type: "uint256",
+            "internalType": "string",
+            "name": "metadata",
+            "type": "string"
           },
+          {
+            "internalType": "uint256",
+            "name": "gameId",
+            "type": "uint256"
+          }
         ],
-        name: "storeMetadata",
-        outputs: [],
-        stateMutability: "nonpayable",
-        type: "function",
-      },
-    ];
+        "name": "storeMetadata",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+      }
+    ]
 
-    const erc20Instance = new ethers.Contract(contractAddress, abi);
-    const decimals = 18;
+    // const contractInterface = new ethers.utils.Interface(abi);
+    // const decimals = 18;
+
+     // Clear previous batch before starting new one
+  // await modularSdk.clearUserOpsFromBatch();
+
+  // const provider = new ethers.providers.JsonRpcProvider("https://rpc.xdc.org");
+  const contractInterface = new ethers.Contract(contractAddress,abi,rpcHttpProvider)
 
     for (const tx of transactionsToProcess) {
-      const encodedData = erc20Instance.encodeFunctionData("storeMetadata", [
-        tx.userData.walletAddress,
-        ethers.utils.parseUnits("0", decimals),
+      console.log(tx)
+      const callData = contractInterface.interface.encodeFunctionData("storeMetadata", [
+        tx.userData.saAddress,
+        tx.metadata,
+        tx.gameId,
       ]);
 
+      await modularSdk.clearUserOpsFromBatch();
+    
       await modularSdk.addUserOpsToBatch({
         to: contractAddress,
-        data: encodedData,
-        value: 0n,
-        abi: abi,
-        functionName: "storeMetadata",
-        args: [tx.userData.saAddress, tx.metadata, tx.gameId],
+        data: callData,
       });
     }
+    
 
     // Prepare all calls for the batch
     //   const transactionData = erc20Instance.interface.encodeFunctionData(
@@ -168,7 +172,7 @@ async function processGlobalBatch() {
 
     const op = await modularSdk.estimate({
       paymasterDetails: {
-        url: `https://arka.etherspot.io?apiKey=${"etherspot_3ZmG9JseTT1MD3v9QgPezHKB"}&chainId=${Number(
+        url: `https://arka.etherspot.io?apiKey=${envConfigs.etherspot_api_Key}&chainId=${Number(
           50
         )}&useVp=true`,
         context: { mode: "sponsor" },

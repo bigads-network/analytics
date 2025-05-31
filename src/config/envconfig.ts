@@ -22,7 +22,8 @@ const envVarsSchema = z.object({
   DUNE_API_KEY:z.string(),
   ADMIN_PRIVATEKEY_XDC:z.string(),
   PROVIDER_URL_XDC:z.string(),
-  CONTRACT_ADDRESS_XDC:z.string()
+  CONTRACT_ADDRESS_XDC:z.string(),
+  ETHERSPOTAPIKEY:z.string()
 });
 
 const envVars = envVarsSchema.parse(process.env);
@@ -45,7 +46,8 @@ export const envConfigs = {
   duneApikey:envVars.DUNE_API_KEY,
   adminPrivatKey_Xdc:envVars.ADMIN_PRIVATEKEY_XDC,
   provider_url_xdc :envVars.PROVIDER_URL_XDC,
-  contract_address_xdc : envVars.CONTRACT_ADDRESS_XDC
+  contract_address_xdc : envVars.CONTRACT_ADDRESS_XDC,
+  etherspot_api_Key:envVars.ETHERSPOTAPIKEY
 };
 
 export const chainIdToChainName: any = {
