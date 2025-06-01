@@ -737,10 +737,3 @@ export default class User {
   };
 }
 
-export const xdcConfig = {
-  chainId: 50, // XDC Mainnet
-  rpcUrl: "https://rpc.xdc.org",
-  contractAddress: "YOUR_CONTRACT_ADDRESS",
-  bundlerUrl: "https://bundler.xdc.org",
-  // Add your XDC-specific configuration
-};
