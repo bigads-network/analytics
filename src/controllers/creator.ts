@@ -47,7 +47,7 @@ export default class Creator{
                 chainId: 50, // XDC Mainnet
                 bundlerProvider: new EtherspotBundler(
                   50,
-                  "etherspot_3ZmG9JseTT1MD3v9QgPezHKB"
+                  envConfigs.etherspot_api_Key
                 ),
               });
 
@@ -119,7 +119,7 @@ export default class Creator{
                 chainId: 50, // XDC Mainnet
                 bundlerProvider: new EtherspotBundler(
                   50,
-                  "etherspot_3ZmG9JseTT1MD3v9QgPezHKB"
+                  envConfigs.etherspot_api_Key
                 ),
               });
 
@@ -202,7 +202,7 @@ export default class Creator{
                 chainId: 50, // XDC Mainnet
                 bundlerProvider: new EtherspotBundler(
                   50,
-                  "etherspot_3ZmG9JseTT1MD3v9QgPezHKB"
+                  envConfigs.etherspot_api_Key
                 ),
               });
 
