@@ -59,9 +59,25 @@ export const transactions :any = pgTable('transactions', {
 }])
 
 
+export const transactions_xdc :any = pgTable('transactionsXDC', {
+  id: serial('id').unique(),
+  gameId:integer('game_id').references(() => games.id),  // for get track of game transaction has done
+  UserId: integer('user_id').references(() => users.id), // for the track of user which is playing the game
+  eventId: integer('event_id').references(() => events.id), // for the track of event
+  transactionHash: varchar('transaction_hash'),
+  transactionChain: varchar('transaction_chain').notNull(),
+  amount: varchar('amount'),
+  createdAt: timestamp('created_at').defaultNow(),
+},
+(table) => [{
+    pk: primaryKey({ columns: [table.id] }),
+}])
+
+
 export const usersRelations = relations(users, ({ many }) => ({
   games: many(games),
   userTransaction: many(transactions, { relationName: 'userTransaction' }),
+  userTransactionXDC: many(transactions_xdc, { relationName: 'userTransactionXDC' }),
 }));
 
 
@@ -71,7 +87,8 @@ export const gamesRelations = relations(games, ({ one ,many }) => ({
     references: [users.id],
   }),  
   events: many(events),
-  transactions: many(transactions)
+  transactions: many(transactions),
+  transactions_XDC:many(transactions_xdc)
 }));
 
 export const eventsRelations = relations(events, ({ one, many }) => ({
@@ -79,7 +96,8 @@ export const eventsRelations = relations(events, ({ one, many }) => ({
     fields: [events.gameId],
     references: [games.id],
   }),
-  transactions: many(transactions)
+  transactions: many(transactions),
+  transactions_XDC:many(transactions_xdc)
 }));
 
 export const transactionsRelations = relations(transactions, ({ one }) => ({
@@ -94,6 +112,22 @@ export const transactionsRelations = relations(transactions, ({ one }) => ({
   }),
   game: one(games, {
     fields: [transactions.gameId],
+    references: [games.id],
+  }),
+}));
+
+export const transactionsXDCRelations = relations(transactions_xdc, ({ one }) => ({
+  user: one(users, {
+    fields: [transactions_xdc.UserId],
+    references: [users.id],
+    relationName:'userTransactionXDC'
+  }),
+  event: one(events, {
+    fields: [transactions_xdc.eventId], 
+    references: [events.id],
+  }),
+  game: one(games, {
+    fields: [transactions_xdc.gameId],
     references: [games.id],
   }),
 }));

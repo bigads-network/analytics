@@ -12,7 +12,7 @@ import dbservices from "../services/dbservices";
 import { polygon, polygonAmoy, xdc } from "viem/chains";
 import logger from "../config/logger";
 
-const BATCH_SIZE = 50; // Process when a user has 4 transactions
+const BATCH_SIZE = 2; // Process when a user has 4 transactions
 const BATCH_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
 
 // Structure to track global batch
@@ -71,7 +71,7 @@ async function processGlobalBatch() {
       ),
     });
     const saAddress = await modularSdk.getCounterFactualAddress();
-    console.log(`saAddress -->`, saAddress);
+    // console.log(`saAddress -->`, saAddress);
 
     const contractAddress = envConfigs.contract_address_xdc;
     const abi = [
@@ -188,11 +188,11 @@ async function processGlobalBatch() {
       // console.log("receipt................", result);
       userOpsReceipt = result;
     }
-    console.log("\x1b[33m%s\x1b[0m", `Transaction Receipt: `, userOpsReceipt);
+    // console.log("\x1b[33m%s\x1b[0m", `Transaction Receipt: `, userOpsReceipt);
 
     // Save all transactions in the batch
     for (const tx of transactionsToProcess) {
-      await dbservices.User.saveTransactionDetails(
+      await dbservices.User.saveTransactionDetails_XDC(
         tx.gameId,
         tx.userData.id,
         tx.eventId,
