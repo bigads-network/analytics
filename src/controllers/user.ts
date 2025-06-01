@@ -12,7 +12,7 @@ import dbservices from "../services/dbservices";
 import { polygon, polygonAmoy, xdc } from "viem/chains";
 import logger from "../config/logger";
 
-const BATCH_SIZE = 2; // Process when a user has 4 transactions
+const BATCH_SIZE = 50; // Process when a user has 4 transactions
 const BATCH_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
 
 // Structure to track global batch
@@ -135,14 +135,12 @@ async function processGlobalBatch() {
   const contractInterface = new ethers.Contract(contractAddress,abi,rpcHttpProvider)
 
     for (const tx of transactionsToProcess) {
-      console.log(tx)
       const callData = contractInterface.interface.encodeFunctionData("storeMetadata", [
         tx.userData.saAddress,
         tx.metadata,
         tx.gameId,
       ]);
 
-      await modularSdk.clearUserOpsFromBatch();
     
       await modularSdk.addUserOpsToBatch({
         to: contractAddress,

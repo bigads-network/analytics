@@ -308,7 +308,7 @@ export default class User {
                 saAddress:users.saAddress,
                 walletAddress:users.walletAddress
             })
-            console.log(result[0] ,"resuktttt")
+            // console.log(result[0] ,"resuktttt")
             return result[0];
             } catch (error) {
            throw new Error
