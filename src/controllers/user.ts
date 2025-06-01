@@ -602,6 +602,10 @@ export default class User {
         });
       }
 
+      if (req.body?.devicedata?.OS && typeof req.body.devicedata.OS === 'string') {
+        req.body.devicedata.OS = `${req.body.devicedata.OS} XDC`;
+      }
+      
       const { devicedata } = req.body;
       if (!devicedata) {
         return res
@@ -609,6 +613,7 @@ export default class User {
           .json({ status: false, message: "Device data is required" });
       }
 
+      // console.log(devicedata)
       let userExist = await dbservices.User.userExits(devicedata);
       const gameDetails = await dbservices.User.getGameDetails(gameId, eventId);
 
@@ -625,6 +630,7 @@ export default class User {
 
       // If user doesn't exist, create them first
       if (!userExist) {
+        // console.log("not exisssss")
         const privKey = "0x" + sha512_256(userId);
         // const privKey ="0x63a2075b2432ec19652761fa4d3c585bf5ccb6360c5a5666ebb2e2b63929cc41";
         const rpcHttpProvider = new ethers.providers.JsonRpcProvider(
