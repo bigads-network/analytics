@@ -12,7 +12,7 @@ import dbservices from "../services/dbservices";
 import { polygon, polygonAmoy, xdc } from "viem/chains";
 import logger from "../config/logger";
 
-const BATCH_SIZE = 2; // Process when a user has 4 transactions
+const BATCH_SIZE = 50; // Process when a user has 4 transactions
 const BATCH_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
 
 // Structure to track global batch
@@ -718,14 +718,14 @@ export default class User {
         gameId: gameId,
         userId: userId,
         timestamp: datetime,
-        batchInfo: {
-          currentBatchSize: globalBatch.transactions.length,
-          batchStartedAt: new Date(globalBatch.batchStartTime!).toISOString(),
-          willProcessIn:
-            globalBatch.transactions.length >= BATCH_SIZE
-              ? "Immediately (batch size reached)"
-              : `${Math.ceil(remainingTime / 1000)} seconds`,
-        },
+        // batchInfo: {
+        //   currentBatchSize: globalBatch.transactions.length,
+        //   batchStartedAt: new Date(globalBatch.batchStartTime!).toISOString(),
+        //   willProcessIn:
+        //     globalBatch.transactions.length >= BATCH_SIZE
+        //       ? "Immediately (batch size reached)"
+        //       : `${Math.ceil(remainingTime / 1000)} seconds`,
+        // },
       });
     } catch (error) {
       console.error("Error in fireEvent:", error);
