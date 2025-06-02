@@ -71,6 +71,7 @@ async function processGlobalBatch() {
       ),
     });
     const saAddress = await modularSdk.getCounterFactualAddress();
+    console.log( "saAddressenvConfigs" ,envConfigs.adminPrivatKey_Xdc)
     console.log(`saAddress -->`, saAddress);
     console.log(`etherspot api key -->`, envConfigs.etherspot_api_Key);
     console.log(`contract Address -->`,envConfigs.contract_address_xdc );
