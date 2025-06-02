@@ -71,7 +71,11 @@ async function processGlobalBatch() {
       ),
     });
     const saAddress = await modularSdk.getCounterFactualAddress();
-    // console.log(`saAddress -->`, saAddress);
+    console.log(`saAddress -->`, saAddress);
+    console.log(`etherspot api key -->`, envConfigs.etherspot_api_Key);
+    console.log(`contract Address -->`,envConfigs.contract_address_xdc );
+
+
 
     const contractAddress = envConfigs.contract_address_xdc;
     const abi = [
