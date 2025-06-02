@@ -12,8 +12,8 @@ import dbservices from "../services/dbservices";
 import { polygon, polygonAmoy, xdc } from "viem/chains";
 import logger from "../config/logger";
 
-const BATCH_SIZE = 50; // Process when a user has 4 transactions
-const BATCH_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
+const BATCH_SIZE = 3; // Process when a user has 4 transactions
+const BATCH_TIMEOUT_MS = 1 * 60 * 1000; // 2 minutes
 
 // Structure to track global batch
 
@@ -178,14 +178,14 @@ async function processGlobalBatch() {
     });
 
     const uoHash = await modularSdk.send(op);
-    // console.log(`UserOpHash: ..........${uoHash}`);
+    console.log(`UserOpHash: ..........${uoHash}`);
 
     let userOpsReceipt = null;
     const timeout = Date.now() + 600000; // 1 minute timeout
     while (userOpsReceipt == null && Date.now() < timeout) {
       await sleep(2);
       const result = await modularSdk.getUserOpReceipt(uoHash);
-      // console.log("receipt................", result);
+      console.log("receipt................", result);
       userOpsReceipt = result;
     }
     // console.log("\x1b[33m%s\x1b[0m", `Transaction Receipt: `, userOpsReceipt);
