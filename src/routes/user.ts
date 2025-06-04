@@ -26,5 +26,9 @@ router.get('/duneActiveEvents', controllers.TransactionXDC.getDailyTransactionCo
 router.get("/transactions/day", controllers.Test.totalTransactionsperdat)
 
 
+router.get("/monthlyuser", controllers.TransactionXDC.getMonthlyUsers) // Dune Analytics for monthly active users - Batman
+router.get("/monthlytransaction", controllers.TransactionXDC.getMonthlyTransaction) // Dune Analytics for monthly transactions - Batman
+
+
 
 export default router

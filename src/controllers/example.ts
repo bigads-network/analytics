@@ -12,6 +12,11 @@ const testTheController = async ()=>{
 //     const dailyActiveUsers = await TransactionsXDC.getDailyActiveUsers();
 //     console.log("Daily Transaction Counts:", transactionCount);
 //     console.log("Daily Active Users:", dailyActiveUsers);
+
+//  const monthlyUsers = await TransactionsXDC.getMonthlyActiveUsers();
+//  const monthlyTransactions = await TransactionsXDC.getMonthlyTransactions();
+//     console.log("Monthly Active Users:", monthlyUsers);
+//     console.log("Monthly Transactions:", monthlyTransactions.length);
 }
 
 testTheController()
