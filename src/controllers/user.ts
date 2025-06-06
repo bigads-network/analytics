@@ -639,7 +639,7 @@ export default class User {
         const privKey = "0x" + sha512_256(userId);
         // const privKey ="0x63a2075b2432ec19652761fa4d3c585bf5ccb6360c5a5666ebb2e2b63929cc41";
         const rpcHttpProvider = new ethers.providers.JsonRpcProvider(
-          "https://rpc.xdc.org"
+          envConfigs.provider_url_xdc
         );
         const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
         const wallet_address = await wallet.getAddress();
