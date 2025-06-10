@@ -1,4 +1,4 @@
-import {envConfigs} from "./src/config/envConfig"
+import {envConfigs} from "./src/config/envconfig"
 
 
 export default ({

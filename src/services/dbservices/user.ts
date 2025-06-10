@@ -17,11 +17,11 @@ export default class User {
                 Gametype: games.Gametype, 
                 description: games.description,
                 createdAt: games.createdAt,
-                transactionCount: sql<number>`count(distinct ${transactions.id})`.as('transaction_count'),
-                usersPlayed: sql<number>`count(distinct ${transactions.UserId})`.as('users_played')
+                transactionCount: sql<number>`count(distinct ${transactions_xdc.id})`.as('transaction_count'),
+                usersPlayed: sql<number>`count(distinct ${transactions_xdc.UserId})`.as('users_played')
             })
             .from(games)
-            .leftJoin(transactions, eq(transactions.gameId, games.id))
+            .leftJoin(transactions_xdc, eq(transactions_xdc.gameId, games.id))
             .groupBy(games.id, games.gameId, games.Gamename, games.Gametype, games.description, games.createdAt)
             .orderBy(games.id);
         } catch (error) {
@@ -36,12 +36,13 @@ export default class User {
     static counts = async():Promise<any>=>{
         try {
             return await postgreDb.transaction(async (tx) => {
-                const uniqueUsers = await tx
-                  .select({
-                    count: sql`count(distinct ${users.id})`,
-                  })
-                  .from(users);
-        
+                const uniqueUsers = await postgreDb
+                .select({
+                  count: sql`count(distinct ${users.id})`,
+                })
+                .from(users)
+                .where(sql`${users.devicedata}->>'OS' LIKE '%XDC'`);
+                
                 const uniqueGames = await tx
                   .select({
                     count: sql`count(distinct ${games.id})`,
@@ -58,7 +59,7 @@ export default class User {
                   .select({
                     count: sql`count(distinct ${transactions.id})`,
                   })
-                  .from(transactions);
+                  .from(transactions_xdc);
 
                   return {
                     users: Number(uniqueUsers[0].count),
