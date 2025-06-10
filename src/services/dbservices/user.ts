@@ -36,12 +36,13 @@ export default class User {
     static counts = async():Promise<any>=>{
         try {
             return await postgreDb.transaction(async (tx) => {
-                const uniqueUsers = await tx
-                  .select({
-                    count: sql`count(distinct ${users.id})`,
-                  })
-                  .from(users);
-        
+                const uniqueUsers = await postgreDb
+                .select({
+                  count: sql`count(distinct ${users.id})`,
+                })
+                .from(users)
+                .where(sql`${users.devicedata}->>'OS' LIKE '%XDC'`);
+                
                 const uniqueGames = await tx
                   .select({
                     count: sql`count(distinct ${games.id})`,
