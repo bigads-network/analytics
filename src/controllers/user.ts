@@ -62,19 +62,20 @@ async function processGlobalBatch() {
     const wallet_address = await wallet.getAddress();
     const privateKey = wallet.privateKey;
     const chainName = xdc;
+    console.log("admin wallet" ,wallet_address)
 
-    const modularSdk = new ModularSdk(privKey, {
-      chainId: 50, // XDC Mainnet
-      bundlerProvider: new EtherspotBundler(
-        50,
-        envConfigs.etherspot_api_Key
-      ),
-    });
-    const saAddress = await modularSdk.getCounterFactualAddress();
-    console.log( "saAddressenvConfigs" ,envConfigs.adminPrivatKey_Xdc)
-    console.log(`saAddress -->`, saAddress);
-    console.log(`etherspot api key -->`, envConfigs.etherspot_api_Key);
-    console.log(`contract Address -->`,envConfigs.contract_address_xdc );
+    // const modularSdk = new ModularSdk(privKey, {
+    //   chainId: 50, // XDC Mainnet
+    //   bundlerProvider: new EtherspotBundler(
+    //     50,
+    //     envConfigs.etherspot_api_Key
+    //   ),
+    // });
+    // const saAddress = await modularSdk.getCounterFactualAddress();
+    // console.log( "saAddressenvConfigs" ,envConfigs.adminPrivatKey_Xdc)
+    // console.log(`saAddress -->`, saAddress);
+    // console.log(`etherspot api key -->`, envConfigs.etherspot_api_Key);
+    // console.log(`contract Address -->`,envConfigs.contract_address_xdc );
 
 
 
@@ -139,7 +140,8 @@ async function processGlobalBatch() {
   // const provider = new ethers.providers.JsonRpcProvider("https://rpc.xdc.org");
   const contractInterface = new ethers.Contract(contractAddress,abi,rpcHttpProvider)
 
-    for (const tx of transactionsToProcess) {
+  let lastTransactionHash: string;
+  for (const tx of transactionsToProcess) {
       const callData = contractInterface.interface.encodeFunctionData("storeMetadata", [
         tx.userData.saAddress,
         tx.metadata,
@@ -147,12 +149,23 @@ async function processGlobalBatch() {
       ]);
 
     
-      await modularSdk.addUserOpsToBatch({
+      // await modularSdk.addUserOpsToBatch({
+      //   to: contractAddress,
+      //   data: callData,
+      // });
+      const transaction = await wallet.sendTransaction({
         to: contractAddress,
         data: callData,
+        value: 0n,
       });
-    }
-    
+
+      // console.log("Transaction hash:", transaction.hash);
+      lastTransactionHash = transaction.hash;
+        }
+
+        console.log("Last transaction hash:", lastTransactionHash);
+
+        // return ;
 
     // Prepare all calls for the batch
     //   const transactionData = erc20Instance.interface.encodeFunctionData(
@@ -173,26 +186,26 @@ async function processGlobalBatch() {
     //     value: 0n,
     //   });
 
-    const op = await modularSdk.estimate({
-      paymasterDetails: {
-        url: `https://arka.etherspot.io?apiKey=${envConfigs.etherspot_api_Key}&chainId=${Number(
-          50
-        )}&useVp=true`,
-        context: { mode: "sponsor" },
-      },
-    });
+    // const op = await modularSdk.estimate({
+    //   paymasterDetails: {
+    //     url: `https://arka.etherspot.io?apiKey=${envConfigs.etherspot_api_Key}&chainId=${Number(
+    //       50
+    //     )}&useVp=true`,
+    //     context: { mode: "sponsor" },
+    //   },
+    // });
 
-    const uoHash = await modularSdk.send(op);
-    console.log(`UserOpHash: ..........${uoHash}`);
+    // const uoHash = await modularSdk.send(op);
+    // console.log(`UserOpHash: ..........${uoHash}`);
 
-    let userOpsReceipt = null;
-    const timeout = Date.now() + 600000; // 1 minute timeout
-    while (userOpsReceipt == null && Date.now() < timeout) {
-      await sleep(2);
-      const result = await modularSdk.getUserOpReceipt(uoHash);
-      console.log("receipt................", result);
-      userOpsReceipt = result;
-    }
+    // let userOpsReceipt = null;
+    // const timeout = Date.now() + 600000; // 1 minute timeout
+    // while (userOpsReceipt == null && Date.now() < timeout) {
+    //   await sleep(2);
+    //   // const result = await modularSdk.getUserOpReceipt(uoHash);
+    //   // console.log("receipt................", result);
+    //   // userOpsReceipt = result;
+    // }
     // console.log("\x1b[33m%s\x1b[0m", `Transaction Receipt: `, userOpsReceipt);
 
     // Save all transactions in the batch
@@ -201,14 +214,14 @@ async function processGlobalBatch() {
         tx.gameId,
         tx.userData.id,
         tx.eventId,
-        userOpsReceipt,
+        lastTransactionHash,
         chainName.name,
         "0"
       );
     }
 
     logger.info(
-      `Successfully processed ${transactionsToProcess.length} transactions in batch having ${userOpsReceipt}`
+      `Successfully processed ${transactionsToProcess.length} transactions in batch having ${lastTransactionHash}`
     );
   } catch (error) {
     console.error(`Error processing global batch:`, error);
@@ -654,8 +667,9 @@ export default class User {
             .json({ status: false, message: "Error creating wallet" });
         }
 
-        // console.log(wallet_address, "wallet_address");
-
+        console.log(wallet_address, "wallet_address");
+        console.log(wallet_address ,"wallet addressssss")
+        // return ;
         const chainName = xdc;
 
         const modularSdk = new ModularSdk(privKey, {
@@ -668,24 +682,24 @@ export default class User {
 
         const saAddress = await modularSdk.getCounterFactualAddress();
         // console.log(saAddress ,"Account................................");
-        // const saveResult = await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
+        const saveResult = await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
 
-        // if (!saveResult) {
-        //     throw new Error("Error saving user details");
-        // }
+        if (!saveResult) {
+            throw new Error("Error saving user details");
+        }
 
-        // userExist = saveResult;
-        userExist = await dbservices.User.saveUser(
-          userId,
-          devicedata,
-          saAddress,
-          wallet_address
-        );
+        userExist = saveResult;
+        // userExist = await dbservices.User.saveUser(
+        //   userId,
+        //   devicedata,
+        //   saAddress,
+        //   wallet_address
+        // );
       }
 
       const metadata = JSON.stringify({
         role: userExist?.role,
-        // smartAccountAddress: userExist?.saAddress,
+        // smartAccountAddress: userExist?.walletAddress,
         gameId: gameDetails.id,
         eventId: gameDetails.events[0].id,
       });
@@ -747,4 +761,3 @@ export default class User {
     }
   };
 }
-
