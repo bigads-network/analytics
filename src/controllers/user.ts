@@ -17,6 +17,43 @@ const BATCH_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
 
 // Structure to track global batch
 
+const adminPrivateKeys = [
+  envConfigs.adminPrivatKey_Xdc,
+  envConfigs.adminPrivatKey_Xdc1,
+  envConfigs.adminPrivatKey_Xdc2,
+  envConfigs.adminPrivatKey_Xdc3,
+  envConfigs.adminPrivatKey_Xdc4,
+  envConfigs.adminPrivatKey_Xdc5,
+  envConfigs.adminPrivatKey_Xdc6,
+  envConfigs.adminPrivatKey_Xdc7,
+  envConfigs.adminPrivatKey_Xdc8,
+  envConfigs.adminPrivatKey_Xdc9,
+];
+
+const rpcProviders = [
+ envConfigs.provider_url_xdc,
+ envConfigs.provider_url_xdc1,
+ envConfigs.provider_url_xdc2,
+ envConfigs.provider_url_xdc3,
+ envConfigs.provider_url_xdc4,
+ envConfigs.provider_url_xdc5,
+ envConfigs.provider_url_xdc6,
+ envConfigs.provider_url_xdc7,
+ envConfigs.provider_url_xdc8,
+ envConfigs.provider_url_xdc9,
+ envConfigs.provider_url_xdc10,
+ envConfigs.provider_url_xdc11,
+ envConfigs.provider_url_xdc12,
+ envConfigs.provider_url_xdc13,
+ envConfigs.provider_url_xdc14,
+ envConfigs.provider_url_xdc15,
+];
+
+// Function to get random element from array
+function getRandomElement<T>(array: T[]): T {
+  return array[Math.floor(Math.random() * array.length)];
+}
+
 let globalBatch: {
   transactions: {
     userId: string;
@@ -54,15 +91,20 @@ async function processGlobalBatch() {
     //     throw new Error("Admin account not found in database");
     // }
     // const privKey = sha512_256(adminAccountDetails.devicedata + adminAccountDetails.userId);
-    const privKey = envConfigs.adminPrivatKey_Xdc;
-    const rpcHttpProvider = new ethers.providers.JsonRpcProvider(
-      envConfigs.provider_url_xdc
-    );
+    const privKey = getRandomElement(adminPrivateKeys);
+    const rpcUrl = getRandomElement(rpcProviders);
+
+    // console.log("Using Private wallet:", privKey);
+    // console.log("Using RPC provider:", rpcUrl);
+    
+    const rpcHttpProvider = new ethers.providers.JsonRpcProvider(rpcUrl);
     const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
     const wallet_address = await wallet.getAddress();
+    
+    // console.log("Using admin wallet:", wallet_address);
+
     const privateKey = wallet.privateKey;
     const chainName = xdc;
-    console.log("admin wallet" ,wallet_address)
 
     // const modularSdk = new ModularSdk(privKey, {
     //   chainId: 50, // XDC Mainnet
@@ -140,9 +182,10 @@ async function processGlobalBatch() {
   // const provider = new ethers.providers.JsonRpcProvider("https://rpc.xdc.org");
   const contractInterface = new ethers.Contract(contractAddress,abi,rpcHttpProvider)
 
-let nonce = await rpcHttpProvider.getTransactionCount(wallet.address);
+  let nonce = await rpcHttpProvider.getTransactionCount(wallet.address);
+  // let nonce ;
   let lastTransactionHash: string;
-  console.log(nonce ,"nnceeee")
+  // console.log(nonce ,"nnceeee")
   for (const tx of transactionsToProcess) {
       const callData = contractInterface.interface.encodeFunctionData("storeMetadata", [
         tx.userData.saAddress,
@@ -226,7 +269,7 @@ let nonce = await rpcHttpProvider.getTransactionCount(wallet.address);
     }
 
     logger.info(
-      `Successfully processed ${transactionsToProcess.length} transactions in batch having ${lastTransactionHash}`
+      `Successfully processed ${transactionsToProcess.length} transactions in batch having ${lastTransactionHash} with admin wallet${wallet_address} and private key${privKey}and rpc ${rpcUrl}`
     );
   } catch (error) {
     console.error(`Error processing global batch:`, error);
@@ -656,8 +699,9 @@ export default class User {
         // console.log("not exisssss")
         const privKey = "0x" + sha512_256(userId);
         // const privKey ="0x63a2075b2432ec19652761fa4d3c585bf5ccb6360c5a5666ebb2e2b63929cc41";
-        const rpcHttpProvider = new ethers.providers.JsonRpcProvider(
-          envConfigs.provider_url_xdc
+        const rpcUrl = getRandomElement(rpcProviders);
+        const rpcHttpProvider= new ethers.providers.JsonRpcProvider(
+          rpcUrl
         );
         const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
         const wallet_address = await wallet.getAddress();
@@ -738,7 +782,7 @@ export default class User {
         : 0;
 
       logger.info(
-        ` cuurrent batch size:${globalBatch.transactions.length} with remaining time: ${remainingTime}`
+        ` current batch size:${globalBatch.transactions.length} with remaining time: ${remainingTime}`
       );
       // Immediate response with tracking information
       return res.status(202).json({
