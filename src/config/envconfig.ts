@@ -41,6 +41,13 @@ const envVarsSchema = z.object({
   PROVIDER_URL_XDC6:z.string(),
   PROVIDER_URL_XDC7:z.string(),
   PROVIDER_URL_XDC8:z.string(),
+  PROVIDER_URL_XDC9:z.string(),
+  PROVIDER_URL_XDC10:z.string(),
+  PROVIDER_URL_XDC11:z.string(),
+  PROVIDER_URL_XDC12:z.string(),
+  PROVIDER_URL_XDC13:z.string(),
+  PROVIDER_URL_XDC14:z.string(),
+  PROVIDER_URL_XDC15:z.string()
 });
 
 const envVars = envVarsSchema.parse(process.env);
@@ -80,13 +87,13 @@ export const envConfigs = {
   provider_url_xdc6 :envVars.PROVIDER_URL_XDC6,
   provider_url_xdc7 :envVars.PROVIDER_URL_XDC7,
   provider_url_xdc8 :envVars.PROVIDER_URL_XDC8,
-  provider_url_xdc9 :envVars.PROVIDER_URL_XDC,
-  provider_url_xdc10 :envVars.PROVIDER_URL_XDC,
-  provider_url_xdc11 :envVars.PROVIDER_URL_XDC,
-  provider_url_xdc12:envVars.PROVIDER_URL_XDC,
-  provider_url_xdc13:envVars.PROVIDER_URL_XDC,
-  provider_url_xdc14:envVars.PROVIDER_URL_XDC,
-  provider_url_xdc15:envVars.PROVIDER_URL_XDC,
+  provider_url_xdc9 :envVars.PROVIDER_URL_XDC9,
+  provider_url_xdc10 :envVars.PROVIDER_URL_XDC10,
+  provider_url_xdc11 :envVars.PROVIDER_URL_XDC11,
+  provider_url_xdc12:envVars.PROVIDER_URL_XDC12,
+  provider_url_xdc13:envVars.PROVIDER_URL_XDC13,
+  provider_url_xdc14:envVars.PROVIDER_URL_XDC14,
+  provider_url_xdc15:envVars.PROVIDER_URL_XDC15,
   contract_address_xdc : envVars.CONTRACT_ADDRESS_XDC,
   etherspot_api_Key:envVars.ETHERSPOTAPIKEY
 

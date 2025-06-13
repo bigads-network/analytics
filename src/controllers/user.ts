@@ -54,6 +54,15 @@ function getRandomElement<T>(array: T[]): T {
   return array[Math.floor(Math.random() * array.length)];
 }
 
+let currentKeyIndex = 0;
+
+function getNextAdminKey(): string {
+  const key = adminPrivateKeys[currentKeyIndex];
+  currentKeyIndex = (currentKeyIndex + 1) % adminPrivateKeys.length;
+  return key;
+}
+
+
 let globalBatch: {
   transactions: {
     userId: string;
@@ -91,7 +100,8 @@ async function processGlobalBatch() {
     //     throw new Error("Admin account not found in database");
     // }
     // const privKey = sha512_256(adminAccountDetails.devicedata + adminAccountDetails.userId);
-    const privKey = getRandomElement(adminPrivateKeys);
+    const privKey = getNextAdminKey();
+    // console.log(privKey ,"privvvvvvvvvvvvvvvvv")
     const rpcUrl = getRandomElement(rpcProviders);
 
     // console.log("Using Private wallet:", privKey);
