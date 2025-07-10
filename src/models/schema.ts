@@ -14,7 +14,9 @@ export const users:any = pgTable('users', {
 },
 (table) => [{
     pk: primaryKey({ columns: [table.id] }),
-}])
+},
+index("user_id_idx").on(table.userId),
+])
 
 export const games:any = pgTable('games', {
   id: serial('id').unique(),
@@ -29,7 +31,10 @@ export const games:any = pgTable('games', {
 },
 (table) => [{
     pk: primaryKey({ columns: [table.id] }),
-}])
+},
+index("creator_id_idx").on(table.creatorId),
+index("games_game_id_idx").on(table.gameId),
+])
 
 export const events = pgTable('events', {
   id: serial('id').unique(),
@@ -41,7 +46,10 @@ export const events = pgTable('events', {
 },
 (table) => [{
     pk: primaryKey({ columns: [table.id] }),
-}])
+},
+index("event_id_idx").on(table.eventId),
+index("events_game_id_idx").on(table.gameId),
+])
 
 
 export const transactions :any = pgTable('transactions', {
@@ -56,7 +64,10 @@ export const transactions :any = pgTable('transactions', {
 },
 (table) => [{
     pk: primaryKey({ columns: [table.id] }),
-}])
+},
+index("transactions_game_id_idx").on(table.gameId),
+index("transactions_user_id_idx").on(table.UserId),
+])
 
 
 export const transactions_xdc :any = pgTable('transactionsXDC', {
