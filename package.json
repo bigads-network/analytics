@@ -6,7 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
-    "start": "node  ./dist/src/app.js",
+    "start": "node --max-old-space-size=4096 dist/src/app.js",
     "dev": "nodemon --exec npx ts-node src/app.ts ",
     "testing": "nodemon --exec npx ts-node src/testingscript.ts ",
     "migration:generate": "drizzle-kit generate",
