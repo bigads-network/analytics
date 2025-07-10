@@ -1,5 +1,5 @@
 import { relations } from 'drizzle-orm';
-import { serial,varchar, jsonb, pgTable, timestamp, boolean, integer, primaryKey } from 'drizzle-orm/pg-core';
+import { serial,varchar, jsonb, pgTable, timestamp, boolean, integer, primaryKey, index } from 'drizzle-orm/pg-core';
 
 
 
@@ -71,7 +71,10 @@ export const transactions_xdc :any = pgTable('transactionsXDC', {
 },
 (table) => [{
     pk: primaryKey({ columns: [table.id] }),
-}])
+},
+index("game_id").on(table.gameId),
+index("user_id").on(table.UserId),
+])
 
 
 export const usersRelations = relations(users, ({ many }) => ({
