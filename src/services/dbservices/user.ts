@@ -8,72 +8,132 @@ export default class User {
 
 
 
-    static getGames = async():Promise<any>=>{
+    // static getGames = async():Promise<any>=>{
+    //     try {
+    //         return await postgreDb.select({
+    //             id:games.id,
+    //             gameId:games.gameId,
+    //             Gamename:games.Gamename,
+    //             Gametype: games.Gametype, 
+    //             description: games.description,
+    //             createdAt: games.createdAt,
+    //             transactionCount: sql<number>`count(distinct ${transactions_xdc.id})`.as('transaction_count'),
+    //             usersPlayed: sql<number>`count(distinct ${transactions_xdc.UserId})`.as('users_played')
+    //         })
+    //         .from(games)
+    //         .leftJoin(transactions_xdc, eq(transactions_xdc.gameId, games.id))
+    //         .groupBy(games.id, games.gameId, games.Gamename, games.Gametype, games.description, games.createdAt)
+    //         .orderBy(games.id);
+    //     } catch (error) {
+    //         throw new Error(error.message)
+    //     }
+    // }
+
+    static getGames = async (): Promise<any> => {
         try {
-            return await postgreDb.select({
-                id:games.id,
-                gameId:games.gameId,
-                Gamename:games.Gamename,
-                Gametype: games.Gametype, 
-                description: games.description,
-                createdAt: games.createdAt,
-                transactionCount: sql<number>`count(distinct ${transactions_xdc.id})`.as('transaction_count'),
-                usersPlayed: sql<number>`count(distinct ${transactions_xdc.UserId})`.as('users_played')
+          const txAgg = postgreDb
+            .select({
+              gameId: transactions_xdc.gameId,
+              transaction_count: sql<number>`count(distinct ${transactions_xdc.id})`.as('transaction_count'),
+              users_played: sql<number>`count(distinct ${transactions_xdc.UserId})`.as('users_played')
+            })
+            .from(transactions_xdc)
+            .groupBy(transactions_xdc.gameId)
+            .as("txAgg");
+      
+          return await postgreDb
+            .select({
+              id: games.id,
+              gameId: games.gameId,
+              Gamename: games.Gamename,
+              Gametype: games.Gametype,
+              description: games.description,
+              createdAt: games.createdAt,
+              transactionCount: sql<number>`coalesce(${txAgg.transaction_count}, 0)`,
+              usersPlayed: sql<number>`coalesce(${txAgg.users_played}, 0)`
             })
             .from(games)
-            .leftJoin(transactions_xdc, eq(transactions_xdc.gameId, games.id))
-            .groupBy(games.id, games.gameId, games.Gamename, games.Gametype, games.description, games.createdAt)
+            .leftJoin(txAgg, eq(games.id, txAgg.gameId))
             .orderBy(games.id);
         } catch (error) {
-            throw new Error(error.message)
+          throw new Error(error.message);
         }
-    }
-    
+      };
+      
 
-
-
-
-    static counts = async():Promise<any>=>{
-        try {
-            return await postgreDb.transaction(async (tx) => {
-                const uniqueUsers = await postgreDb
-                .select({
-                  count: sql`count(distinct ${users.id})`,
-                })
-                .from(users)
-                .where(sql`${users.devicedata}->>'OS' LIKE '%XDC'`);
+    // static counts = async():Promise<any>=>{
+    //     try {
+    //         return await postgreDb.transaction(async (tx) => {
+    //             const uniqueUsers = await postgreDb
+    //             .select({
+    //               count: sql`count(distinct ${users.id})`,
+    //             })
+    //             .from(users)
+    //             .where(sql`${users.devicedata}->>'OS' LIKE '%XDC'`);
                 
-                const uniqueGames = await tx
-                  .select({
-                    count: sql`count(distinct ${games.id})`,
-                  })
-                  .from(games);
+    //             const uniqueGames = await tx
+    //               .select({
+    //                 count: sql`count(distinct ${games.id})`,
+    //               })
+    //               .from(games);
         
-                const uniqueEvents = await tx
-                  .select({
-                    count: sql`count(distinct ${events.id})`,
-                  })
-                  .from(events);
+    //             const uniqueEvents = await tx
+    //               .select({
+    //                 count: sql`count(distinct ${events.id})`,
+    //               })
+    //               .from(events);
 
-                  const uniqueTransactions = await tx
-                  .select({
-                    count: sql`count(distinct ${transactions.id})`,
-                  })
-                  .from(transactions_xdc);
+    //               const uniqueTransactions = await tx
+    //               .select({
+    //                 count: sql`count(distinct ${transactions.id})`,
+    //               })
+    //               .from(transactions_xdc);
 
-                  return {
-                    users: Number(uniqueUsers[0].count),
-                    games: Number(uniqueGames[0].count),
-                    events: Number(uniqueEvents[0].count),
-                    transactions: Number(uniqueTransactions[0].count),
-                  }
-                })
+    //               return {
+    //                 users: Number(uniqueUsers[0].count),
+    //                 games: Number(uniqueGames[0].count),
+    //                 events: Number(uniqueEvents[0].count),
+    //                 transactions: Number(uniqueTransactions[0].count),
+    //               }
+    //             })
                
-        } catch (error) {
-            throw new Error(error.message)
-        }
-    }
+    //     } catch (error) {
+    //         throw new Error(error.message)
+    //     }
+    // }
 
+
+    static counts = async (): Promise<any> => {
+        try {
+          const [uniqueUsers, gamesEventsTx] = await Promise.all([
+            postgreDb
+              .select({
+                count: sql`count(distinct ${users.id})`,
+              })
+              .from(users)
+              .where(sql`LOWER(${users.devicedata}->>'OS') LIKE '%xdc'`),
+      
+            postgreDb.transaction(async (tx) => {
+              const [game, event, transactions] = await Promise.all([
+                tx.select({ count: sql`count(*)` }).from(games),
+                tx.select({ count: sql`count(*)` }).from(events),
+                tx.select({ count: sql`count(*)` }).from(transactions_xdc),
+              ]);
+              return { game, event, transactions };
+            }),
+          ]);
+      
+          return {
+            users: Number(uniqueUsers[0].count),
+            games: Number(gamesEventsTx.game[0].count),
+            events: Number(gamesEventsTx.event[0].count),
+            transactions: Number(gamesEventsTx.transactions[0].count),
+          };
+        } catch (error) {
+          throw new Error(error.message);
+        }
+      };
+      
 
     static getEvents = async():Promise<any>=>{
         try {

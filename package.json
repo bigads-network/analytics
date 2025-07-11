@@ -25,6 +25,7 @@
     "axios": "^1.7.9",
     "bcrypt": "^5.1.1",
     "bcryptjs": "^2.4.3",
+    "compression": "^1.8.0",
     "cors": "^2.8.5",
     "crypto": "^1.0.1",
     "diamnet-sdk": "^1.0.2",
