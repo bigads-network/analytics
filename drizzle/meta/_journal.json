@@ -36,6 +36,20 @@
       "when": 1752132804515,
       "tag": "0004_lowly_cable",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1752337634978,
+      "tag": "0005_dazzling_mastermind",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1752338909103,
+      "tag": "0006_true_ma_gnuci",
+      "breakpoints": true
     }
   ]
 }

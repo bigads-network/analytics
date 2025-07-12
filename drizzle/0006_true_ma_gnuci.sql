@@ -1,0 +1,1 @@
+CREATE INDEX "xdc_created_at_user_id_idx" ON "transactionsXDC" USING btree ("created_at","user_id");

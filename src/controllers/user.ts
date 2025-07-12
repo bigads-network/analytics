@@ -11,6 +11,7 @@ import { generateGameToken } from "../config/gameToken";
 import dbservices from "../services/dbservices";
 import { polygon, polygonAmoy, xdc } from "viem/chains";
 import logger from "../config/logger";
+import cache from "../config/cache";
 
 const BATCH_SIZE = 1; // Process when a user has 4 transactions
 const BATCH_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
@@ -342,12 +343,24 @@ export default class User {
 
   static count = async (req: Request, res: Response): Promise<any> => {
     try {
-      const count = await dbservices.User.counts();
-      return res.json({
+      const cacheKey = 'userCounts';
+      const cachedData = cache.get(cacheKey);
+
+      if (cachedData) {
+        return res.status(200).json(cachedData);
+      }
+
+      const counts = await dbservices.User.counts();
+
+      const response = {
         status: true,
         message: "Details Fetched Successfully",
-        data: count,
-      });
+        data: counts,
+      };
+
+      cache.set(cacheKey, response);
+      res.status(200).json(response);
+
     } catch (error) {
       res.status(500).json({
         status: false,

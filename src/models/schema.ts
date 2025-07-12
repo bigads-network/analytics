@@ -85,6 +85,8 @@ export const transactions_xdc :any = pgTable('transactionsXDC', {
 },
 index("game_id").on(table.gameId),
 index("user_id").on(table.UserId),
+index("xdc_created_at_idx").on(table.createdAt),
+index("xdc_created_at_user_id_idx").on(table.createdAt, table.UserId),
 ])
 
 

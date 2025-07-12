@@ -7,14 +7,18 @@ dotenv.config();
 export default class TransactionsXDC {
 
     // Get daily transaction counts (oldest to newest)
-    static getDailyTransactionCounts = async (): Promise<any> => {
+    static getDailyTransactionCounts = async (days: number = 90): Promise<any> => {
         try {
+            const daysAgo = new Date();
+            daysAgo.setDate(daysAgo.getDate() - days);
+
             const result = await postgreDb
                 .select({
                     day: sql`DATE(${transactions_xdc.createdAt})`.as("day"),
                     total_transactions: sql`COUNT(*)`.as("total_transactions"),
                 })
                 .from(transactions_xdc) // <-- use the table object, not a string
+                .where(gte(transactions_xdc.createdAt, daysAgo))
                 .groupBy(sql`DATE(${transactions_xdc.createdAt})`)
                 .orderBy(sql`DATE(${transactions_xdc.createdAt}) ASC`);
             return {
@@ -27,14 +31,18 @@ export default class TransactionsXDC {
     };
 
     // Get daily active users (unique users per day, oldest to newest)
-    static getDailyActiveUsers = async (): Promise<any> => {
+    static getDailyActiveUsers = async (days: number = 90): Promise<any> => {
         try {
+            const daysAgo = new Date();
+            daysAgo.setDate(daysAgo.getDate() - days);
+
             const result = await postgreDb
                 .select({
                     day: sql`DATE(${transactions_xdc.createdAt})`.as("day"),
                     daily_active_users: sql`COUNT(DISTINCT ${transactions_xdc.UserId})`.as("daily_active_users"),
                 })
                 .from(transactions_xdc) // <-- use the table object, not a string
+                .where(gte(transactions_xdc.createdAt, daysAgo))
                 .groupBy(sql`DATE(${transactions_xdc.createdAt})`)
                 .orderBy(sql`DATE(${transactions_xdc.createdAt}) ASC`);
             return {
@@ -91,15 +99,17 @@ export default class TransactionsXDC {
     };
 
     // Get all transactions from previous month
-    static getMonthlyTransactions = async (): Promise<any[]> => {
+    static getMonthlyTransactions = async (): Promise<number> => {
         try {
             const now = new Date();
             const firstDayPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
             const lastDayPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
 
             // Previous month
-            let result = await postgreDb
-                .select()
+            const prevResult = await postgreDb
+                .select({
+                    count: sql<number>`COUNT(*)`
+                })
                 .from(transactions_xdc)
                 .where(
                     and(
@@ -107,15 +117,18 @@ export default class TransactionsXDC {
                         lte(transactions_xdc.createdAt, lastDayPrevMonth)
                     )
                 );
+            const prevCount = Number(prevResult[0]?.count ?? 0);
 
-            if (result.length > 0) {
-                return result;
+            if (prevCount > 0) {
+                return prevCount;
             }
 
             // If no data for previous month, get current month
             const firstDayCurrMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-            result = await postgreDb
-                .select()
+            const currResult = await postgreDb
+                .select({
+                    count: sql<number>`COUNT(*)`
+                })
                 .from(transactions_xdc)
                 .where(
                     and(
@@ -123,10 +136,9 @@ export default class TransactionsXDC {
                         lte(transactions_xdc.createdAt, now)
                     )
                 );
-
-            return result;
+            return Number(currResult[0]?.count ?? 0);
         } catch (error) {
-            throw new Error(error.message || "Failed to fetch monthly transactions");
+            throw new Error(error.message || "Failed to fetch monthly transactions count");
         }
     };
 }
