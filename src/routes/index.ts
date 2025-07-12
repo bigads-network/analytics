@@ -2,6 +2,7 @@ import express, {Request, Response} from "express";
 const router = express.Router();
 import user from "./user"
 import creator from "./creator"
+import dashboard from "./dashboard"
 
 const defaultRoutes = [
   {
@@ -11,6 +12,10 @@ const defaultRoutes = [
   {
     path: "/creator",
     route: creator
+  },
+  {
+    path: "/dashboard",
+    route: dashboard
   },
 ];
 

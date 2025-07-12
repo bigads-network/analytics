@@ -11,7 +11,7 @@ import { generateGameToken } from "../config/gameToken";
 import dbservices from "../services/dbservices";
 import { polygon, polygonAmoy, xdc } from "viem/chains";
 import logger from "../config/logger";
-import cache from "../config/cache";
+import { dashboardCache } from "../config/cache";
 
 const BATCH_SIZE = 1; // Process when a user has 4 transactions
 const BATCH_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
@@ -344,7 +344,10 @@ export default class User {
   static count = async (req: Request, res: Response): Promise<any> => {
     try {
       const cacheKey = 'userCounts';
-      const cachedData = cache.get(cacheKey);
+      const cachedData = dashboardCache.get(cacheKey);
+
+      res.setHeader('Cache-Control', 'private, max-age=1500');
+      res.setHeader('X-Cache', cachedData ? 'HIT' : 'MISS');
 
       if (cachedData) {
         return res.status(200).json(cachedData);
@@ -358,7 +361,7 @@ export default class User {
         data: counts,
       };
 
-      cache.set(cacheKey, response);
+      dashboardCache.set(cacheKey, response);
       res.status(200).json(response);
 
     } catch (error) {
