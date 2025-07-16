@@ -294,7 +294,21 @@ export default class User {
 
   static games = async (req: Request, res: Response): Promise<any> => {
     try {
+      const cacheKey = 'user:games';
+      const cachedGames = dashboardCache.get(cacheKey);
+      if (cachedGames) {
+        res.setHeader('Cache-Control', 'private, max-age=480');
+        res.setHeader('X-Cache', 'HIT');
+        return res.json({
+          status: true,
+          message: "Game List Fetched Successfully (from cache)",
+          data: cachedGames,
+        });
+      }
       const games = await dbservices.User.getGames();
+      dashboardCache.set(cacheKey, games);
+      res.setHeader('Cache-Control', 'private, max-age=480');
+      res.setHeader('X-Cache', 'MISS');
       return res.json({
         status: true,
         message: "Game List Fetched Successfully",
@@ -307,6 +321,17 @@ export default class User {
       });
     }
   };
+
+  static refreshGamesCache = async () => {
+    try {
+      const cacheKey = 'user:games';
+      const games = await dbservices.User.getGames();
+      dashboardCache.set(cacheKey, games);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
 
   static events = async (req: Request, res: Response): Promise<any> => {
     try {

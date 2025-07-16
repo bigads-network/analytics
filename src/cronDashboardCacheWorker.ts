@@ -5,7 +5,7 @@ import logger from './config/logger';
 logger.info('Dashboard cache cron worker started.');
 
 // Run every 7 minutes
-cron.schedule('*/7 * * * *', async () => {
+cron.schedule('*/6 * * * *', async () => {
   logger.info(`[${new Date().toISOString()}] Refreshing dashboard cache...`);
   const success = await Dashboard.refreshDashboardCache();
   if (success) {
