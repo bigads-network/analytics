@@ -11,7 +11,8 @@
     "testing": "nodemon --exec npx ts-node src/testingscript.ts ",
     "migration:generate": "drizzle-kit generate",
     "migration:push": "node -r esbuild-register src/config/migrate.ts",
-    "migration:drop": "drizzle-kit drop"
+    "migration:drop": "drizzle-kit drop",
+    "dashboard-cron": "ts-node src/cronDashboardCacheWorker.ts"
   },
   "author": "",
   "license": "ISC",
@@ -41,6 +42,7 @@
     "jsonwebtoken": "^9.0.2",
     "moment": "^2.30.1",
     "node-cache": "^5.1.2",
+    "node-cron": "^3.0.3",
     "node-telegram-bot-api": "^0.66.0",
     "nodemon": "^3.1.10",
     "passport": "^0.7.0",

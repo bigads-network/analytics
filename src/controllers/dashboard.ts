@@ -18,7 +18,7 @@ export default class Dashboard {
           .digest('hex');
         
         res.setHeader('ETag', etag);
-        res.setHeader('Cache-Control', 'private, max-age=1500'); // 25 minutes
+        res.setHeader('Cache-Control', 'private, max-age=480'); // 8 minutes
         
         // Check if client has the same version
         if (req.headers['if-none-match'] === etag) {
@@ -48,7 +48,7 @@ export default class Dashboard {
       const response = {
         success: true,
         timestamp: new Date().toISOString(),
-        cacheDuration: 1500, // Let frontend know cache duration
+        cacheDuration: 480, // Let frontend know cache duration (8 minutes)
         data: {
           userCounts,
           dailyActiveUsers: {
@@ -74,7 +74,7 @@ export default class Dashboard {
         .digest('hex');
       
       res.setHeader('ETag', etag);
-      res.setHeader('Cache-Control', 'private, max-age=1500'); // 25 minutes
+      res.setHeader('Cache-Control', 'private, max-age=480'); // 8 minutes
       res.setHeader('X-Cache', 'MISS'); // Indicate cache miss
 
       return res.status(200).json(response);
@@ -174,7 +174,7 @@ export default class Dashboard {
       const cacheKey = 'dashboard:userCounts';
       const cachedData = dashboardCache.get(cacheKey);
 
-      res.setHeader('Cache-Control', 'private, max-age=1500');
+      res.setHeader('Cache-Control', 'private, max-age=480');
       res.setHeader('X-Cache', cachedData ? 'HIT' : 'MISS');
 
       if (cachedData) {
@@ -200,4 +200,48 @@ export default class Dashboard {
       });
     }
   };
+
+  // Utility function to refresh the dashboard cache (for cron worker)
+  static refreshDashboardCache = async () => {
+    try {
+      const cacheKey = 'dashboardData:all';
+      // Fetch all data in parallel for better performance
+      const days = 90;
+      const [
+        userCounts,
+        dailyActiveUsers,
+        dailyTransactions,
+        monthlyUsers,
+        monthlyTransactions
+      ] = await Promise.all([
+        dbservices.User.counts(),
+        dbservices.TransactionsXDC.getDailyActiveUsers(days),
+        dbservices.TransactionsXDC.getDailyTransactionCounts(days),
+        dbservices.TransactionsXDC.getMonthlyActiveUsers(),
+        dbservices.TransactionsXDC.getMonthlyTransactions()
+      ]);
+      const response = {
+        success: true,
+        timestamp: new Date().toISOString(),
+        cacheDuration: 480,
+        data: {
+          userCounts,
+          dailyActiveUsers: {
+            count: dailyActiveUsers.count,
+            data: dailyActiveUsers.data
+          },
+          dailyTransactions: {
+            count: dailyTransactions.count,
+            data: dailyTransactions.data
+          },
+          monthlyUsers,
+          monthlyTransactions
+        }
+      };
+      dashboardCache.set(cacheKey, response);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
 } 
