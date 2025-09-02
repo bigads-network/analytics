@@ -24,7 +24,7 @@ router.post('/fireEvent/:eventId',validateRequest(validators.user.fireEvent),con
 router.get('/duneActiveUser', dashboardDuplicatePrevention, controllers.TransactionXDC.getDailyActiveUsers) // Dune Analytics for active users - Batman
 router.get('/duneActiveEvents', dashboardDuplicatePrevention, controllers.TransactionXDC.getDailyTransactionCounts) // Dune Analytics for active events - Batman
 // router.get('/test', controllers.Test.test)
-router.get("/transactions/day", controllers.Test.totalTransactionsperdat)
+// router.get("/transactions/day", controllers.Test.totalTransactionsperdat)
 
 
 router.get("/monthlyuser", dashboardDuplicatePrevention, controllers.TransactionXDC.getMonthlyUsers) // Dune Analytics for monthly active users - Batman

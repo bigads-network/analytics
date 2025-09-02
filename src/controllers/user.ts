@@ -19,36 +19,38 @@ const BATCH_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
 // Structure to track global batch
 
 const adminPrivateKeys = [
-  envConfigs.adminPrivatKey_Xdc,
-  envConfigs.adminPrivatKey_Xdc1,
-  envConfigs.adminPrivatKey_Xdc2,
-  envConfigs.adminPrivatKey_Xdc3,
-  envConfigs.adminPrivatKey_Xdc4,
-  envConfigs.adminPrivatKey_Xdc5,
-  envConfigs.adminPrivatKey_Xdc6,
-  envConfigs.adminPrivatKey_Xdc7,
-  envConfigs.adminPrivatKey_Xdc8,
-  envConfigs.adminPrivatKey_Xdc9,
+  // envConfigs.adminPrivatKey_Xdc,
+  // envConfigs.adminPrivatKey_Xdc1,
+  // envConfigs.adminPrivatKey_Xdc2,
+  // envConfigs.adminPrivatKey_Xdc3,
+  // envConfigs.adminPrivatKey_Xdc4,
+  // envConfigs.adminPrivatKey_Xdc5,
+  // envConfigs.adminPrivatKey_Xdc6,
+  // envConfigs.adminPrivatKey_Xdc7,
+  // envConfigs.adminPrivatKey_Xdc8,
+  // envConfigs.adminPrivatKey_Xdc9,
+  envConfigs.admin_PrivateKey_Avax,
+  envConfigs.admin_PrivateKey_Avax1,
 ];
 
-const rpcProviders = [
- envConfigs.provider_url_xdc,
- envConfigs.provider_url_xdc1,
- envConfigs.provider_url_xdc2,
- envConfigs.provider_url_xdc3,
- envConfigs.provider_url_xdc4,
- envConfigs.provider_url_xdc5,
- envConfigs.provider_url_xdc6,
- envConfigs.provider_url_xdc7,
- envConfigs.provider_url_xdc8,
- envConfigs.provider_url_xdc9,
- envConfigs.provider_url_xdc10,
- envConfigs.provider_url_xdc11,
- envConfigs.provider_url_xdc12,
- envConfigs.provider_url_xdc13,
- envConfigs.provider_url_xdc14,
- envConfigs.provider_url_xdc15,
-];
+// const rpcProviders = [
+//  envConfigs.provider_url_xdc,
+//  envConfigs.provider_url_xdc1,
+//  envConfigs.provider_url_xdc2,
+//  envConfigs.provider_url_xdc3,
+//  envConfigs.provider_url_xdc4,
+//  envConfigs.provider_url_xdc5,
+//  envConfigs.provider_url_xdc6,
+//  envConfigs.provider_url_xdc7,
+//  envConfigs.provider_url_xdc8,
+//  envConfigs.provider_url_xdc9,
+//  envConfigs.provider_url_xdc10,
+//  envConfigs.provider_url_xdc11,
+//  envConfigs.provider_url_xdc12,
+//  envConfigs.provider_url_xdc13,
+//  envConfigs.provider_url_xdc14,
+//  envConfigs.provider_url_xdc15,
+// ];
 
 // Function to get random element from array
 function getRandomElement<T>(array: T[]): T {
@@ -103,12 +105,13 @@ async function processGlobalBatch() {
     // const privKey = sha512_256(adminAccountDetails.devicedata + adminAccountDetails.userId);
     const privKey = getNextAdminKey();
     // console.log(privKey ,"privvvvvvvvvvvvvvvvv")
-    const rpcUrl = getRandomElement(rpcProviders);
+    // const rpcUrl = getRandomElement(rpcProviders);
 
     // console.log("Using Private wallet:", privKey);
     // console.log("Using RPC provider:", rpcUrl);
     
-    const rpcHttpProvider = new ethers.providers.JsonRpcProvider(rpcUrl);
+    const rpcHttpProvider= new ethers.providers.JsonRpcProvider(envConfigs.provider_url_avax);
+
     const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
     const wallet_address = await wallet.getAddress();
     
@@ -132,7 +135,7 @@ async function processGlobalBatch() {
 
 
 
-    const contractAddress = envConfigs.contract_address_xdc;
+    const contractAddress = envConfigs.contract_address_avax;
     const abi = [
       {
         "anonymous": false,
@@ -193,8 +196,6 @@ async function processGlobalBatch() {
   // const provider = new ethers.providers.JsonRpcProvider("https://rpc.xdc.org");
   const contractInterface = new ethers.Contract(contractAddress,abi,rpcHttpProvider)
 
-  let nonce = await rpcHttpProvider.getTransactionCount(wallet.address);
-  // let nonce ;
   let lastTransactionHash: string;
   // console.log(nonce ,"nnceeee")
   for (const tx of transactionsToProcess) {
@@ -213,12 +214,12 @@ async function processGlobalBatch() {
         to: contractAddress,
         data: callData,
         value: 0n,
-        nonce: nonce, // manually manage nonce
+        // nonce: nonce, // manually manage nonce
       });
 
       // console.log("Transaction hash:", transaction.hash);
         lastTransactionHash = transaction.hash;
-        nonce += 1;
+        // nonce += 1;
         }
 
 
@@ -269,7 +270,7 @@ async function processGlobalBatch() {
 
     // Save all transactions in the batch
     for (const tx of transactionsToProcess) {
-      await dbservices.User.saveTransactionDetails_XDC(
+      await dbservices.User.saveTransactionDetails_Avax(
         tx.gameId,
         tx.userData.id,
         tx.eventId,
@@ -280,7 +281,7 @@ async function processGlobalBatch() {
     }
 
     logger.info(
-      `Successfully processed ${transactionsToProcess.length} transactions in batch having ${lastTransactionHash} with admin wallet${wallet_address} and private key${privKey}and rpc ${rpcUrl}`
+      `Successfully processed ${transactionsToProcess.length} transactions in batch having ${lastTransactionHash} with admin wallet${wallet_address} and private key${privKey}and rpc ${"rpcUrl"}`
     );
   } catch (error) {
     console.error(`Error processing global batch:`, error);
@@ -719,9 +720,9 @@ export default class User {
         });
       }
 
-      if (req.body?.devicedata?.OS && typeof req.body.devicedata.OS === 'string') {
-        req.body.devicedata.OS = `${req.body.devicedata.OS} XDC`;
-      }
+      // if (req.body?.devicedata?.OS && typeof req.body.devicedata.OS === 'string') {
+      //   req.body.devicedata.OS = `${req.body.devicedata.OS} XDC`;
+      // }
       
       const { devicedata } = req.body;
       if (!devicedata) {
@@ -750,10 +751,8 @@ export default class User {
         // console.log("not exisssss")
         const privKey = "0x" + sha512_256(userId);
         // const privKey ="0x63a2075b2432ec19652761fa4d3c585bf5ccb6360c5a5666ebb2e2b63929cc41";
-        const rpcUrl = getRandomElement(rpcProviders);
-        const rpcHttpProvider= new ethers.providers.JsonRpcProvider(
-          rpcUrl
-        );
+        // const rpcUrl = getRandomElement(rpcProviders);
+        const rpcHttpProvider= new ethers.providers.JsonRpcProvider(envConfigs.provider_url_avax);
         const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
         const wallet_address = await wallet.getAddress();
         if (!rpcHttpProvider) {
@@ -773,9 +772,9 @@ export default class User {
         const chainName = xdc;
 
         const modularSdk = new ModularSdk(privKey, {
-          chainId: 50, // XDC Mainnet
+          chainId: 43114, // XDC Mainnet
           bundlerProvider: new EtherspotBundler(
-            50,
+            43114,
             "etherspot_3ZmG9JseTT1MD3v9QgPezHKB"
           ),
         });

@@ -29,7 +29,7 @@ export default class Creator{
             userId = `creator_${this.generateId()}`; // Assuming `generateId` is defined elsewhere
             const privKey = "0x"+sha512_256(devicedata + userId);
             // console.log(privKey)
-            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_xdc);
+            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_avax);
             const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
             const wallet_address = await wallet.getAddress();
             if (!rpcHttpProvider) {
@@ -101,7 +101,8 @@ export default class Creator{
             userId = `admin_${this.generateId()}`; // Assuming `generateId` is defined elsewhere
             // const privKey ="0x63a2075b2432ec19652761fa4d3c585bf5ccb6360c5a5666ebb2e2b63929cc41";
             const privKey = "0x"+sha512_256(userId)
-            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_xdc);
+            // const rpcHttpProvider= new ethers.providers.JsonRpcProvider("");
+            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_avax);  
             const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
             const wallet_address = await wallet.getAddress();
             if (!rpcHttpProvider) {
@@ -116,9 +117,9 @@ export default class Creator{
             const chainName = xdc;
 
             const modularSdk = new ModularSdk(privKey, {
-                chainId: 50, // XDC Mainnet
+                chainId: 43114, //  Mainnet
                 bundlerProvider: new EtherspotBundler(
-                  50,
+                  43114,
                   envConfigs.etherspot_api_Key
                 ),
               });
@@ -184,7 +185,7 @@ export default class Creator{
 
             const gameId = `game_${this.generateId()}`;
             const privKey ="0x"+sha512_256(gameName+gameType +description);
-            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_xdc);
+            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_avax);
             const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
             const wallet_address = await wallet.getAddress();
             if (!rpcHttpProvider) {

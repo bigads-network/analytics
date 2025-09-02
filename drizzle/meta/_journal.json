@@ -50,6 +50,20 @@
       "when": 1752338909103,
       "tag": "0006_true_ma_gnuci",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1756624603418,
+      "tag": "0007_whole_la_nuit",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1756731710626,
+      "tag": "0008_far_tana_nile",
+      "breakpoints": true
     }
   ]
 }

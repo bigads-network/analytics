@@ -1,7 +1,7 @@
 import {and, between, count, countDistinct, desc, eq, gte, inArray, isNull, lte, sql} from "drizzle-orm";
 import postgreDb from "../../config/db";
 import dotenv from "dotenv";
-import { events, games, transactions, transactions_xdc, users } from "../../models/schema";
+import { events, games, transaction_avax, transactions, transactions_xdc, users } from "../../models/schema";
 dotenv.config();
 
 export default class User {
@@ -360,6 +360,7 @@ export default class User {
             const result =  await postgreDb.insert(users).values({
                 userId: userId,
                 devicedata: devicedata,
+                chain:"Avalanche",
                 walletAddress:wallet_address,
                 saAddress:saAddress,
             }).returning({
@@ -431,6 +432,40 @@ export default class User {
         try {
             // console.log(userId ,gameId ,eventId ,transactionHash,transaction_chain ,amount)
             const result =  await postgreDb.insert(transactions_xdc).values({
+                gameId: gameId,
+                UserId: userId,
+                eventId: eventId,
+                transactionHash: transactionHash,
+                transactionChain: transaction_chain,
+                amount: amount,
+            }).returning({
+                id: transactions.id,
+                gameId: transactions.gameId,
+                userId: transactions.UserId,
+                eventId: transactions.eventId,
+                transactionHash: transactions.transactionHash,
+                transaction_chain: transactions.transactionChain,
+                amount: transactions.amount,
+                time:transactions.createdAt
+            })
+            return result[0];
+        } catch (error) {
+           throw new Error
+        }
+    }
+
+
+    static saveTransactionDetails_Avax= async(
+        gameId: any,
+        userId: any,
+        eventId: any,
+        transactionHash: any,
+        transaction_chain:any,
+        amount,
+    ):Promise<any>=>{
+        try {
+            // console.log(userId ,gameId ,eventId ,transactionHash,transaction_chain ,amount)
+            const result:any =  await postgreDb.insert(transaction_avax).values({
                 gameId: gameId,
                 UserId: userId,
                 eventId: eventId,

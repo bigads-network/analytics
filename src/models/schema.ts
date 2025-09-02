@@ -8,6 +8,7 @@ export const users:any = pgTable('users', {
   userId: varchar('user_id').unique(),
   devicedata: jsonb('device_data'),
   role: varchar('role').default('user'),
+  chain: varchar('chain'),
   walletAddress: varchar('wallet_address').unique().notNull(),
   saAddress: varchar('sa_address').unique().notNull(),
   createdAt: timestamp('created_at').defaultNow(),
@@ -90,10 +91,25 @@ index("xdc_created_at_user_id_idx").on(table.createdAt, table.UserId),
 ])
 
 
+export const transaction_avax:any = pgTable('transactionsAvax', {
+  id: serial('id').unique(),
+  gameId:integer('game_id').references(() => games.id),  // for get track of game transaction has done
+  UserId: integer('user_id').references(() => users.id), // for the track of user which is playing the game
+  eventId: integer('event_id').references(() => events.id), // for the track of event
+  transactionHash: varchar('transaction_hash'),
+  transactionChain: varchar('transaction_chain').notNull(),
+  amount: varchar('amount'),
+  createdAt: timestamp('created_at').defaultNow(),
+},
+(table) => [{
+    pk: primaryKey({ columns: [table.id] }),
+}])
+
 export const usersRelations = relations(users, ({ many }) => ({
   games: many(games),
   userTransaction: many(transactions, { relationName: 'userTransaction' }),
   userTransactionXDC: many(transactions_xdc, { relationName: 'userTransactionXDC' }),
+  usersTransactionAvax: many(transaction_avax, { relationName: 'usersTransactionAvax' })
 }));
 
 
@@ -104,7 +120,8 @@ export const gamesRelations = relations(games, ({ one ,many }) => ({
   }),  
   events: many(events),
   transactions: many(transactions),
-  transactions_XDC:many(transactions_xdc)
+  transactions_XDC:many(transactions_xdc),
+  transaction_avax: many(transaction_avax)
 }));
 
 export const eventsRelations = relations(events, ({ one, many }) => ({
@@ -113,7 +130,8 @@ export const eventsRelations = relations(events, ({ one, many }) => ({
     references: [games.id],
   }),
   transactions: many(transactions),
-  transactions_XDC:many(transactions_xdc)
+  transactions_XDC:many(transactions_xdc),
+  transaction_avax: many(transaction_avax)
 }));
 
 export const transactionsRelations = relations(transactions, ({ one }) => ({
@@ -144,6 +162,23 @@ export const transactionsXDCRelations = relations(transactions_xdc, ({ one }) =>
   }),
   game: one(games, {
     fields: [transactions_xdc.gameId],
+    references: [games.id],
+  }),
+}));
+
+
+export const transactionAvaxRelations = relations(transaction_avax, ({ one }) => ({
+  user: one(users, {
+    fields: [transaction_avax.UserId],
+    references: [users.id], 
+    relationName:'usersTransactionAvax'
+  }),
+  event: one(events, {
+    fields: [transaction_avax.eventId], 
+    references: [events.id],
+  }),
+  game: one(games, {
+    fields: [transaction_avax.gameId],
     references: [games.id],
   }),
 }));
