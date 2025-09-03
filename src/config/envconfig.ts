@@ -99,7 +99,7 @@ export const envConfigs = {
   // provider_url_xdc13:envVars.PROVIDER_URL_XDC13,
   // provider_url_xdc14:envVars.PROVIDER_URL_XDC14,
   // provider_url_xdc15:envVars.PROVIDER_URL_XDC15,
-  contract_address_avax : envVars.CONTRACT_ADDRESS_AVAX,
+  contract_address_avax :envVars.CONTRACT_ADDRESS_AVAX,
   etherspot_api_Key:envVars.ETHERSPOTAPIKEY,
   admin_PrivateKey_Avax:envVars.ADMIN_PRIVATEKEY_AVAX,
   admin_PrivateKey_Avax1 :envVars.ADMIN_PRIVATEKEY_AVAX1,
