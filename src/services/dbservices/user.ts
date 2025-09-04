@@ -35,8 +35,14 @@ export default class User {
             .select({
               gameId: transactions_xdc.gameId,
               transaction_count: sql<number>`count(distinct ${transactions_xdc.id})`.as('transaction_count'),
-              users_played: sql<number>`count(distinct ${transactions_xdc.UserId})`.as('users_played')
-            })
+              users_played: sql<number>`count(distinct ${transactions_xdc.UserId})`.as('users_played'),
+              current_month_transactions: sql<number>`
+              count(distinct case 
+                when date_trunc('month', ${transactions_xdc.createdAt}) = date_trunc('month', now()) 
+                then ${transactions_xdc.id} 
+              end)
+            `.as('current_month_transactions')
+          })
             .from(transactions_xdc)
             .groupBy(transactions_xdc.gameId)
             .as("txAgg");
@@ -50,7 +56,8 @@ export default class User {
               description: games.description,
               createdAt: games.createdAt,
               transactionCount: sql<number>`coalesce(${txAgg.transaction_count}, 0)`,
-              usersPlayed: sql<number>`coalesce(${txAgg.users_played}, 0)`
+              usersPlayed: sql<number>`coalesce(${txAgg.users_played}, 0)`,
+              currentMonthTransactionCount: sql<number>`coalesce(${txAgg.current_month_transactions}, 0)`
             })
             .from(games)
             .leftJoin(txAgg, eq(games.id, txAgg.gameId))
