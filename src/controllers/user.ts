@@ -9,7 +9,7 @@ import {
 } from "../config/envconfig";
 import { generateGameToken } from "../config/gameToken";
 import dbservices from "../services/dbservices";
-import { polygon, polygonAmoy, xdc } from "viem/chains";
+import { avalanche, polygon, polygonAmoy, xdc } from "viem/chains";
 import logger from "../config/logger";
 import { dashboardCache } from "../config/cache";
 
@@ -104,7 +104,7 @@ async function processGlobalBatch() {
     // }
     // const privKey = sha512_256(adminAccountDetails.devicedata + adminAccountDetails.userId);
     const privKey = getNextAdminKey();
-    // console.log(privKey ,"privvvvvvvvvvvvvvvvv")
+    console.log(privKey ,"privvvvvvvvvvvvvvvvv")
     // const rpcUrl = getRandomElement(rpcProviders);
 
     // console.log("Using Private wallet:", privKey);
@@ -115,23 +115,22 @@ async function processGlobalBatch() {
     const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
     const wallet_address = await wallet.getAddress();
     
-    // console.log("Using admin wallet:", wallet_address);
+    console.log("Using admin wallet:", wallet_address);
 
     const privateKey = wallet.privateKey;
-    const chainName = xdc;
+    const chainName = avalanche;
 
-    // const modularSdk = new ModularSdk(privKey, {
-    //   chainId: 50, // XDC Mainnet
-    //   bundlerProvider: new EtherspotBundler(
-    //     50,
-    //     envConfigs.etherspot_api_Key
-    //   ),
-    // });
-    // const saAddress = await modularSdk.getCounterFactualAddress();
-    // console.log( "saAddressenvConfigs" ,envConfigs.adminPrivatKey_Xdc)
-    // console.log(`saAddress -->`, saAddress);
-    // console.log(`etherspot api key -->`, envConfigs.etherspot_api_Key);
-    // console.log(`contract Address -->`,envConfigs.contract_address_xdc );
+    const modularSdk = new ModularSdk(privKey, {
+      chainId: 50, // XDC Mainnet
+      bundlerProvider: new EtherspotBundler(
+        50,
+        envConfigs.etherspot_api_Key
+      ),
+    });
+    const saAddress = await modularSdk.getCounterFactualAddress();
+    console.log(`saAddress -->`, saAddress);
+    console.log(`etherspot api key -->`, envConfigs.etherspot_api_Key);
+ 
 
 
 
@@ -769,7 +768,7 @@ export default class User {
         console.log(wallet_address, "wallet_address");
         console.log(wallet_address ,"wallet addressssss")
         // return ;
-        const chainName = xdc;
+        const chainName = avalanche;
 
         const modularSdk = new ModularSdk(privKey, {
           chainId: 43114, // XDC Mainnet
