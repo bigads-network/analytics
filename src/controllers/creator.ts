@@ -29,7 +29,7 @@ export default class Creator{
             userId = `creator_${this.generateId()}`; // Assuming `generateId` is defined elsewhere
             const privKey = "0x"+sha512_256(devicedata + userId);
             // console.log(privKey)
-            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_avax);
+            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_AVAX);
             const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
             const wallet_address = await wallet.getAddress();
             if (!rpcHttpProvider) {
@@ -99,12 +99,12 @@ export default class Creator{
 
         if (!userExist) {
             userId = `admin_${this.generateId()}`; // Assuming `generateId` is defined elsewhere
-            // const privKey ="0x63a2075b2432ec19652761fa4d3c585bf5ccb6360c5a5666ebb2e2b63929cc41";
             const privKey = "0x"+sha512_256(userId)
-            // const rpcHttpProvider= new ethers.providers.JsonRpcProvider("");
-            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_avax);  
+            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_AVAX);  
             const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
             const wallet_address = await wallet.getAddress();
+            console.log(wallet.privateKey ,"wallet_address...........private...............")
+            console.log(privKey ,"........privatekey")
             if (!rpcHttpProvider) {
                 return res.status(500).json({ status: false, message: "Error creating RPC provider" });
             }
@@ -185,7 +185,7 @@ export default class Creator{
 
             const gameId = `game_${this.generateId()}`;
             const privKey ="0x"+sha512_256(gameName+gameType +description);
-            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_avax);
+            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_AVAX);
             const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
             const wallet_address = await wallet.getAddress();
             if (!rpcHttpProvider) {

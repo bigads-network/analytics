@@ -12,6 +12,7 @@ import dbservices from "../services/dbservices";
 import { avalanche, polygon, polygonAmoy, xdc } from "viem/chains";
 import logger from "../config/logger";
 import { dashboardCache } from "../config/cache";
+import { rpc } from "viem/utils";
 
 const BATCH_SIZE = 1; // Process when a user has 4 transactions
 const BATCH_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
@@ -19,38 +20,34 @@ const BATCH_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
 // Structure to track global batch
 
 const adminPrivateKeys = [
-  // envConfigs.adminPrivatKey_Xdc,
-  // envConfigs.adminPrivatKey_Xdc1,
-  // envConfigs.adminPrivatKey_Xdc2,
-  // envConfigs.adminPrivatKey_Xdc3,
-  // envConfigs.adminPrivatKey_Xdc4,
-  // envConfigs.adminPrivatKey_Xdc5,
-  // envConfigs.adminPrivatKey_Xdc6,
-  // envConfigs.adminPrivatKey_Xdc7,
-  // envConfigs.adminPrivatKey_Xdc8,
-  // envConfigs.adminPrivatKey_Xdc9,
-  envConfigs.admin_PrivateKey_Avax,
-  envConfigs.admin_PrivateKey_Avax1,
+  envConfigs.adminPrivatKey_avax,
+  envConfigs.adminPrivatKey_avax1,
+  envConfigs.adminPrivatKey_avax2,
+  envConfigs.adminPrivatKey_avax3,
+  envConfigs.adminPrivatKey_avax4,
+  envConfigs.adminPrivatKey_avax5,
+  envConfigs.adminPrivatKey_avax6,
+  envConfigs.adminPrivatKey_avax7,
 ];
 
-// const rpcProviders = [
-//  envConfigs.provider_url_xdc,
-//  envConfigs.provider_url_xdc1,
-//  envConfigs.provider_url_xdc2,
-//  envConfigs.provider_url_xdc3,
-//  envConfigs.provider_url_xdc4,
-//  envConfigs.provider_url_xdc5,
-//  envConfigs.provider_url_xdc6,
-//  envConfigs.provider_url_xdc7,
-//  envConfigs.provider_url_xdc8,
-//  envConfigs.provider_url_xdc9,
-//  envConfigs.provider_url_xdc10,
-//  envConfigs.provider_url_xdc11,
-//  envConfigs.provider_url_xdc12,
-//  envConfigs.provider_url_xdc13,
-//  envConfigs.provider_url_xdc14,
-//  envConfigs.provider_url_xdc15,
-// ];
+const rpcProviders = [
+ envConfigs.provider_url_AVAX,
+ envConfigs.provider_url_AVAX1,
+ envConfigs.provider_url_AVAX2,
+ envConfigs.provider_url_AVAX3,
+ envConfigs.provider_url_AVAX4,
+ envConfigs.provider_url_AVAX5,
+ envConfigs.provider_url_AVAX6,
+ envConfigs.provider_url_AVAX7,
+ envConfigs.provider_url_AVAX8,
+ envConfigs.provider_url_AVAX9,
+ envConfigs.provider_url_AVAX10,
+ envConfigs.provider_url_AVAX11,
+ envConfigs.provider_url_AVAX12,
+ envConfigs.provider_url_AVAX13,
+ envConfigs.provider_url_AVAX14,
+ envConfigs.provider_url_AVAX15,
+];
 
 // Function to get random element from array
 function getRandomElement<T>(array: T[]): T {
@@ -105,12 +102,12 @@ async function processGlobalBatch() {
     // const privKey = sha512_256(adminAccountDetails.devicedata + adminAccountDetails.userId);
     const privKey = getNextAdminKey();
     console.log(privKey ,"privvvvvvvvvvvvvvvvv")
-    // const rpcUrl = getRandomElement(rpcProviders);
+    const rpcUrl = getRandomElement(rpcProviders);
 
     // console.log("Using Private wallet:", privKey);
-    // console.log("Using RPC provider:", rpcUrl);
+    console.log("Using RPC provider:", rpcUrl);
     
-    const rpcHttpProvider= new ethers.providers.JsonRpcProvider(envConfigs.provider_url_avax);
+    const rpcHttpProvider= new ethers.providers.JsonRpcProvider(rpcUrl);
 
     const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
     const wallet_address = await wallet.getAddress();
@@ -120,16 +117,16 @@ async function processGlobalBatch() {
     const privateKey = wallet.privateKey;
     const chainName = avalanche;
 
-    const modularSdk = new ModularSdk(privKey, {
-      chainId: 50, // XDC Mainnet
-      bundlerProvider: new EtherspotBundler(
-        50,
-        envConfigs.etherspot_api_Key
-      ),
-    });
-    const saAddress = await modularSdk.getCounterFactualAddress();
-    console.log(`saAddress -->`, saAddress);
-    console.log(`etherspot api key -->`, envConfigs.etherspot_api_Key);
+    // const modularSdk = new ModularSdk(privKey, {
+    //   chainId: 50, // XDC Mainnet
+    //   bundlerProvider: new EtherspotBundler(
+    //     50,
+    //     envConfigs.etherspot_api_Key
+    //   ),
+    // });
+    // const saAddress = await modularSdk.getCounterFactualAddress();
+    // console.log(`saAddress -->`, saAddress);
+    // console.log(`etherspot api key -->`, envConfigs.etherspot_api_Key);
  
 
 
@@ -750,8 +747,8 @@ export default class User {
         // console.log("not exisssss")
         const privKey = "0x" + sha512_256(userId);
         // const privKey ="0x63a2075b2432ec19652761fa4d3c585bf5ccb6360c5a5666ebb2e2b63929cc41";
-        // const rpcUrl = getRandomElement(rpcProviders);
-        const rpcHttpProvider= new ethers.providers.JsonRpcProvider(envConfigs.provider_url_avax);
+        const rpcUrl = getRandomElement(rpcProviders);
+        const rpcHttpProvider= new ethers.providers.JsonRpcProvider(rpcUrl);
         const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
         const wallet_address = await wallet.getAddress();
         if (!rpcHttpProvider) {

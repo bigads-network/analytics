@@ -47,6 +47,7 @@ export default class Creator {
                 userId: userId,
                 devicedata: devicedata,
                 role:"admin",
+                chain:"Avalanche",
                 walletAddress:wallet_address,
                 saAddress:saAddress,
             }).returning({
