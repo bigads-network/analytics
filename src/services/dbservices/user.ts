@@ -30,35 +30,7 @@ export default class User {
     // }
 
     static getGames = async (): Promise<any> => {
-        try {
-          const txAgg = postgreDb
-            .select({
-              gameId: transactions_xdc.gameId,
-              transaction_count: sql<number>`count(distinct ${transactions_xdc.id})`.as('transaction_count'),
-              users_played: sql<number>`count(distinct ${transactions_xdc.UserId})`.as('users_played')
-            })
-            .from(transactions_xdc)
-            .groupBy(transactions_xdc.gameId)
-            .as("txAgg");
-      
-          return await postgreDb
-            .select({
-              id: games.id,
-              gameId: games.gameId,
-              Gamename: games.Gamename,
-              Gametype: games.Gametype,
-              description: games.description,
-              createdAt: games.createdAt,
-              transactionCount: sql<number>`coalesce(${txAgg.transaction_count}, 0)`,
-              usersPlayed: sql<number>`coalesce(${txAgg.users_played}, 0)`
-            })
-            .from(games)
-            .leftJoin(txAgg, eq(games.id, txAgg.gameId))
-            .orderBy(games.id);
-        } catch (error) {
-          throw new Error(error.message);
-        }
-      };
+    };
       
 
     // static counts = async():Promise<any>=>{
