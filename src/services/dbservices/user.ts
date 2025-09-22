@@ -8,29 +8,29 @@ export default class User {
 
 
 
-    // static getGames = async():Promise<any>=>{
-    //     try {
-    //         return await postgreDb.select({
-    //             id:games.id,
-    //             gameId:games.gameId,
-    //             Gamename:games.Gamename,
-    //             Gametype: games.Gametype, 
-    //             description: games.description,
-    //             createdAt: games.createdAt,
-    //             transactionCount: sql<number>`count(distinct ${transactions_xdc.id})`.as('transaction_count'),
-    //             usersPlayed: sql<number>`count(distinct ${transactions_xdc.UserId})`.as('users_played')
-    //         })
-    //         .from(games)
-    //         .leftJoin(transactions_xdc, eq(transactions_xdc.gameId, games.id))
-    //         .groupBy(games.id, games.gameId, games.Gamename, games.Gametype, games.description, games.createdAt)
-    //         .orderBy(games.id);
-    //     } catch (error) {
-    //         throw new Error(error.message)
-    //     }
-    // }
+    static getGames = async():Promise<any>=>{
+        try {
+            return await postgreDb.select({
+                id:games.id,
+                gameId:games.gameId,
+                Gamename:games.Gamename,
+                Gametype: games.Gametype, 
+                description: games.description,
+                createdAt: games.createdAt,
+                transactionCount: sql<number>`count(distinct ${transactions_xdc.id})`.as('transaction_count'),
+                usersPlayed: sql<number>`count(distinct ${transactions_xdc.UserId})`.as('users_played')
+            })
+            .from(games)
+            .leftJoin(transactions_xdc, eq(transactions_xdc.gameId, games.id))
+            .groupBy(games.id, games.gameId, games.Gamename, games.Gametype, games.description, games.createdAt)
+            .orderBy(games.id);
+        } catch (error) {
+            throw new Error(error.message)
+        }
+    }
 
-    static getGames = async (): Promise<any> => {
-    };
+    // static getGames = async (): Promise<any> => {
+    // };
       
 
     // static counts = async():Promise<any>=>{

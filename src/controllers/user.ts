@@ -296,6 +296,7 @@ export default class User {
     try {
       const cacheKey = 'user:games';
       const cachedGames = dashboardCache.get(cacheKey);
+      console.log(cachedGames ,"cachedGames")
       if (cachedGames) {
         res.setHeader('Cache-Control', 'private, max-age=480');
         res.setHeader('X-Cache', 'HIT');
@@ -306,6 +307,7 @@ export default class User {
         });
       }
       const games = await dbservices.User.getGames();
+      console.log(games ,"games")
       dashboardCache.set(cacheKey, games);
       res.setHeader('Cache-Control', 'private, max-age=480');
       res.setHeader('X-Cache', 'MISS');
