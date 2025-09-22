@@ -193,7 +193,8 @@ async function processGlobalBatch() {
   const contractInterface = new ethers.Contract(contractAddress,abi,rpcHttpProvider)
 
   let lastTransactionHash: string;
-  // console.log(nonce ,"nnceeee")
+  let nonce = await rpcHttpProvider.getTransactionCount(wallet_address, "latest");
+  console.log(nonce, "nnceeee");
   for (const tx of transactionsToProcess) {
       const callData = contractInterface.interface.encodeFunctionData("storeMetadata", [
         tx.userData.saAddress,
@@ -210,12 +211,12 @@ async function processGlobalBatch() {
         to: contractAddress,
         data: callData,
         value: 0n,
-        // nonce: nonce, // manually manage nonce
+        nonce: nonce, // manually manage nonce
       });
 
       // console.log("Transaction hash:", transaction.hash);
         lastTransactionHash = transaction.hash;
-        // nonce += 1;
+        nonce += 1;
         }
 
 
