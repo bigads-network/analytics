@@ -8,26 +8,43 @@ export default class User {
 
 
 
-    static getGames = async():Promise<any>=>{
+    static getGames = async (): Promise<any> => {
         try {
-            return await postgreDb.select({
-                id:games.id,
-                gameId:games.gameId,
-                Gamename:games.Gamename,
-                Gametype: games.Gametype, 
-                description: games.description,
-                createdAt: games.createdAt,
-                transactionCount: sql<number>`count(distinct ${transactions_xdc.id})`.as('transaction_count'),
-                usersPlayed: sql<number>`count(distinct ${transactions_xdc.UserId})`.as('users_played')
+          const txAgg = postgreDb
+            .select({
+              gameId: transactions_xdc.gameId,
+              transaction_count: sql<number>`count(distinct ${transactions_xdc.id})`.as('transaction_count'),
+              users_played: sql<number>`count(distinct ${transactions_xdc.UserId})`.as('users_played'),
+              current_month_transactions: sql<number>`
+              count(distinct case 
+                when date_trunc('month', ${transactions_xdc.createdAt}) = date_trunc('month', now()) 
+                then ${transactions_xdc.id} 
+              end)
+            `.as('current_month_transactions')
+          })
+            .from(transactions_xdc)
+            .groupBy(transactions_xdc.gameId)
+            .as("txAgg");
+      
+          return await postgreDb
+            .select({
+              id: games.id,
+              gameId: games.gameId,
+              Gamename: games.Gamename,
+              Gametype: games.Gametype,
+              description: games.description,
+              createdAt: games.createdAt,
+              transactionCount: sql<number>`coalesce(${txAgg.transaction_count}, 0)`,
+              usersPlayed: sql<number>`coalesce(${txAgg.users_played}, 0)`,
+              currentMonthTransactionCount: sql<number>`coalesce(${txAgg.current_month_transactions}, 0)`
             })
             .from(games)
-            .leftJoin(transactions_xdc, eq(transactions_xdc.gameId, games.id))
-            .groupBy(games.id, games.gameId, games.Gamename, games.Gametype, games.description, games.createdAt)
+            .leftJoin(txAgg, eq(games.id, txAgg.gameId))
             .orderBy(games.id);
         } catch (error) {
-            throw new Error(error.message)
+          throw new Error(error.message);
         }
-    }
+      };
 
     // static getGames = async (): Promise<any> => {
     // };
