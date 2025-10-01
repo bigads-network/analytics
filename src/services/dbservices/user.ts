@@ -1,7 +1,7 @@
 import {and, between, count, countDistinct, desc, eq, gte, inArray, isNull, lte, sql} from "drizzle-orm";
 import postgreDb from "../../config/db";
 import dotenv from "dotenv";
-import { events, games, transactions, transactions_xdc, users } from "../../models/schema";
+import { events, games, transaction_avax, transactions, transactions_xdc, users } from "../../models/schema";
 dotenv.config();
 
 export default class User {
@@ -28,6 +28,49 @@ export default class User {
             throw new Error(error.message)
         }
     }
+
+
+static getGamesAvax = async (): Promise<any> => {
+    try {
+      const txAgg = postgreDb
+        .select({
+          gameId: transaction_avax.gameId,
+          transaction_count:
+            sql<number>`count(distinct ${transaction_avax.id})`.as(
+              "transaction_count"
+            ),
+            users_played: sql<number>`count(distinct ${transactions_xdc.UserId})`.as('users_played'),
+            current_month_transactions: sql<number>`
+            count(distinct case 
+              when date_trunc('month', ${transactions_xdc.createdAt}) = date_trunc('month', now()) 
+              then ${transactions_xdc.id} 
+            end)
+          `.as('current_month_transactions')
+        })
+        .from(transaction_avax)
+        .groupBy(transaction_avax.gameId)
+        .as("txAgg");
+
+      return await postgreDb
+        .select({
+          id: games.id,
+          gameId: games.gameId,
+          Gamename: games.Gamename,
+          Gametype: games.Gametype,
+          description: games.description,
+          createdAt: games.createdAt,
+          transactionCount: sql<number>`coalesce(${txAgg.transaction_count}, 0)`,
+          usersPlayed: sql<number>`coalesce(${txAgg.users_played}, 0)`,
+          currentMonthTransactionCount: sql<number>`coalesce(${txAgg.current_month_transactions}, 0)`
+        })
+        .from(games)
+        .leftJoin(txAgg, eq(games.id, txAgg.gameId))
+        .orderBy(games.id);
+    } catch (error) {
+      throw new Error(error.message);
+    }
+  };
+
 
     // static getGames = async (): Promise<any> => {
     // };
@@ -74,6 +117,40 @@ export default class User {
     //     }
     // }
 
+
+      static countsAvax = async (): Promise<any> => {
+    try {
+      console.log("Counting users, games, events, and transactions...");
+      const [uniqueUsers,gamesEventsTx] = await Promise.all([
+        postgreDb
+          .select({
+            count: sql`count(distinct ${users.id})`,
+          })
+          .from(users)
+          //   .where(sql`LOWER(${users.devicedata}->>'OS') LIKE '%xdc'`),
+          .where(eq(users.chain, "Avalanche")),
+
+        postgreDb.transaction(async (tx) => {
+          const [game, event, transactions] = await Promise.all([
+            tx.select({ count: sql`count(*)` }).from(games),
+            tx.select({ count: sql`count(*)` }).from(events),
+            tx.select({ count: sql`count(*)` }).from(transaction_avax),
+          ]);
+          return { game, event, transactions };
+        }),
+      ]);
+
+      console.log(uniqueUsers, gamesEventsTx, "counts");
+        return {
+          users: Number(uniqueUsers[0].count),
+          games: Number(gamesEventsTx.game[0].count),
+          events: Number(gamesEventsTx.event[0].count),
+          transactions: Number(gamesEventsTx.transactions[0].count),
+        };
+    } catch (error) {
+      throw new Error(error.message);
+    }
+  };
 
     static counts = async (): Promise<any> => {
         try {

@@ -11,6 +11,7 @@ const router=express.Router()
 // router.get('/test/:gameId',controllers.User.test)
 
 router.get('/game', controllers.User.games) // Get all games - Batman
+router.get('/gameAvax', controllers.User.gamesAvax) // Get all games - Batman
 router.get('/events', controllers.User.events)
 router.get('/transactions', controllers.User.transactions)
 router.get('/self', controllers.User.self)

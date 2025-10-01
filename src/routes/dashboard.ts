@@ -9,6 +9,7 @@ router.use(dashboardDuplicatePrevention);
 
 // Unified dashboard endpoint - returns all data at once
 router.get("/all", controllers.Dashboard.getAllDashboardData);
+router.get("/avax", controllers.Dashboard.getAllDashboardDataAVAX); // Alias for convenience
 
 // Progressive loading endpoint - uses Server-Sent Events
 // Note: SSE doesn't need duplicate prevention as it's a stream

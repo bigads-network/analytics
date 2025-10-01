@@ -5,88 +5,237 @@ import crypto from 'crypto';
 
 export default class Dashboard {
   // Unified dashboard endpoint that returns all data
-  static getAllDashboardData = async (req: Request, res: Response): Promise<any> => {
-    try {
-      const cacheKey = 'dashboardData:all';
-      const cachedData = dashboardCache.get(cacheKey);
+  // static getAllDashboardData = async (req: Request, res: Response): Promise<any> => {
+  //   try {
+  //     const cacheKey = 'dashboardData:all';
+  //     const cachedData = dashboardCache.get(cacheKey);
 
-      // Add ETag support to prevent duplicate requests
-      if (cachedData) {
-        const etag = crypto
-          .createHash('md5')
-          .update(JSON.stringify(cachedData))
-          .digest('hex');
+  //     // Add ETag support to prevent duplicate requests
+  //     if (cachedData) {
+  //       const etag = crypto
+  //         .createHash('md5')
+  //         .update(JSON.stringify(cachedData))
+  //         .digest('hex');
         
-        res.setHeader('ETag', etag);
-        res.setHeader('Cache-Control', 'private, max-age=480'); // 8 minutes
+  //       res.setHeader('ETag', etag);
+  //       res.setHeader('Cache-Control', 'private, max-age=480'); // 8 minutes
         
-        // Check if client has the same version
-        if (req.headers['if-none-match'] === etag) {
-          return res.status(304).end(); // Not Modified
-        }
+  //       // Check if client has the same version
+  //       if (req.headers['if-none-match'] === etag) {
+  //         return res.status(304).end(); // Not Modified
+  //       }
 
-        return res.status(200).json(cachedData);
-      }
+  //       return res.status(200).json(cachedData);
+  //     }
 
-      // Fetch all data in parallel for better performance
-      const days = parseInt(req.query.days as string) || 90;
+  //     // Fetch all data in parallel for better performance
+  //     const days = parseInt(req.query.days as string) || 90;
       
-      const [
-        userCounts,
-        dailyActiveUsers,
-        dailyTransactions,
-        monthlyUsers,
-        monthlyTransactions
-      ] = await Promise.all([
-        dbservices.User.counts(),
-        dbservices.TransactionsXDC.getDailyActiveUsers(days),
-        dbservices.TransactionsXDC.getDailyTransactionCounts(days),
-        dbservices.TransactionsXDC.getMonthlyActiveUsers(),
-        dbservices.TransactionsXDC.getMonthlyTransactions()
-      ]);
+  //     const [
+  //       userCounts,
+  //       dailyActiveUsers,
+  //       dailyTransactions,
+  //       monthlyUsers,
+  //       monthlyTransactions,
+  //     ] = await Promise.all([
+  //       dbservices.User.counts(),
+  //       dbservices.TransactionsXDC.getDailyActiveUsers(days),
+  //       dbservices.TransactionsXDC.getDailyTransactionCounts(days),
+  //       dbservices.TransactionsXDC.getMonthlyActiveUsers(),
+  //       dbservices.TransactionsXDC.getMonthlyTransactions(),
 
-      const response = {
-        success: true,
-        timestamp: new Date().toISOString(),
-        cacheDuration: 480, // Let frontend know cache duration (8 minutes)
-        data: {
-          userCounts,
-          dailyActiveUsers: {
-            count: dailyActiveUsers.count,
-            data: dailyActiveUsers.data
-          },
-          dailyTransactions: {
-            count: dailyTransactions.count,
-            data: dailyTransactions.data
-          },
-          monthlyUsers,
-          monthlyTransactions
-        }
-      };
+  //     ]);
 
-      // Cache the response
-      dashboardCache.set(cacheKey, response);
+  //     const response = {
+  //       success: true,
+  //       timestamp: new Date().toISOString(),
+  //       cacheDuration: 480, // Let frontend know cache duration (8 minutes)
+  //       data: {
+  //         userCounts,
+  //         dailyActiveUsers: {
+  //           count: dailyActiveUsers.count,
+  //           data: dailyActiveUsers.data
+  //         },
+  //         dailyTransactions: {
+  //           count: dailyTransactions.count,
+  //           data: dailyTransactions.data
+  //         },
+  //         monthlyUsers,
+  //         monthlyTransactions
+  //       },
+  //     };
 
-      // Generate ETag for the response
-      const etag = crypto
-        .createHash('md5')
-        .update(JSON.stringify(response))
-        .digest('hex');
+  //     // Cache the response
+  //     dashboardCache.set(cacheKey, response);
+
+  //     // Generate ETag for the response
+  //     const etag = crypto
+  //       .createHash('md5')
+  //       .update(JSON.stringify(response))
+  //       .digest('hex');
       
-      res.setHeader('ETag', etag);
-      res.setHeader('Cache-Control', 'private, max-age=480'); // 8 minutes
-      res.setHeader('X-Cache', 'MISS'); // Indicate cache miss
+  //     res.setHeader('ETag', etag);
+  //     res.setHeader('Cache-Control', 'private, max-age=480'); // 8 minutes
+  //     res.setHeader('X-Cache', 'MISS'); // Indicate cache miss
 
-      return res.status(200).json(response);
-    } catch (error) {
-      res.status(500).json({ 
+  //     return res.status(200).json(response);
+  //   } catch (error) {
+  //     res.status(500).json({ 
+  //       success: false,
+  //       error: error.message || 'Failed to fetch dashboard data' 
+  //     });
+  //   }
+  // };
+
+  static getAllDashboardData:any = async (req: Request, res: Response) => {
+  try {
+    const cacheKey = "dashboardData:all";
+    const cached = dashboardCache.get(cacheKey);
+
+    if (!cached) {
+      return res.status(503).json({
         success: false,
-        error: error.message || 'Failed to fetch dashboard data' 
+        message: "Dashboard cache not available yet. Please try again later.",
       });
     }
-  };
+
+    const { response, etag }:any = cached;
+
+    res.setHeader("ETag", etag);
+    res.setHeader("Cache-Control", "private, no-store");
+
+    if (req.headers["if-none-match"] === etag) {
+      return res.status(304).end(); // Client already has latest
+    }
+
+    return res.status(200).json(response);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message || "Failed to fetch dashboard data",
+    });
+  }
+};
+
+  static getAllDashboardDataAVAX:any = async (req: Request, res: Response) => {
+  try {
+    const cacheKey = "dashboardData:avax";
+    const cached = dashboardCache.get(cacheKey);
+
+    if (!cached) {
+      return res.status(503).json({
+        success: false,
+        message: "Dashboard cache not available yet. Please try again later.",
+      });
+    }
+
+    const { response, etag }:any = cached;
+
+    res.setHeader("ETag", etag);
+    res.setHeader("Cache-Control", "private, no-store");
+
+    if (req.headers["if-none-match"] === etag) {
+      return res.status(304).end(); // Client already has latest
+    }
+
+    return res.status(200).json(response);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message || "Failed to fetch dashboard data",
+    });
+  }
+};
+
+  //   static getAllDashboardDataAVAX = async (req: Request, res: Response): Promise<any> => {
+  //   try {
+  //     const cacheKey = 'dashboardData:avax';
+  //     const cachedData = dashboardCache.get(cacheKey);
+
+  //     // Add ETag support to prevent duplicate requests
+  //     if (cachedData) {
+  //       const etag = crypto
+  //         .createHash('md5')
+  //         .update(JSON.stringify(cachedData))
+  //         .digest('hex');
+        
+  //       res.setHeader('ETag', etag);
+  //       res.setHeader('Cache-Control', 'private, max-age=480'); // 8 minutes
+        
+  //       // Check if client has the same version
+  //       if (req.headers['if-none-match'] === etag) {
+  //         return res.status(304).end(); // Not Modified
+  //       }
+
+  //       return res.status(200).json(cachedData);
+  //     }
+
+  //     // Fetch all data in parallel for better performance
+  //     const days = parseInt(req.query.days as string) || 90;
+      
+  //     const [
+  //       userCountsAvax,
+  //       dailyActiveUsersAvax,
+  //       dailyTransactionsAvax,
+  //       monthlyUsersAvax,
+  //       monthlyTransactionsAvax
+  //     ] = await Promise.all([
+  //       dbservices.User.countsAvax(),
+  //       dbservices.TransactionsAvax.getDailyActiveUsers(days),
+  //       dbservices.TransactionsAvax.getDailyTransactionCounts(days),
+  //       dbservices.TransactionsAvax.getMonthlyActiveUsers(),
+  //       dbservices.TransactionsAvax.getMonthlyTransactions()
+
+  //     ]);
+
+  //     const response = {
+  //       success: true,
+  //       timestamp: new Date().toISOString(),
+  //       cacheDuration: 480, // Let frontend know cache duration (8 minutes)
+  //       data: {
+  //         userCounts: userCountsAvax,
+  //         dailyActiveUsers: {
+  //           count: dailyActiveUsersAvax.count,
+  //           data: dailyActiveUsersAvax.data
+  //         },
+  //         dailyTransactions: {
+  //           count: dailyTransactionsAvax.count,
+  //           data: dailyTransactionsAvax.data
+  //         },
+  //         monthlyUsers: monthlyUsersAvax,
+  //         monthlyTransactions: monthlyTransactionsAvax
+  //       }
+  //     };
+
+  //     // Cache the response
+  //     dashboardCache.set(cacheKey, response);
+
+  //     // Generate ETag for the response
+  //     const etag = crypto
+  //       .createHash('md5')
+  //       .update(JSON.stringify(response))
+  //       .digest('hex');
+      
+  //     res.setHeader('ETag', etag);
+  //     res.setHeader('Cache-Control', 'private, max-age=480'); // 8 minutes
+  //     res.setHeader('X-Cache', 'MISS'); // Indicate cache miss
+
+  //     return res.status(200).json(response);
+  //   } catch (error) {
+  //     res.status(500).json({ 
+  //       success: false,
+  //       error: error.message || 'Failed to fetch dashboard data' 
+  //     });
+  //   }
+  // };
+
+
 
   // Progressive loading endpoint - returns data as it becomes available
+ 
+  
+ 
+ 
   static getDashboardDataProgressive = async (req: Request, res: Response): Promise<any> => {
     try {
       // Set up SSE (Server-Sent Events) for progressive loading
@@ -202,46 +351,152 @@ export default class Dashboard {
   };
 
   // Utility function to refresh the dashboard cache (for cron worker)
-  static refreshDashboardCache = async () => {
-    try {
-      const cacheKey = 'dashboardData:all';
-      // Fetch all data in parallel for better performance
-      const days = 90;
-      const [
+static refreshDashboardCache = async () => {
+  try {
+    const cacheKey = "dashboardData:all";
+    const days = 90;
+
+    const [
+      userCounts,
+      dailyActiveUsers,
+      dailyTransactions,
+      monthlyUsers,
+      monthlyTransactions,
+    ] = await Promise.all([
+      dbservices.User.counts(),
+      dbservices.TransactionsXDC.getDailyActiveUsers(days),
+      dbservices.TransactionsXDC.getDailyTransactionCounts(days),
+      dbservices.TransactionsXDC.getMonthlyActiveUsers(),
+      dbservices.TransactionsXDC.getMonthlyTransactions(),
+    ]);
+
+    const response = {
+      success: true,
+      timestamp: new Date().toISOString(),
+      data: {
         userCounts,
-        dailyActiveUsers,
-        dailyTransactions,
+        dailyActiveUsers: {
+          count: dailyActiveUsers.count,
+          data: dailyActiveUsers.data,
+        },
+        dailyTransactions: {
+          count: dailyTransactions.count,
+          data: dailyTransactions.data,
+        },
         monthlyUsers,
-        monthlyTransactions
-      ] = await Promise.all([
-        dbservices.User.counts(),
-        dbservices.TransactionsXDC.getDailyActiveUsers(days),
-        dbservices.TransactionsXDC.getDailyTransactionCounts(days),
-        dbservices.TransactionsXDC.getMonthlyActiveUsers(),
-        dbservices.TransactionsXDC.getMonthlyTransactions()
-      ]);
-      const response = {
-        success: true,
-        timestamp: new Date().toISOString(),
-        cacheDuration: 480,
-        data: {
-          userCounts,
-          dailyActiveUsers: {
-            count: dailyActiveUsers.count,
-            data: dailyActiveUsers.data
-          },
-          dailyTransactions: {
-            count: dailyTransactions.count,
-            data: dailyTransactions.data
-          },
-          monthlyUsers,
-          monthlyTransactions
-        }
-      };
-      dashboardCache.set(cacheKey, response);
-      return true;
-    } catch (error) {
-      return false;
-    }
+        monthlyTransactions,
+      },
+    };
+
+    // Generate ETag
+    const etag = crypto
+      .createHash("md5")
+      .update(JSON.stringify(response))
+      .digest("hex");
+
+    // Store both response and etag
+    dashboardCache.set(cacheKey, { response, etag });
+
+    return true;
+  } catch (error) {
+    return false;
   }
+};
+
+
+static refreshDashboardCacheAvax = async () => {
+  try {
+    const cacheKey = "dashboardData:avax";
+    const days = 90;
+
+    const [
+      userCounts,
+      dailyActiveUsers,
+      dailyTransactions,
+      monthlyUsers,
+      monthlyTransactions,
+    ] = await Promise.all([
+      dbservices.User.countsAvax(),
+      dbservices.TransactionsAvax.getDailyActiveUsers(days),
+      dbservices.TransactionsAvax.getDailyTransactionCounts(days),
+      dbservices.TransactionsAvax.getMonthlyActiveUsers(),
+      dbservices.TransactionsAvax.getMonthlyTransactions(),
+    ]);
+
+    const response = {
+      success: true,
+      timestamp: new Date().toISOString(),
+      data: {
+        userCounts,
+        dailyActiveUsers: {
+          count: dailyActiveUsers.count,
+          data: dailyActiveUsers.data,
+        },
+        dailyTransactions: {
+          count: dailyTransactions.count,
+          data: dailyTransactions.data,
+        },
+        monthlyUsers,
+        monthlyTransactions,
+      },
+    };
+
+    // Generate ETag
+    const etag = crypto
+      .createHash("md5")
+      .update(JSON.stringify(response))
+      .digest("hex");
+
+    // Store both response and etag
+    dashboardCache.set(cacheKey, { response, etag });
+
+    return true;
+  } catch (error) {
+    return false;
+  }
+};
+
+
+  //   static refreshDashboardCacheAvax = async () => {
+  //   try {
+  //     const cacheKey = 'dashboardData:avax';
+  //     // Fetch all data in parallel for better performance
+  //     const days = 90;
+  //     const [
+  //       userCountsAvax,
+  //       dailyActiveUsersAvax,
+  //       dailyTransactionsAvax,
+  //       monthlyUsersAvax,
+  //       monthlyTransactionsAvax
+  //     ] = await Promise.all([
+  //       dbservices.User.countsAvax(),
+  //       dbservices.TransactionsAvax.getDailyActiveUsers(days),
+  //       dbservices.TransactionsAvax.getDailyTransactionCounts(days),
+  //       dbservices.TransactionsAvax.getMonthlyActiveUsers(),
+  //       dbservices.TransactionsAvax.getMonthlyTransactions()
+  //     ]);
+  //     const response = {
+  //       success: true,
+  //       timestamp: new Date().toISOString(),
+  //       cacheDuration: 480,
+  //       data: {
+  //         userCounts: userCountsAvax,
+  //         dailyActiveUsers: {
+  //           count: dailyActiveUsersAvax.count,
+  //           data: dailyActiveUsersAvax.data
+  //         },
+  //         dailyTransactions: {
+  //           count: dailyTransactionsAvax.count,
+  //           data: dailyTransactionsAvax.data
+  //         },
+  //         monthlyUsers: monthlyUsersAvax,
+  //         monthlyTransactions: monthlyTransactionsAvax
+  //       }
+  //     };
+  //     dashboardCache.set(cacheKey, response);
+  //     return true;
+  //   } catch (error) {
+  //     return false;
+  //   }
+  // }
 } 

@@ -324,6 +324,39 @@ export default class User {
     }
   };
 
+
+    static gamesAvax = async (req: Request, res: Response): Promise<any> => {
+    try {
+      const cacheKey = 'user:gamesAvax';
+      const cachedGames = dashboardCache.get(cacheKey);
+      console.log(cachedGames ,"cachedGames")
+      if (cachedGames) {
+        res.setHeader('Cache-Control', 'private, max-age=480');
+        res.setHeader('X-Cache', 'HIT');
+        return res.json({
+          status: true,
+          message: "Game List Fetched Successfully (from cache)",
+          data: cachedGames,
+        });
+      }
+      const games = await dbservices.User.getGamesAvax();
+      console.log(games ,"games")
+      dashboardCache.set(cacheKey, games);
+      res.setHeader('Cache-Control', 'private, max-age=480');
+      res.setHeader('X-Cache', 'MISS');
+      return res.json({
+        status: true,
+        message: "Game List Fetched Successfully",
+        data: games,
+      });
+    } catch (error) {
+      res.status(500).json({
+        status: false,
+        message: error.message || "Unexpected error occurred",
+      });
+    }
+  };
+
   static refreshGamesCache = async () => {
     try {
       const cacheKey = 'user:games';
