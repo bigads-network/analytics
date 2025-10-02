@@ -361,12 +361,16 @@ export default class User {
     try {
       const cacheKey = 'user:games';
       const games = await dbservices.User.getGames();
+      const avaxCacheKey = 'user:gamesAvax';
+      const gamesAvax = await dbservices.User.getGamesAvax();
       dashboardCache.set(cacheKey, games);
+      dashboardCache.set(avaxCacheKey, gamesAvax);
       return true;
     } catch (error) {
       return false;
     }
   }
+
 
   static events = async (req: Request, res: Response): Promise<any> => {
     try {
