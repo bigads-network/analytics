@@ -129,7 +129,7 @@ export default class User {
 
   static counts = async (): Promise<any> => {
     try {
-      console.log("Counting users, games, events, and transactions...");
+      // console.log("Counting users, games, events, and transactions...");
       const [uniqueUsers,gamesEventsTx] = await Promise.all([
         postgreDb
           .select({
@@ -149,7 +149,7 @@ export default class User {
         }),
       ]);
 
-      console.log(uniqueUsers, gamesEventsTx, "counts");
+      // console.log(uniqueUsers, gamesEventsTx, "counts");
         return {
           users: Number(uniqueUsers[0].count),
           games: Number(gamesEventsTx.game[0].count),
@@ -555,7 +555,7 @@ export default class User {
             new Date(endTime) // April 10 10AM IST in UTC (10AM - 5:30)
           )
         );
-      console.log("..........");
+      // console.log("..........");
 
       return result;
     } catch (error) {

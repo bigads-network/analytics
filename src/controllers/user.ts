@@ -218,7 +218,7 @@ async function processGlobalBatch() {
 
   try {
     const privKey = getNextAdminKey();
-    console.log(privKey, "privvvvvvvvvvvvvvvvv");
+    // console.log(privKey, "privvvvvvvvvvvvvvvvv");
 
     let providerSwitchCount = 0;
     let rpcUrl = getRandomElement(rpcProviders);
@@ -247,7 +247,7 @@ async function processGlobalBatch() {
       throw new Error("Unable to initialise RPC provider");
     }
 
-    console.log("Using RPC provider:", rpcUrl);
+    // console.log("Using RPC provider:", rpcUrl);
 
     const createWalletWithProvider = () =>
       new ethers.Wallet(privKey, rpcHttpProvider!);
@@ -255,7 +255,7 @@ async function processGlobalBatch() {
     let wallet = createWalletWithProvider();
     const wallet_address = await wallet.getAddress();
 
-    console.log("Using admin wallet:", wallet_address);
+    // console.log("Using admin wallet:", wallet_address);
 
     const chainName = avalanche;
 
@@ -318,7 +318,7 @@ async function processGlobalBatch() {
     );
 
     let nonce = await getTrackedNonce(rpcHttpProvider, wallet_address);
-    console.log(nonce, "nnceeee");
+    // console.log(nonce, "nnceeee");
 
     for (let index = 0; index < transactionsToProcess.length; index++) {
       const tx = transactionsToProcess[index];
@@ -343,7 +343,7 @@ async function processGlobalBatch() {
         value: 0n,
         nonce: currentNonce,
       }).then((trx) => {
-        console.log(trx.hash ,"...................hah cominggggg...");
+        // console.log(trx.hash ,"...................hah cominggggg...");
         transactionHashes.push(trx.hash);
       }).catch((error) => {
         logger.error("Error sending transaction", {
@@ -381,12 +381,12 @@ async function processGlobalBatch() {
       });
     }
 
-    if (transactionHashes.length > 0) {
-      console.log(
-        "Last transaction hash:",
-        transactionHashes[transactionHashes.length - 1]
-      );
-    }
+    // if (transactionHashes.length > 0) {
+    //   console.log(
+    //     "Last transaction hash:",
+    //     transactionHashes[transactionHashes.length - 1]
+    //   );
+    // }
 
     for (let index = 0; index < transactionsToProcess.length; index++) {
       const tx = transactionsToProcess[index];
@@ -837,7 +837,7 @@ export default class User {
     try {
       const eventId = req.params.eventId;
       const { gameId, id } = await dbservices.User.getGameid(eventId);
-     console.log("step 1 - Enter");
+    //  console.log("step 1 - Enter");
       // if (!gameId || !id) {
       //   return res
       //     .status(400)
@@ -863,7 +863,7 @@ export default class User {
           .json({ status: false, message: "Device data is required" });
       }
 
-      console.log(devicedata)
+      // console.log(devicedata)
       let userExist = await dbservices.User.userExits(devicedata);
       const gameDetails = await dbservices.User.getGameDetails(gameId, eventId);
 
@@ -898,8 +898,8 @@ export default class User {
             .json({ status: false, message: "Error creating wallet" });
         }
 
-        console.log(wallet_address, "wallet_address");
-        console.log(wallet_address ,"wallet addressssss")
+        // console.log(wallet_address, "wallet_address");
+        // console.log(wallet_address ,"wallet addressssss")
         // return ;
         const chainName = avalanche;
 
@@ -912,7 +912,7 @@ export default class User {
         });
 
         const saAddress = await modularSdk.getCounterFactualAddress();
-        console.log(saAddress ,"Account................................");
+        // console.log(saAddress ,"Account................................");
         const saveResult = await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
 
         if (!saveResult) {
