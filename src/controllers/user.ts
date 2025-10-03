@@ -331,54 +331,55 @@ async function processGlobalBatch() {
         ]
       );
 
-      try {
-        wallet.sendTransaction({
-          to: contractAddress,
-          data: callData,
-          value: 0n,
-          nonce,
-        }).then((trx) => {
-          console.log(trx.hash);
-          transactionHashes.push(trx.hash);
-        }).catch((error) => {
-          console.error("Transaction failed:", error);
-        });
+      // Track nonce immediately without waiting for success
+      markNonceUsed(wallet_address, nonce);
+      const currentNonce = nonce;
+      nonce += 1;
+      processedCount += 1;
 
-        markNonceUsed(wallet_address, nonce);
-        nonce += 1;
-        processedCount += 1;
-      } 
-      catch (error) {
+      wallet.sendTransaction({
+        to: contractAddress,
+        data: callData,
+        value: 0n,
+        nonce: currentNonce,
+      }).then((trx) => {
+        console.log(trx.hash ,"...................hah cominggggg...");
+        transactionHashes.push(trx.hash);
+      }).catch((error) => {
         logger.error("Error sending transaction", {
           wallet: wallet_address,
-          nonce,
+          nonce: currentNonce,
           rpcUrl,
           error,
         });
 
         if (isNonceError(error)) {
           resetTrackedNonce(wallet_address);
-          nonce = await getTrackedNonce(rpcHttpProvider, wallet_address);
-          continue;
+          // Note: Nonce tracking is already updated, so we continue
         }
 
-
-          if (providerSwitchCount < MAX_PROVIDER_SWITCHES) {
-            providerSwitchCount += 1;
-            await delay(RPC_RETRY_DELAY_MS * providerSwitchCount);
+        if (isRetryableNetworkError(error) && providerSwitchCount < MAX_PROVIDER_SWITCHES) {
+          providerSwitchCount += 1;
+          delay(RPC_RETRY_DELAY_MS * providerSwitchCount).then(() => {
             rpcUrl = getRandomElement(rpcProviders);
             rpcHttpProvider = new ethers.providers.JsonRpcProvider(rpcUrl);
             wallet = createWalletWithProvider();
-            nonce = await getTrackedNonce(rpcHttpProvider, wallet_address);
             logger.warn("Switched RPC provider due to retryable error", {
               wallet: wallet_address,
               rpcUrl,
               providerSwitchCount,
             });
-            continue;
-          }
+          });
+        } else {
+          // If we can't retry, log the error
+          logger.error("Transaction failed and cannot be retried", {
+            wallet: wallet_address,
+            nonce: currentNonce,
+            error,
+          });
         }
-
+      });
+    }
 
     if (transactionHashes.length > 0) {
       console.log(
