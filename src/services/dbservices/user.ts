@@ -135,7 +135,7 @@ static getGamesAvax = async (): Promise<any> => {
     // }
 
 
-      static countsAvax = async (): Promise<any> => {
+    static countsAvax = async (): Promise<any> => {
     try {
       console.log("Counting users, games, events, and transactions...");
       const [uniqueUsers,gamesEventsTx] = await Promise.all([

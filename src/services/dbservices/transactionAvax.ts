@@ -91,38 +91,38 @@ export default class TransactionsAvax {
   static getMonthlyActiveUsers = async (): Promise<number> => {
     try {
       const now = new Date();
-      const firstDayPrevMonth = new Date(
-        now.getFullYear(),
-        now.getMonth() - 1,
-        1
-      );
-      const lastDayPrevMonth = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        0,
-        23,
-        59,
-        59,
-        999
-      );
+      // const firstDayPrevMonth = new Date(
+      //   now.getFullYear(),
+      //   now.getMonth() - 1,
+      //   1
+      // );
+      // const lastDayPrevMonth = new Date(
+      //   now.getFullYear(),
+      //   now.getMonth(),
+      //   0,
+      //   23,
+      //   59,
+      //   59,
+      //   999
+      // );
 
-      // Previous month
-      const prevResult = await postgreDb
-        .select({
-          count: sql<number>`COUNT(DISTINCT ${transaction_avax.UserId})`,
-        })
-        .from(transaction_avax)
-        .where(
-          and(
-            gte(transaction_avax.createdAt, firstDayPrevMonth),
-            lte(transaction_avax.createdAt, lastDayPrevMonth),
-          )
-        );
-      const prevCount = Number(prevResult[0]?.count ?? 0);
+      // // Previous month
+      // const prevResult = await postgreDb
+      //   .select({
+      //     count: sql<number>`COUNT(DISTINCT ${transaction_avax.UserId})`,
+      //   })
+      //   .from(transaction_avax)
+      //   .where(
+      //     and(
+      //       gte(transaction_avax.createdAt, firstDayPrevMonth),
+      //       lte(transaction_avax.createdAt, lastDayPrevMonth),
+      //     )
+      //   );
+      // const prevCount = Number(prevResult[0]?.count ?? 0);
 
-      if (prevCount > 0) {
-        return prevCount;
-      }
+      // if (prevCount > 0) {
+      //   return prevCount;
+      // }
 
       // If no data for previous month, get current month
       const firstDayCurrMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -149,38 +149,38 @@ export default class TransactionsAvax {
   static getMonthlyTransactions = async (): Promise<number> => {
     try {
       const now = new Date();
-      const firstDayPrevMonth = new Date(
-        now.getFullYear(),
-        now.getMonth() - 1,
-        1
-      );
-      const lastDayPrevMonth = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        0,
-        23,
-        59,
-        59,
-        999
-      );
+      // const firstDayPrevMonth = new Date(
+      //   now.getFullYear(),
+      //   now.getMonth() - 1,
+      //   1
+      // );
+      // const lastDayPrevMonth = new Date(
+      //   now.getFullYear(),
+      //   now.getMonth(),
+      //   0,
+      //   23,
+      //   59,
+      //   59,
+      //   999
+      // );
 
-      // Previous month
-      const prevResult = await postgreDb
-        .select({
-          count: sql<number>`COUNT(*)`,
-        })
-        .from(transaction_avax)
-        .where(
-          and(
-            gte(transaction_avax.createdAt, firstDayPrevMonth),
-            lte(transaction_avax.createdAt, lastDayPrevMonth),
-          )
-        );
-      const prevCount = Number(prevResult[0]?.count ?? 0);
+      // // Previous month
+      // const prevResult = await postgreDb
+      //   .select({
+      //     count: sql<number>`COUNT(*)`,
+      //   })
+      //   .from(transaction_avax)
+      //   .where(
+      //     and(
+      //       gte(transaction_avax.createdAt, firstDayPrevMonth),
+      //       lte(transaction_avax.createdAt, lastDayPrevMonth),
+      //     )
+      //   );
+      // const prevCount = Number(prevResult[0]?.count ?? 0);
 
-      if (prevCount > 0) {
-        return prevCount;
-      }
+      // if (prevCount > 0) {
+      //   return prevCount;
+      // }
 
       // If no data for previous month, get current month
       const firstDayCurrMonth = new Date(now.getFullYear(), now.getMonth(), 1);
