@@ -14,8 +14,84 @@ import logger from "../config/logger";
 import { dashboardCache } from "../config/cache";
 import { rpc } from "viem/utils";
 
-const BATCH_SIZE = 1; // Process when a user has 4 transactions
+const BATCH_SIZE = 1; // Ensure every incoming event is its own on-chain transaction
 const BATCH_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
+const RPC_RETRY_DELAY_MS = 2_000;
+const MAX_PROVIDER_SWITCHES = 3;
+const MAX_TX_RETRIES = 3;
+const nonceTracker = new Map<string, number>();
+let isProcessingBatch = false;
+let pendingProcessRequest = false;
+const retryableRpcErrors = new Set([
+  "ETIMEDOUT",
+  "ECONNRESET",
+  "EHOSTUNREACH",
+  "ECONNABORTED",
+  "ETIMEOUT",
+]);
+
+const delay = (ms: number) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+async function getTrackedNonce(
+  provider: ethers.providers.JsonRpcProvider,
+  walletAddress: string
+) {
+  const pendingNonce = await provider.getTransactionCount(
+    walletAddress,
+    "pending"
+  );
+  const trackedNonce = nonceTracker.get(walletAddress);
+  const effectiveNonce =
+    trackedNonce !== undefined && trackedNonce >= pendingNonce
+      ? trackedNonce
+      : pendingNonce;
+  nonceTracker.set(walletAddress, effectiveNonce);
+  return effectiveNonce;
+}
+
+const markNonceUsed = (walletAddress: string, nonce: number) => {
+  nonceTracker.set(walletAddress, nonce + 1);
+};
+
+const resetTrackedNonce = (walletAddress: string) => {
+  nonceTracker.delete(walletAddress);
+};
+
+const nonceErrorMessages = [
+  "nonce has already been used",
+  "nonce too low",
+  "replacement transaction underpriced",
+];
+
+const isNonceError = (error: any) => {
+  const code = error?.code;
+  if (code && typeof code === "string") {
+    if (code.toLowerCase().includes("nonce")) {
+      return true;
+    }
+  }
+  const message = (error?.message || "").toLowerCase();
+  return nonceErrorMessages.some((x) => message.includes(x));
+};
+
+const isRetryableNetworkError = (error: any) => {
+  const code = error?.code;
+  if (code && retryableRpcErrors.has(code)) {
+    return true;
+  }
+  const message = (error?.message || "").toLowerCase();
+  return (
+    message.includes("timeout") ||
+    message.includes("timed out") ||
+    message.includes("connection refused") ||
+    message.includes("429") ||
+    message.includes("rate limit") ||
+    message.includes("network error")
+  );
+};
 
 // Structure to track global batch
 
@@ -82,9 +158,17 @@ let globalBatch: {
 // Helper function to process a single user's batch
 
 async function processGlobalBatch() {
-  if (globalBatch.transactions.length === 0) return;
+  if (isProcessingBatch) {
+    pendingProcessRequest = true;
+    return;
+  }
 
-  // Take a copy of the transactions and reset global batch
+  if (globalBatch.transactions.length === 0) {
+    return;
+  }
+
+  isProcessingBatch = true;
+
   const transactionsToProcess = [...globalBatch.transactions];
   globalBatch.transactions = [];
   if (globalBatch.timeout) {
@@ -93,43 +177,87 @@ async function processGlobalBatch() {
   globalBatch.timeout = null;
   globalBatch.batchStartTime = null;
 
+  let processedCount = 0;
+  const transactionHashes: string[] = [];
+
+  const requeueTransactions = () => {
+    if (processedCount >= transactionsToProcess.length) {
+      return;
+    }
+
+    const remaining = transactionsToProcess.slice(processedCount);
+    if (remaining.length === 0) {
+      return;
+    }
+
+    globalBatch.transactions = [...remaining, ...globalBatch.transactions];
+    globalBatch.batchStartTime = Date.now();
+
+    if (globalBatch.timeout) {
+      clearTimeout(globalBatch.timeout);
+    }
+
+    globalBatch.timeout = setTimeout(() => {
+      processGlobalBatch().catch((error) =>
+        logger.error("Error processing re-queued batch", { error })
+      );
+    }, BATCH_TIMEOUT_MS);
+  };
+
+  const schedulePendingBatch = () => {
+    if (globalBatch.transactions.length === 0) {
+      return;
+    }
+
+    setImmediate(() => {
+      processGlobalBatch().catch((error) =>
+        logger.error("Error in scheduled batch processing", { error })
+      );
+    });
+  };
+
   try {
-    // const admin = envConfigs.adminId
-    // const adminAccountDetails = await dbservices.Creator.getdetails(admin);
-    // if (!adminAccountDetails) {
-    //     throw new Error("Admin account not found in database");
-    // }
-    // const privKey = sha512_256(adminAccountDetails.devicedata + adminAccountDetails.userId);
     const privKey = getNextAdminKey();
-    console.log(privKey ,"privvvvvvvvvvvvvvvvv")
-    const rpcUrl = getRandomElement(rpcProviders);
+    console.log(privKey, "privvvvvvvvvvvvvvvvv");
 
-    // console.log("Using Private wallet:", privKey);
+    let providerSwitchCount = 0;
+    let rpcUrl = getRandomElement(rpcProviders);
+    let rpcHttpProvider: ethers.providers.JsonRpcProvider | null = null;
+
+    while (!rpcHttpProvider && providerSwitchCount <= MAX_PROVIDER_SWITCHES) {
+      try {
+        rpcHttpProvider = new ethers.providers.JsonRpcProvider(rpcUrl);
+        await rpcHttpProvider.getNetwork();
+      } catch (providerError) {
+        logger.warn("Failed to initialise RPC provider", {
+          rpcUrl,
+          providerSwitchCount,
+          error: providerError,
+        });
+        providerSwitchCount += 1;
+        if (providerSwitchCount > MAX_PROVIDER_SWITCHES) {
+          throw providerError;
+        }
+        await delay(RPC_RETRY_DELAY_MS * providerSwitchCount);
+        rpcUrl = getRandomElement(rpcProviders);
+      }
+    }
+
+    if (!rpcHttpProvider) {
+      throw new Error("Unable to initialise RPC provider");
+    }
+
     console.log("Using RPC provider:", rpcUrl);
-    
-    const rpcHttpProvider= new ethers.providers.JsonRpcProvider(rpcUrl);
 
-    const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
+    const createWalletWithProvider = () =>
+      new ethers.Wallet(privKey, rpcHttpProvider!);
+
+    let wallet = createWalletWithProvider();
     const wallet_address = await wallet.getAddress();
-    
+
     console.log("Using admin wallet:", wallet_address);
 
-    const privateKey = wallet.privateKey;
     const chainName = avalanche;
-
-    // const modularSdk = new ModularSdk(privKey, {
-    //   chainId: 50, // XDC Mainnet
-    //   bundlerProvider: new EtherspotBundler(
-    //     50,
-    //     envConfigs.etherspot_api_Key
-    //   ),
-    // });
-    // const saAddress = await modularSdk.getCounterFactualAddress();
-    // console.log(`saAddress -->`, saAddress);
-    // console.log(`etherspot api key -->`, envConfigs.etherspot_api_Key);
- 
-
-
 
     const contractAddress = envConfigs.contract_address_avax;
     const abi = [
@@ -181,108 +309,114 @@ async function processGlobalBatch() {
         "stateMutability": "nonpayable",
         "type": "function"
       }
-    ]
+    ];
 
-    // const contractInterface = new ethers.utils.Interface(abi);
-    // const decimals = 18;
+    const contractInterface = new ethers.Contract(
+      contractAddress,
+      abi,
+      rpcHttpProvider
+    );
 
-     // Clear previous batch before starting new one
-  // await modularSdk.clearUserOpsFromBatch();
+    let nonce = await getTrackedNonce(rpcHttpProvider, wallet_address);
+    console.log(nonce, "nnceeee");
 
-  // const provider = new ethers.providers.JsonRpcProvider("https://rpc.xdc.org");
-  const contractInterface = new ethers.Contract(contractAddress,abi,rpcHttpProvider)
+    for (let index = 0; index < transactionsToProcess.length; index++) {
+      const tx = transactionsToProcess[index];
+      const callData = contractInterface.interface.encodeFunctionData(
+        "storeMetadata",
+        [
+          tx.userData.saAddress,
+          tx.metadata,
+          tx.gameId,
+        ]
+      );
 
-  let lastTransactionHash: string;
-  let nonce = await rpcHttpProvider.getTransactionCount(wallet_address, "latest");
-  console.log(nonce, "nnceeee");
-  for (const tx of transactionsToProcess) {
-      const callData = contractInterface.interface.encodeFunctionData("storeMetadata", [
-        tx.userData.saAddress,
-        tx.metadata,
-        tx.gameId,
-      ]);
+      try {
+        wallet.sendTransaction({
+          to: contractAddress,
+          data: callData,
+          value: 0n,
+          nonce,
+        }).then((trx) => {
+          console.log(trx.hash);
+          transactionHashes.push(trx.hash);
+        }).catch((error) => {
+          console.error("Transaction failed:", error);
+        });
 
-    
-      // await modularSdk.addUserOpsToBatch({
-      //   to: contractAddress,
-      //   data: callData,
-      // });
-      const transaction = await wallet.sendTransaction({
-        to: contractAddress,
-        data: callData,
-        value: 0n,
-        nonce: nonce, // manually manage nonce
-      });
-
-      // console.log("Transaction hash:", transaction.hash);
-        lastTransactionHash = transaction.hash;
+        markNonceUsed(wallet_address, nonce);
         nonce += 1;
+        processedCount += 1;
+      } 
+      catch (error) {
+        logger.error("Error sending transaction", {
+          wallet: wallet_address,
+          nonce,
+          rpcUrl,
+          error,
+        });
+
+        if (isNonceError(error)) {
+          resetTrackedNonce(wallet_address);
+          nonce = await getTrackedNonce(rpcHttpProvider, wallet_address);
+          continue;
         }
 
 
-        console.log("Last transaction hash:", lastTransactionHash);
+          if (providerSwitchCount < MAX_PROVIDER_SWITCHES) {
+            providerSwitchCount += 1;
+            await delay(RPC_RETRY_DELAY_MS * providerSwitchCount);
+            rpcUrl = getRandomElement(rpcProviders);
+            rpcHttpProvider = new ethers.providers.JsonRpcProvider(rpcUrl);
+            wallet = createWalletWithProvider();
+            nonce = await getTrackedNonce(rpcHttpProvider, wallet_address);
+            logger.warn("Switched RPC provider due to retryable error", {
+              wallet: wallet_address,
+              rpcUrl,
+              providerSwitchCount,
+            });
+            continue;
+          }
+        }
 
-        // return ;
 
-    // Prepare all calls for the batch
-    //   const transactionData = erc20Instance.interface.encodeFunctionData(
-    //     "transfer",
-    //     [
-    //       "0xB37aA61E082Df3E722e6994CbB720E85f13d53Da",
-    //       ethers.utils.parseUnits("0", decimals),
-    //     ]
-    //   );
+    if (transactionHashes.length > 0) {
+      console.log(
+        "Last transaction hash:",
+        transactionHashes[transactionHashes.length - 1]
+      );
+    }
 
-    //   // console.log(calls ,"call")
-
-    //   // @ts-ignore
-    //   await modularSdk.clearUserOpsFromBatch();
-    //  await modularSdk.addUserOpsToBatch({
-    //     to: contractAddress,
-    //     data: transactionData,
-    //     value: 0n,
-    //   });
-
-    // const op = await modularSdk.estimate({
-    //   paymasterDetails: {
-    //     url: `https://arka.etherspot.io?apiKey=${envConfigs.etherspot_api_Key}&chainId=${Number(
-    //       50
-    //     )}&useVp=true`,
-    //     context: { mode: "sponsor" },
-    //   },
-    // });
-
-    // const uoHash = await modularSdk.send(op);
-    // console.log(`UserOpHash: ..........${uoHash}`);
-
-    // let userOpsReceipt = null;
-    // const timeout = Date.now() + 600000; // 1 minute timeout
-    // while (userOpsReceipt == null && Date.now() < timeout) {
-    //   await sleep(2);
-    //   // const result = await modularSdk.getUserOpReceipt(uoHash);
-    //   // console.log("receipt................", result);
-    //   // userOpsReceipt = result;
-    // }
-    // console.log("\x1b[33m%s\x1b[0m", `Transaction Receipt: `, userOpsReceipt);
-
-    // Save all transactions in the batch
-    for (const tx of transactionsToProcess) {
+    for (let index = 0; index < transactionsToProcess.length; index++) {
+      const tx = transactionsToProcess[index];
+      const hash = transactionHashes[index];
       await dbservices.User.saveTransactionDetails_Avax(
         tx.gameId,
         tx.userData.id,
         tx.eventId,
-        lastTransactionHash,
+        hash,
         chainName.name,
         "0"
       );
     }
 
     logger.info(
-      `Successfully processed ${transactionsToProcess.length} transactions in batch having ${lastTransactionHash} with admin wallet${wallet_address} and private key${privKey}and rpc ${"rpcUrl"}`
+      `Successfully processed ${transactionsToProcess.length} transactions for admin wallet ${wallet_address}`,
+      {
+        rpc: rpcUrl,
+        hashes: transactionHashes,
+      }
     );
   } catch (error) {
     console.error(`Error processing global batch:`, error);
-    // Optionally implement retry logic for failed transactions
+    requeueTransactions();
+  } finally {
+    isProcessingBatch = false;
+
+    if (pendingProcessRequest) {
+      pendingProcessRequest = false;
+      schedulePendingBatch();
+    }
   }
 }
 
@@ -702,20 +836,20 @@ export default class User {
     try {
       const eventId = req.params.eventId;
       const { gameId, id } = await dbservices.User.getGameid(eventId);
+     console.log("step 1 - Enter");
+      // if (!gameId || !id) {
+      //   return res
+      //     .status(400)
+      //     .json({ status: false, message: "Invalid Game or Event ID" });
+      // }
 
-      if (!gameId || !id) {
-        return res
-          .status(400)
-          .json({ status: false, message: "Invalid Game or Event ID" });
-      }
-
-      const eventCheck = await dbservices.User.eventCheck(gameId, eventId);
-      if (!eventCheck) {
-        return res.status(400).json({
-          status: false,
-          message: "Event does not exist for this game",
-        });
-      }
+      // const eventCheck = await dbservices.User.eventCheck(gameId, eventId);
+      // if (!eventCheck) {
+      //   return res.status(400).json({
+      //     status: false,
+      //     message: "Event does not exist for this game",
+      //   });
+      // }
 
       // if (req.body?.devicedata?.OS && typeof req.body.devicedata.OS === 'string') {
       //   req.body.devicedata.OS = `${req.body.devicedata.OS} XDC`;
@@ -728,7 +862,7 @@ export default class User {
           .json({ status: false, message: "Device data is required" });
       }
 
-      // console.log(devicedata)
+      console.log(devicedata)
       let userExist = await dbservices.User.userExits(devicedata);
       const gameDetails = await dbservices.User.getGameDetails(gameId, eventId);
 
@@ -777,7 +911,7 @@ export default class User {
         });
 
         const saAddress = await modularSdk.getCounterFactualAddress();
-        // console.log(saAddress ,"Account................................");
+        console.log(saAddress ,"Account................................");
         const saveResult = await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
 
         if (!saveResult) {
