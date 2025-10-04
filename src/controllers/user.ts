@@ -14,14 +14,427 @@ import logger from "../config/logger";
 import { dashboardCache } from "../config/cache";
 import { rpc } from "viem/utils";
 
-const BATCH_SIZE = 1; // Ensure every incoming event is its own on-chain transaction
-const BATCH_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
+// const BATCH_SIZE = 1; // Ensure every incoming event is its own on-chain transaction
+// const BATCH_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
+// const RPC_RETRY_DELAY_MS = 2_000;
+// const MAX_PROVIDER_SWITCHES = 3;
+// const MAX_TX_RETRIES = 3;
+// const nonceTracker = new Map<string, number>();
+// let isProcessingBatch = false;
+// let pendingProcessRequest = false;
+// const retryableRpcErrors = new Set([
+//   "ETIMEDOUT",
+//   "ECONNRESET",
+//   "EHOSTUNREACH",
+//   "ECONNABORTED",
+//   "ETIMEOUT",
+// ]);
+
+// const delay = (ms: number) =>
+//   new Promise((resolve) => {
+//     setTimeout(resolve, ms);
+//   });
+
+// async function getTrackedNonce(
+//   provider: ethers.providers.JsonRpcProvider,
+//   walletAddress: string
+// ) {
+//   const pendingNonce = await provider.getTransactionCount(
+//     walletAddress,
+//     "pending"
+//   );
+//   const trackedNonce = nonceTracker.get(walletAddress);
+//   const effectiveNonce =
+//     trackedNonce !== undefined && trackedNonce >= pendingNonce
+//       ? trackedNonce
+//       : pendingNonce;
+//   nonceTracker.set(walletAddress, effectiveNonce);
+//   return effectiveNonce;
+// }
+
+// const markNonceUsed = (walletAddress: string, nonce: number) => {
+//   nonceTracker.set(walletAddress, nonce + 1);
+// };
+
+// const resetTrackedNonce = (walletAddress: string) => {
+//   nonceTracker.delete(walletAddress);
+// };
+
+// const nonceErrorMessages = [
+//   "nonce has already been used",
+//   "nonce too low",
+//   "replacement transaction underpriced",
+// ];
+
+// const isNonceError = (error: any) => {
+//   const code = error?.code;
+//   if (code && typeof code === "string") {
+//     if (code.toLowerCase().includes("nonce")) {
+//       return true;
+//     }
+//   }
+//   const message = (error?.message || "").toLowerCase();
+//   return nonceErrorMessages.some((x) => message.includes(x));
+// };
+
+// const isRetryableNetworkError = (error: any) => {
+//   const code = error?.code;
+//   if (code && retryableRpcErrors.has(code)) {
+//     return true;
+//   }
+//   const message = (error?.message || "").toLowerCase();
+//   return (
+//     message.includes("timeout") ||
+//     message.includes("timed out") ||
+//     message.includes("connection refused") ||
+//     message.includes("429") ||
+//     message.includes("rate limit") ||
+//     message.includes("network error")
+//   );
+// };
+
+// // Structure to track global batch
+
+// const adminPrivateKeys = [
+//   envConfigs.adminPrivatKey_avax,
+//   envConfigs.adminPrivatKey_avax1,
+//   envConfigs.adminPrivatKey_avax2,
+//   envConfigs.adminPrivatKey_avax3,
+//   envConfigs.adminPrivatKey_avax4,
+//   envConfigs.adminPrivatKey_avax5,
+//   envConfigs.adminPrivatKey_avax6,
+//   envConfigs.adminPrivatKey_avax7,
+// ];
+
+// const rpcProviders = [
+//  envConfigs.provider_url_AVAX,
+//  envConfigs.provider_url_AVAX1,
+//  envConfigs.provider_url_AVAX2,
+//  envConfigs.provider_url_AVAX3,
+//  envConfigs.provider_url_AVAX4,
+//  envConfigs.provider_url_AVAX5,
+//  envConfigs.provider_url_AVAX6,
+//  envConfigs.provider_url_AVAX7,
+//  envConfigs.provider_url_AVAX8,
+//  envConfigs.provider_url_AVAX9,
+//  envConfigs.provider_url_AVAX10,
+//  envConfigs.provider_url_AVAX11,
+//  envConfigs.provider_url_AVAX12,
+//  envConfigs.provider_url_AVAX13,
+//  envConfigs.provider_url_AVAX14,
+//  envConfigs.provider_url_AVAX15,
+// ];
+
+// // Function to get random element from array
+// function getRandomElement<T>(array: T[]): T {
+//   return array[Math.floor(Math.random() * array.length)];
+// }
+
+// let currentKeyIndex = 0;
+
+// function getNextAdminKey(): string {
+//   const key = adminPrivateKeys[currentKeyIndex];
+//   currentKeyIndex = (currentKeyIndex + 1) % adminPrivateKeys.length;
+//   return key;
+// }
+
+
+// let globalBatch: {
+//   transactions: {
+//     userId: string;
+//     gameId: number;
+//     eventId: number;
+//     metadata: string;
+//     userData: any;
+//   }[];
+//   timeout: NodeJS.Timeout | null;
+//   batchStartTime: number | null;
+// } = {
+//   transactions: [],
+//   timeout: null,
+//   batchStartTime: null,
+// };
+
+// // Helper function to process a single user's batch
+
+// async function processGlobalBatch() {
+//   if (isProcessingBatch) {
+//     pendingProcessRequest = true;
+//     return;
+//   }
+
+//   if (globalBatch.transactions.length === 0) {
+//     return;
+//   }
+
+//   isProcessingBatch = true;
+
+//   const transactionsToProcess = [...globalBatch.transactions];
+//   globalBatch.transactions = [];
+//   if (globalBatch.timeout) {
+//     clearTimeout(globalBatch.timeout);
+//   }
+//   globalBatch.timeout = null;
+//   globalBatch.batchStartTime = null;
+
+//   let processedCount = 0;
+//   const transactionHashes: string[] = [];
+
+//   const requeueTransactions = () => {
+//     if (processedCount >= transactionsToProcess.length) {
+//       return;
+//     }
+
+//     const remaining = transactionsToProcess.slice(processedCount);
+//     if (remaining.length === 0) {
+//       return;
+//     }
+
+//     globalBatch.transactions = [...remaining, ...globalBatch.transactions];
+//     globalBatch.batchStartTime = Date.now();
+
+//     if (globalBatch.timeout) {
+//       clearTimeout(globalBatch.timeout);
+//     }
+
+//     globalBatch.timeout = setTimeout(() => {
+//       processGlobalBatch().catch((error) =>
+//         logger.error("Error processing re-queued batch", { error })
+//       );
+//     }, BATCH_TIMEOUT_MS);
+//   };
+
+//   const schedulePendingBatch = () => {
+//     if (globalBatch.transactions.length === 0) {
+//       return;
+//     }
+
+//     setImmediate(() => {
+//       processGlobalBatch().catch((error) =>
+//         logger.error("Error in scheduled batch processing", { error })
+//       );
+//     });
+//   };
+
+//   try {
+//     const privKey = getNextAdminKey();
+//     // console.log(privKey, "privvvvvvvvvvvvvvvvv");
+
+//     let providerSwitchCount = 0;
+//     let rpcUrl = getRandomElement(rpcProviders);
+//     let rpcHttpProvider: ethers.providers.JsonRpcProvider | null = null;
+
+//     while (!rpcHttpProvider && providerSwitchCount <= MAX_PROVIDER_SWITCHES) {
+//       try {
+//         rpcHttpProvider = new ethers.providers.JsonRpcProvider(rpcUrl);
+//         await rpcHttpProvider.getNetwork();
+//       } catch (providerError) {
+//         logger.warn("Failed to initialise RPC provider", {
+//           rpcUrl,
+//           providerSwitchCount,
+//           error: providerError,
+//         });
+//         providerSwitchCount += 1;
+//         if (providerSwitchCount > MAX_PROVIDER_SWITCHES) {
+//           throw providerError;
+//         }
+//         await delay(RPC_RETRY_DELAY_MS * providerSwitchCount);
+//         rpcUrl = getRandomElement(rpcProviders);
+//       }
+//     }
+
+//     if (!rpcHttpProvider) {
+//       throw new Error("Unable to initialise RPC provider");
+//     }
+
+//     // console.log("Using RPC provider:", rpcUrl);
+
+//     const createWalletWithProvider = () =>
+//       new ethers.Wallet(privKey, rpcHttpProvider!);
+
+//     let wallet = createWalletWithProvider();
+//     const wallet_address = await wallet.getAddress();
+
+//     // console.log("Using admin wallet:", wallet_address);
+
+//     const chainName = avalanche;
+
+//     const contractAddress = envConfigs.contract_address_avax;
+//     const abi = [
+//       {
+//         "anonymous": false,
+//         "inputs": [
+//           {
+//             "indexed": true,
+//             "internalType": "address",
+//             "name": "user",
+//             "type": "address"
+//           },
+//           {
+//             "indexed": true,
+//             "internalType": "uint256",
+//             "name": "gameId",
+//             "type": "uint256"
+//           },
+//           {
+//             "indexed": false,
+//             "internalType": "string",
+//             "name": "metadata",
+//             "type": "string"
+//           }
+//         ],
+//         "name": "MetadataStored",
+//         "type": "event"
+//       },
+//       {
+//         "inputs": [
+//           {
+//             "internalType": "address",
+//             "name": "user",
+//             "type": "address"
+//           },
+//           {
+//             "internalType": "string",
+//             "name": "metadata",
+//             "type": "string"
+//           },
+//           {
+//             "internalType": "uint256",
+//             "name": "gameId",
+//             "type": "uint256"
+//           }
+//         ],
+//         "name": "storeMetadata",
+//         "outputs": [],
+//         "stateMutability": "nonpayable",
+//         "type": "function"
+//       }
+//     ];
+
+//     const contractInterface = new ethers.Contract(
+//       contractAddress,
+//       abi,
+//       rpcHttpProvider
+//     );
+
+//     let nonce = await getTrackedNonce(rpcHttpProvider, wallet_address);
+//     // console.log(nonce, "nnceeee");
+
+//     for (let index = 0; index < transactionsToProcess.length; index++) {
+//       const tx = transactionsToProcess[index];
+//       const callData = contractInterface.interface.encodeFunctionData(
+//         "storeMetadata",
+//         [
+//           tx.userData.saAddress,
+//           tx.metadata,
+//           tx.gameId,
+//         ]
+//       );
+
+//       // Track nonce immediately without waiting for success
+//       markNonceUsed(wallet_address, nonce);
+//       const currentNonce = nonce;
+//       nonce += 1;
+//       processedCount += 1;
+
+//       wallet.sendTransaction({
+//         to: contractAddress,
+//         data: callData,
+//         value: 0n,
+//         nonce: currentNonce,
+//       }).then((trx) => {
+//         // console.log(trx.hash ,"...................hah cominggggg...");
+//         transactionHashes.push(trx.hash);
+//       }).catch((error) => {
+//         logger.error("Error sending transaction", {
+//           wallet: wallet_address,
+//           nonce: currentNonce,
+//           rpcUrl,
+//           error,
+//         });
+
+//         if (isNonceError(error)) {
+//           resetTrackedNonce(wallet_address);
+//           // Note: Nonce tracking is already updated, so we continue
+//         }
+
+//         if (isRetryableNetworkError(error) && providerSwitchCount < MAX_PROVIDER_SWITCHES) {
+//           providerSwitchCount += 1;
+//           delay(RPC_RETRY_DELAY_MS * providerSwitchCount).then(() => {
+//             rpcUrl = getRandomElement(rpcProviders);
+//             rpcHttpProvider = new ethers.providers.JsonRpcProvider(rpcUrl);
+//             wallet = createWalletWithProvider();
+//             logger.warn("Switched RPC provider due to retryable error", {
+//               wallet: wallet_address,
+//               rpcUrl,
+//               providerSwitchCount,
+//             });
+//           });
+//         } else {
+//           // If we can't retry, log the error
+//           logger.error("Transaction failed and cannot be retried", {
+//             wallet: wallet_address,
+//             nonce: currentNonce,
+//             error,
+//           });
+//         }
+//       });
+//     }
+
+//     // if (transactionHashes.length > 0) {
+//     //   console.log(
+//     //     "Last transaction hash:",
+//     //     transactionHashes[transactionHashes.length - 1]
+//     //   );
+//     // }
+
+//     for (let index = 0; index < transactionsToProcess.length; index++) {
+//       const tx = transactionsToProcess[index];
+//       const hash = transactionHashes[index];
+//       await dbservices.User.saveTransactionDetails_Avax(
+//         tx.gameId,
+//         tx.userData.id,
+//         tx.eventId,
+//         hash,
+//         chainName.name,
+//         "0"
+//       );
+//     }
+
+//     logger.info(
+//       `Successfully processed ${transactionsToProcess.length} transactions for admin wallet ${wallet_address}`,
+//       {
+//         rpc: rpcUrl,
+//         hashes: transactionHashes,
+//       }
+//     );
+//   } catch (error) {
+//     console.error(`Error processing global batch:`, error);
+//     requeueTransactions();
+//   } finally {
+//     isProcessingBatch = false;
+
+//     if (pendingProcessRequest) {
+//       pendingProcessRequest = false;
+//       schedulePendingBatch();
+//     }
+//   }
+// }
+
+
+const BATCH_SIZE = 50; // Process multiple transactions in parallel
+const BATCH_TIMEOUT_MS = 2 * 60 * 1000;
 const RPC_RETRY_DELAY_MS = 2_000;
 const MAX_PROVIDER_SWITCHES = 3;
 const MAX_TX_RETRIES = 3;
+const PARALLEL_WALLETS = 8; // Process with multiple wallets simultaneously
+const MAX_CONCURRENT_TXS = 100; // Maximum concurrent transactions
+
 const nonceTracker = new Map<string, number>();
+const walletLocks = new Map<string, boolean>();
 let isProcessingBatch = false;
 let pendingProcessRequest = false;
+
 const retryableRpcErrors = new Set([
   "ETIMEDOUT",
   "ECONNRESET",
@@ -93,8 +506,6 @@ const isRetryableNetworkError = (error: any) => {
   );
 };
 
-// Structure to track global batch
-
 const adminPrivateKeys = [
   envConfigs.adminPrivatKey_avax,
   envConfigs.adminPrivatKey_avax1,
@@ -107,37 +518,39 @@ const adminPrivateKeys = [
 ];
 
 const rpcProviders = [
- envConfigs.provider_url_AVAX,
- envConfigs.provider_url_AVAX1,
- envConfigs.provider_url_AVAX2,
- envConfigs.provider_url_AVAX3,
- envConfigs.provider_url_AVAX4,
- envConfigs.provider_url_AVAX5,
- envConfigs.provider_url_AVAX6,
- envConfigs.provider_url_AVAX7,
- envConfigs.provider_url_AVAX8,
- envConfigs.provider_url_AVAX9,
- envConfigs.provider_url_AVAX10,
- envConfigs.provider_url_AVAX11,
- envConfigs.provider_url_AVAX12,
- envConfigs.provider_url_AVAX13,
- envConfigs.provider_url_AVAX14,
- envConfigs.provider_url_AVAX15,
+  envConfigs.provider_url_AVAX,
+  envConfigs.provider_url_AVAX1,
+  envConfigs.provider_url_AVAX2,
+  envConfigs.provider_url_AVAX3,
+  envConfigs.provider_url_AVAX4,
+  envConfigs.provider_url_AVAX5,
+  envConfigs.provider_url_AVAX6,
+  envConfigs.provider_url_AVAX7,
+  envConfigs.provider_url_AVAX8,
+  envConfigs.provider_url_AVAX9,
+  envConfigs.provider_url_AVAX10,
+  envConfigs.provider_url_AVAX11,
+  envConfigs.provider_url_AVAX12,
+  envConfigs.provider_url_AVAX13,
+  envConfigs.provider_url_AVAX14,
+  envConfigs.provider_url_AVAX15,
 ];
 
-// Function to get random element from array
 function getRandomElement<T>(array: T[]): T {
   return array[Math.floor(Math.random() * array.length)];
 }
 
-let currentKeyIndex = 0;
+// Create persistent provider pool
+const providerPool = rpcProviders.map(
+  (url) => new ethers.providers.JsonRpcProvider(url)
+);
 
-function getNextAdminKey(): string {
-  const key = adminPrivateKeys[currentKeyIndex];
-  currentKeyIndex = (currentKeyIndex + 1) % adminPrivateKeys.length;
-  return key;
+let currentProviderIndex = 0;
+function getNextProvider() {
+  const provider = providerPool[currentProviderIndex];
+  currentProviderIndex = (currentProviderIndex + 1) % providerPool.length;
+  return provider;
 }
-
 
 let globalBatch: {
   transactions: {
@@ -155,7 +568,126 @@ let globalBatch: {
   batchStartTime: null,
 };
 
-// Helper function to process a single user's batch
+// Split transactions across multiple wallets
+function splitTransactionsByWallet(
+  transactions: any[]
+): Map<number, any[]> {
+  const walletBatches = new Map<number, any[]>();
+  
+  transactions.forEach((tx, index) => {
+    const walletIndex = index % PARALLEL_WALLETS;
+    if (!walletBatches.has(walletIndex)) {
+      walletBatches.set(walletIndex, []);
+    }
+    walletBatches.get(walletIndex)!.push(tx);
+  });
+  
+  return walletBatches;
+}
+
+// Process single transaction with retry logic
+async function sendSingleTransaction(
+  wallet: ethers.Wallet,
+  provider: ethers.providers.JsonRpcProvider,
+  contractAddress: string,
+  contractInterface: ethers.Contract,
+  tx: any,
+  nonce: number,
+  walletAddress: string
+): Promise<{ hash: string; tx: any } | null> {
+  let retries = 0;
+  let currentProvider = provider;
+  
+  while (retries < MAX_TX_RETRIES) {
+    try {
+      const callData = contractInterface.interface.encodeFunctionData(
+        "storeMetadata",
+        [tx.userData.saAddress, tx.metadata, tx.gameId]
+      );
+
+      const txResponse = await wallet.sendTransaction({
+        to: contractAddress,
+        data: callData,
+        value: 0n,
+        nonce: nonce,
+        gasLimit: 100000, // Set explicit gas limit
+      });
+
+      return { hash: txResponse.hash, tx };
+    } catch (error) {
+      logger.error("Error sending transaction", {
+        wallet: walletAddress,
+        nonce,
+        retry: retries,
+        error,
+      });
+
+      if (isNonceError(error)) {
+        resetTrackedNonce(walletAddress);
+        return null; // Skip this transaction
+      }
+
+      if (isRetryableNetworkError(error) && retries < MAX_TX_RETRIES - 1) {
+        retries++;
+        await delay(RPC_RETRY_DELAY_MS * retries);
+        
+        // Switch provider
+        currentProvider = getNextProvider();
+        wallet = new ethers.Wallet(wallet.privateKey, currentProvider);
+      } else {
+        logger.error("Transaction failed after retries", {
+          wallet: walletAddress,
+          nonce,
+          error,
+        });
+        return null;
+      }
+    }
+  }
+  
+  return null;
+}
+
+// Process transactions for a single wallet in parallel
+async function processWalletBatch(
+  walletIndex: number,
+  transactions: any[],
+  contractAddress: string,
+  abi: any[]
+): Promise<Array<{ hash: string; tx: any }>> {
+  const privKey = adminPrivateKeys[walletIndex];
+  const provider = getNextProvider();
+  
+  let wallet = new ethers.Wallet(privKey, provider);
+  const walletAddress = await wallet.getAddress();
+
+  const contractInterface = new ethers.Contract(
+    contractAddress,
+    abi,
+    provider
+  );
+
+  let nonce = await getTrackedNonce(provider, walletAddress);
+  
+  // Send all transactions in parallel with Promise.all
+  const txPromises = transactions.map(async (tx, index) => {
+    const txNonce = nonce + index;
+    markNonceUsed(walletAddress, txNonce);
+    
+    return sendSingleTransaction(
+      wallet,
+      provider,
+      contractAddress,
+      contractInterface,
+      tx,
+      txNonce,
+      walletAddress
+    );
+  });
+
+  const results = await Promise.all(txPromises);
+  return results.filter((r) => r !== null) as Array<{ hash: string; tx: any }>;
+}
 
 async function processGlobalBatch() {
   if (isProcessingBatch) {
@@ -177,33 +709,6 @@ async function processGlobalBatch() {
   globalBatch.timeout = null;
   globalBatch.batchStartTime = null;
 
-  let processedCount = 0;
-  const transactionHashes: string[] = [];
-
-  const requeueTransactions = () => {
-    if (processedCount >= transactionsToProcess.length) {
-      return;
-    }
-
-    const remaining = transactionsToProcess.slice(processedCount);
-    if (remaining.length === 0) {
-      return;
-    }
-
-    globalBatch.transactions = [...remaining, ...globalBatch.transactions];
-    globalBatch.batchStartTime = Date.now();
-
-    if (globalBatch.timeout) {
-      clearTimeout(globalBatch.timeout);
-    }
-
-    globalBatch.timeout = setTimeout(() => {
-      processGlobalBatch().catch((error) =>
-        logger.error("Error processing re-queued batch", { error })
-      );
-    }, BATCH_TIMEOUT_MS);
-  };
-
   const schedulePendingBatch = () => {
     if (globalBatch.transactions.length === 0) {
       return;
@@ -217,48 +722,7 @@ async function processGlobalBatch() {
   };
 
   try {
-    const privKey = getNextAdminKey();
-    // console.log(privKey, "privvvvvvvvvvvvvvvvv");
-
-    let providerSwitchCount = 0;
-    let rpcUrl = getRandomElement(rpcProviders);
-    let rpcHttpProvider: ethers.providers.JsonRpcProvider | null = null;
-
-    while (!rpcHttpProvider && providerSwitchCount <= MAX_PROVIDER_SWITCHES) {
-      try {
-        rpcHttpProvider = new ethers.providers.JsonRpcProvider(rpcUrl);
-        await rpcHttpProvider.getNetwork();
-      } catch (providerError) {
-        logger.warn("Failed to initialise RPC provider", {
-          rpcUrl,
-          providerSwitchCount,
-          error: providerError,
-        });
-        providerSwitchCount += 1;
-        if (providerSwitchCount > MAX_PROVIDER_SWITCHES) {
-          throw providerError;
-        }
-        await delay(RPC_RETRY_DELAY_MS * providerSwitchCount);
-        rpcUrl = getRandomElement(rpcProviders);
-      }
-    }
-
-    if (!rpcHttpProvider) {
-      throw new Error("Unable to initialise RPC provider");
-    }
-
-    // console.log("Using RPC provider:", rpcUrl);
-
-    const createWalletWithProvider = () =>
-      new ethers.Wallet(privKey, rpcHttpProvider!);
-
-    let wallet = createWalletWithProvider();
-    const wallet_address = await wallet.getAddress();
-
-    // console.log("Using admin wallet:", wallet_address);
-
     const chainName = avalanche;
-
     const contractAddress = envConfigs.contract_address_avax;
     const abi = [
       {
@@ -311,106 +775,62 @@ async function processGlobalBatch() {
       }
     ];
 
-    const contractInterface = new ethers.Contract(
-      contractAddress,
-      abi,
-      rpcHttpProvider
+    // Split transactions across wallets
+    const walletBatches = splitTransactionsByWallet(transactionsToProcess);
+    
+    // Process all wallets in parallel
+    const walletPromises = Array.from(walletBatches.entries()).map(
+      ([walletIndex, txs]) =>
+        processWalletBatch(walletIndex, txs, contractAddress, abi)
     );
 
-    let nonce = await getTrackedNonce(rpcHttpProvider, wallet_address);
-    // console.log(nonce, "nnceeee");
+    const allResults = await Promise.all(walletPromises);
+    const successfulTxs = allResults.flat();
 
-    for (let index = 0; index < transactionsToProcess.length; index++) {
-      const tx = transactionsToProcess[index];
-      const callData = contractInterface.interface.encodeFunctionData(
-        "storeMetadata",
-        [
-          tx.userData.saAddress,
-          tx.metadata,
-          tx.gameId,
-        ]
-      );
-
-      // Track nonce immediately without waiting for success
-      markNonceUsed(wallet_address, nonce);
-      const currentNonce = nonce;
-      nonce += 1;
-      processedCount += 1;
-
-      wallet.sendTransaction({
-        to: contractAddress,
-        data: callData,
-        value: 0n,
-        nonce: currentNonce,
-      }).then((trx) => {
-        // console.log(trx.hash ,"...................hah cominggggg...");
-        transactionHashes.push(trx.hash);
-      }).catch((error) => {
-        logger.error("Error sending transaction", {
-          wallet: wallet_address,
-          nonce: currentNonce,
-          rpcUrl,
-          error,
-        });
-
-        if (isNonceError(error)) {
-          resetTrackedNonce(wallet_address);
-          // Note: Nonce tracking is already updated, so we continue
-        }
-
-        if (isRetryableNetworkError(error) && providerSwitchCount < MAX_PROVIDER_SWITCHES) {
-          providerSwitchCount += 1;
-          delay(RPC_RETRY_DELAY_MS * providerSwitchCount).then(() => {
-            rpcUrl = getRandomElement(rpcProviders);
-            rpcHttpProvider = new ethers.providers.JsonRpcProvider(rpcUrl);
-            wallet = createWalletWithProvider();
-            logger.warn("Switched RPC provider due to retryable error", {
-              wallet: wallet_address,
-              rpcUrl,
-              providerSwitchCount,
-            });
-          });
-        } else {
-          // If we can't retry, log the error
-          logger.error("Transaction failed and cannot be retried", {
-            wallet: wallet_address,
-            nonce: currentNonce,
-            error,
-          });
-        }
-      });
-    }
-
-    // if (transactionHashes.length > 0) {
-    //   console.log(
-    //     "Last transaction hash:",
-    //     transactionHashes[transactionHashes.length - 1]
-    //   );
-    // }
-
-    for (let index = 0; index < transactionsToProcess.length; index++) {
-      const tx = transactionsToProcess[index];
-      const hash = transactionHashes[index];
-      await dbservices.User.saveTransactionDetails_Avax(
+    // Batch database saves - Don't await individual saves
+    const dbPromises = successfulTxs.map(({ hash, tx }) =>
+      dbservices.User.saveTransactionDetails_Avax(
         tx.gameId,
         tx.userData.id,
         tx.eventId,
         hash,
         chainName.name,
         "0"
-      );
-    }
+      ).catch((error) => {
+        logger.error("Database save failed", {
+          gameId: tx.gameId,
+          userId: tx.userData.id,
+          hash,
+          error,
+        });
+      })
+    );
+
+    // Fire and forget database saves, or await them all at once
+    await Promise.allSettled(dbPromises);
 
     logger.info(
-      `Successfully processed ${transactionsToProcess.length} transactions for admin wallet ${wallet_address}`,
+      `Successfully processed ${successfulTxs.length}/${transactionsToProcess.length} transactions across ${walletBatches.size} wallets`,
       {
-        rpc: rpcUrl,
-        hashes: transactionHashes,
+        hashes: successfulTxs.map((r) => r.hash),
       }
     );
   } catch (error) {
     console.error(`Error processing global batch:`, error);
-    requeueTransactions();
+    
+    // Requeue failed transactions
+    globalBatch.transactions = [...transactionsToProcess, ...globalBatch.transactions];
+    globalBatch.batchStartTime = Date.now();
+
+    if (globalBatch.timeout) {
+      clearTimeout(globalBatch.timeout);
+    }
+
+    globalBatch.timeout = setTimeout(() => {
+      processGlobalBatch().catch((error) =>
+        logger.error("Error processing re-queued batch", { error })
+      );
+    }, BATCH_TIMEOUT_MS);
   } finally {
     isProcessingBatch = false;
 
