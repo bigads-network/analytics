@@ -2,8 +2,9 @@ import { Request, Response } from "express";
 import { privateKeyToAccount } from "viem/accounts";
 import { createWalletClient, http } from "viem";
 import { sha512_256 } from "js-sha512";
-import { ModularSdk, EtherspotBundler, sleep } from "@etherspot/modular-sdk";
+import { ModularSdk } from "@etherspot/modular-sdk";
 import { ethers } from "ethers";
+import pLimit from "p-limit";
 import {
   envConfigs,
 } from "../config/envconfig";
@@ -12,7 +13,12 @@ import dbservices from "../services/dbservices";
 import { avalanche, polygon, polygonAmoy, xdc } from "viem/chains";
 import logger from "../config/logger";
 import { dashboardCache } from "../config/cache";
+import NodeCache from "node-cache";
 import { rpc } from "viem/utils";
+import {
+  getCounterFactualAddress,
+  withEtherspotClient,
+} from "../services/etherspot";
 
 // const BATCH_SIZE = 1; // Ensure every incoming event is its own on-chain transaction
 // const BATCH_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
@@ -422,13 +428,15 @@ import { rpc } from "viem/utils";
 // }
 
 
-const BATCH_SIZE = 50; // Process multiple transactions in parallel
-const BATCH_TIMEOUT_MS = 2 * 60 * 1000;
+const BATCH_SIZE = 30; // Process immediately for testing 3 TPS
+const BATCH_TIMEOUT_MS = 12 * 1000; // 1 second timeout for faster processing
 const RPC_RETRY_DELAY_MS = 2_000;
 const MAX_PROVIDER_SWITCHES = 3;
 const MAX_TX_RETRIES = 3;
 const PARALLEL_WALLETS = 8; // Process with multiple wallets simultaneously
 const MAX_CONCURRENT_TXS = 100; // Maximum concurrent transactions
+const txLimiter = pLimit(MAX_CONCURRENT_TXS); // Concurrency limiter for transactions
+const dbCache = new NodeCache({ stdTTL: 30, checkperiod: 60 }); // 30s TTL for DB lookups
 
 const nonceTracker = new Map<string, number>();
 const walletLocks = new Map<string, boolean>();
@@ -595,9 +603,11 @@ async function sendSingleTransaction(
   nonce: number,
   walletAddress: string
 ): Promise<{ hash: string; tx: any } | null> {
+  const txStart = Date.now();
+  logger.info("Sending transaction", { userId: tx.userId, nonce, wallet: walletAddress });
   let retries = 0;
   let currentProvider = provider;
-  
+
   while (retries < MAX_TX_RETRIES) {
     try {
       const callData = contractInterface.interface.encodeFunctionData(
@@ -605,14 +615,18 @@ async function sendSingleTransaction(
         [tx.userData.saAddress, tx.metadata, tx.gameId]
       );
 
-      const txResponse = await wallet.sendTransaction({
+      const txResponse = await txLimiter(() => wallet.sendTransaction({
         to: contractAddress,
         data: callData,
         value: 0n,
         nonce: nonce,
-        gasLimit: 100000, // Set explicit gas limit
-      });
+        gasLimit: 100000,
+        maxFeePerGas: ethers.utils.parseUnits("1.4", "gwei"), // 10 gwei = current network + buffer
+        maxPriorityFeePerGas: ethers.utils.parseUnits("0.4", "gwei"), // 2 gwei priority for faster confirmation
+      }));
 
+      const txEnd = Date.now();
+      logger.info("Transaction sent", { hash: txResponse.hash, sendTimeMs: txEnd - txStart });
       return { hash: txResponse.hash, tx };
     } catch (error) {
       logger.error("Error sending transaction", {
@@ -690,15 +704,20 @@ async function processWalletBatch(
 }
 
 async function processGlobalBatch() {
+  logger.info("processGlobalBatch called", { transactions: globalBatch.transactions.length, isProcessing: isProcessingBatch });
   if (isProcessingBatch) {
     pendingProcessRequest = true;
+    logger.info("Batch already processing, request queued");
     return;
   }
 
   if (globalBatch.transactions.length === 0) {
+    logger.info("No transactions to process");
     return;
   }
 
+  const batchStartTime = Date.now();
+  logger.info("Starting batch processing", { batchSize: globalBatch.transactions.length, startTime: batchStartTime });
   isProcessingBatch = true;
 
   const transactionsToProcess = [...globalBatch.transactions];
@@ -815,6 +834,9 @@ async function processGlobalBatch() {
         hashes: successfulTxs.map((r) => r.hash),
       }
     );
+    const batchEndTime = Date.now();
+    const processingTime = batchEndTime - batchStartTime;
+    logger.info("Batch processing completed", { processingTimeMs: processingTime, tps: successfulTxs.length / (processingTime / 1000) });
   } catch (error) {
     console.error(`Error processing global batch:`, error);
     
@@ -1254,9 +1276,15 @@ export default class User {
   // }
 
   static fireEvent = async (req: Request, res: Response): Promise<any> => {
+    const requestStart = Date.now();
+    logger.info("fireEvent called", { eventId: req.params.eventId, body: req.body, timestamp: requestStart });
     try {
       const eventId = req.params.eventId;
+      const dbStart = Date.now();
+      logger.info("Getting game ID for event", { eventId });
       const { gameId, id } = await dbservices.User.getGameid(eventId);
+      const dbEnd = Date.now();
+      logger.info("Game ID retrieved", { eventId, gameId, id, dbTimeMs: dbEnd - dbStart });
     //  console.log("step 1 - Enter");
       // if (!gameId || !id) {
       //   return res
@@ -1277,36 +1305,52 @@ export default class User {
       // }
       
       const { devicedata } = req.body;
+      logger.info("Checking device data", { devicedata });
       if (!devicedata) {
+        logger.warn("Device data missing");
         return res
           .status(400)
           .json({ status: false, message: "Device data is required" });
       }
 
-      // console.log(devicedata)
-      let userExist = await dbservices.User.userExits(devicedata);
-      const gameDetails = await dbservices.User.getGameDetails(gameId, eventId);
+      const userCheckStart = Date.now();
+      logger.info("Checking user exists");
+      const cacheKey = `userExits:${JSON.stringify(devicedata)}`;
+      let userExist = dbCache.get(cacheKey);
+      if (!userExist) {
+        userExist = await dbservices.User.userExits(devicedata);
+        if (userExist) dbCache.set(cacheKey, userExist);
+      }
+      const userCheckEnd = Date.now();
+      logger.info("User check complete", { userExists: !!userExist, userId: (userExist as any)?.userId, userCheckTimeMs: userCheckEnd - userCheckStart });
+      const gameCacheKey = `gameDetails:${gameId}:${eventId}`;
+      let gameDetails = dbCache.get(gameCacheKey);
+      if (!gameDetails) {
+        gameDetails = await dbservices.User.getGameDetails(gameId, eventId);
+        if (gameDetails) dbCache.set(gameCacheKey, gameDetails);
+      }
 
       if (userExist) {
-        if (gameDetails.creatorId === userExist.id) {
+        if ((gameDetails as any).creatorId === (userExist as any).id) {
           return res
             .status(500)
             .send({ status: false, message: "Cannot fire event for own game" });
         }
       }
 
-      const userId = userExist ? userExist.userId : `user_${this.generateId()}`;
+      const userId = userExist ? (userExist as any).userId : `user_${this.generateId()}`;
       const datetime = new Date().toISOString();
 
-      // If user doesn't exist, create them first
+      // If user doesn't exist, create them first (async provisioning)
       if (!userExist) {
-        // console.log("not exisssss")
+        const newUserStart = Date.now();
+        logger.info("Creating new user", { userId });
         const privKey = "0x" + sha512_256(userId);
-        // const privKey ="0x63a2075b2432ec19652761fa4d3c585bf5ccb6360c5a5666ebb2e2b63929cc41";
         const rpcUrl = getRandomElement(rpcProviders);
-        const rpcHttpProvider= new ethers.providers.JsonRpcProvider(rpcUrl);
+        const rpcHttpProvider = new ethers.providers.JsonRpcProvider(rpcUrl);
         const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
         const wallet_address = await wallet.getAddress();
+
         if (!rpcHttpProvider) {
           return res
             .status(500)
@@ -1318,28 +1362,41 @@ export default class User {
             .json({ status: false, message: "Error creating wallet" });
         }
 
-        // console.log(wallet_address, "wallet_address");
-        // console.log(wallet_address ,"wallet addressssss")
-        // return ;
-        const chainName = avalanche;
-
-        const modularSdk = new ModularSdk(privKey, {
-          chainId: 43114, // XDC Mainnet
-          bundlerProvider: new EtherspotBundler(
-            43114,
-            "etherspot_3ZmG9JseTT1MD3v9QgPezHKB"
-          ),
-        });
-
-        const saAddress = await modularSdk.getCounterFactualAddress();
-        // console.log(saAddress ,"Account................................");
-        const saveResult = await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
-
-        if (!saveResult) {
-            throw new Error("Error saving user details");
+        // Provision smart account synchronously for new users to avoid "pending" address errors
+        let saAddress: string;
+        const saStart = Date.now();
+        try {
+          logger.info("Provisioning smart account", { userId });
+          saAddress = await getCounterFactualAddress({
+            privateKey: privKey,
+            chainId: 43114,
+          });
+          const saEnd = Date.now();
+          logger.info("Smart account provisioned", { userId, saAddress, saTimeMs: saEnd - saStart });
+        } catch (error) {
+          logger.error("Failed to provision smart account for new user", {
+            userId,
+            error,
+          });
+          return res.status(500).json({
+            status: false,
+            message: "Failed to create smart account",
+          });
         }
 
+        // Save user with real saAddress
+        const saveResult = await dbservices.User.saveUser(
+          userId,
+          devicedata,
+          saAddress,
+          wallet_address
+        );
+        if (!saveResult) {
+          throw new Error("Error saving user details");
+        }
         userExist = saveResult;
+        const newUserEnd = Date.now();
+        logger.info("New user created", { userId, totalTimeMs: newUserEnd - newUserStart });
         // userExist = await dbservices.User.saveUser(
         //   userId,
         //   devicedata,
@@ -1349,13 +1406,13 @@ export default class User {
       }
 
       const metadata = JSON.stringify({
-        role: userExist?.role,
-        // smartAccountAddress: userExist?.walletAddress,
-        gameId: gameDetails.id,
-        eventId: gameDetails.events[0].id,
+        role: (userExist as any)?.role,
+        gameId: (gameDetails as any).id,
+        eventId: (gameDetails as any).events[0].id,
       });
 
       // Add transaction to global batch
+      logger.info("Adding to batch", { userId, gameId, eventId: id, batchSize: globalBatch.transactions.length });
       globalBatch.transactions.push({
         userId,
         gameId,
@@ -1363,6 +1420,7 @@ export default class User {
         metadata,
         userData: userExist,
       });
+      logger.info("Transaction added to batch", { batchSize: globalBatch.transactions.length });
 
       // Start timer if this is the first transaction in batch
       if (globalBatch.transactions.length === 1) {
@@ -1383,10 +1441,15 @@ export default class User {
         ? BATCH_TIMEOUT_MS - (Date.now() - globalBatch.batchStartTime)
         : 0;
 
-      logger.info(
-        ` current batch size:${globalBatch.transactions.length} with remaining time: ${remainingTime}`
-      );
       // Immediate response with tracking information
+      const responseTime = Date.now() - requestStart;
+      logger.info("fireEvent response sent", {
+        eventId,
+        gameId,
+        userId,
+        batchSize: globalBatch.transactions.length,
+        totalRequestTimeMs: responseTime
+      });
       return res.status(202).json({
         status: true,
         message: "Event received and being processed",
@@ -1394,17 +1457,16 @@ export default class User {
         gameId: gameId,
         userId: userId,
         timestamp: datetime,
-        // batchInfo: {
-        //   currentBatchSize: globalBatch.transactions.length,
-        //   batchStartedAt: new Date(globalBatch.batchStartTime!).toISOString(),
-        //   willProcessIn:
-        //     globalBatch.transactions.length >= BATCH_SIZE
-        //       ? "Immediately (batch size reached)"
-        //       : `${Math.ceil(remainingTime / 1000)} seconds`,
-        // },
+        batchInfo: {
+          currentBatchSize: globalBatch.transactions.length,
+          willProcessIn:
+            globalBatch.transactions.length >= BATCH_SIZE
+              ? "Immediately (batch size reached)"
+              : `${Math.ceil(remainingTime / 1000)} seconds`,
+        },
       });
     } catch (error) {
-      console.error("Error in fireEvent:", error);
+      logger.error("Error in fireEvent:", { error: error.message, stack: error.stack, eventId: req.params.eventId });
       res.status(500).json({
         status: false,
         message: error.message || "Unexpected error occurred",

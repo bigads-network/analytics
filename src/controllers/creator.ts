@@ -4,10 +4,11 @@ import dbservices from '../services/dbservices';
 import { generateAuthTokens } from '../config/token';
 import { sha512_256 } from 'js-sha512';
 import { ethers } from 'ethers';
-import { ModularSdk, EtherspotBundler, sleep } from "@etherspot/modular-sdk";
 import { chainIdToBundlerUrl, chainIdToChainName, envConfigs } from '../config/envconfig';
+import { getEtherspotClient } from "../services/etherspot";
 import { generateGameToken } from '../config/gameToken';
 import { polygon, xdc } from 'viem/chains';
+import logger from "../config/logger";
 
 export default class Creator{
    
@@ -43,15 +44,24 @@ export default class Creator{
 
             const chainName = xdc;
 
-            const modularSdk = new ModularSdk(privKey, {
-                chainId: 50, // XDC Mainnet
-                bundlerProvider: new EtherspotBundler(
-                  50,
-                  envConfigs.etherspot_api_Key
-                ),
+            let saAddress: string;
+            try {
+              const modularSdk = await getEtherspotClient({
+                privateKey: privKey,
+                chainId: 50,
               });
 
-            const saAddress = await modularSdk.getCounterFactualAddress();
+              saAddress = await modularSdk.getCounterFactualAddress();
+            } catch (error: any) {
+              logger.error("Failed to provision creator smart account", {
+                userId,
+                error: error?.message || error?.shortMessage || error,
+              });
+              return res.status(502).json({
+                status: false,
+                message: "Failed to provision smart account",
+              });
+            }
               //   console.log(saAddress ,"Account................................");
             const saveResult = await dbservices.Creator.saveCreator(userId, devicedata, saAddress, wallet_address);
 
@@ -116,15 +126,24 @@ export default class Creator{
 
             const chainName = xdc;
 
-            const modularSdk = new ModularSdk(privKey, {
-                chainId: 43114, //  Mainnet
-                bundlerProvider: new EtherspotBundler(
-                  43114,
-                  envConfigs.etherspot_api_Key
-                ),
+            let saAddress: string;
+            try {
+              const modularSdk = await getEtherspotClient({
+                privateKey: privKey,
+                chainId: 43114,
               });
 
-            const saAddress = await modularSdk.getCounterFactualAddress();
+              saAddress = await modularSdk.getCounterFactualAddress();
+            } catch (error: any) {
+              logger.error("Failed to provision admin smart account", {
+                userId,
+                error: error?.message || error?.shortMessage || error,
+              });
+              return res.status(502).json({
+                status: false,
+                message: "Failed to provision smart account",
+              });
+            }
               //   console.log(saAddress ,"Account................................");
             const saveResult = await dbservices.Creator.saveAdmin(userId, devicedata, saAddress, wallet_address);
 
@@ -199,15 +218,24 @@ export default class Creator{
 
             const chainName = xdc;
 
-            const modularSdk = new ModularSdk(privKey, {
-                chainId: 50, // XDC Mainnet
-                bundlerProvider: new EtherspotBundler(
-                  50,
-                  envConfigs.etherspot_api_Key
-                ),
+            let saAddress: string;
+            try {
+              const modularSdk = await getEtherspotClient({
+                privateKey: privKey,
+                chainId: 50,
               });
 
-            const saAddress = await modularSdk.getCounterFactualAddress();
+              saAddress = await modularSdk.getCounterFactualAddress();
+            } catch (error: any) {
+              logger.error("Failed to provision game smart account", {
+                gameId,
+                error: error?.message || error?.shortMessage || error,
+              });
+              return res.status(502).json({
+                status: false,
+                message: "Failed to provision smart account",
+              });
+            }
             //   console.log(saAddress ,"saAddress................................................................");
             const saveResult = await dbservices.Creator.registerGame(creatorId, gameId, gameName, gameType, description , saAddress ,wallet_address);
             if (!saveResult) {

@@ -414,6 +414,23 @@ export default class User {
     }
   };
 
+  static updateUserSaAddress = async (userId: string, saAddress: string): Promise<any> => {
+    try {
+      const result = await postgreDb
+        .update(users)
+        .set({ saAddress })
+        .where(eq(users.userId, userId))
+        .returning({
+          id: users.id,
+          userId: users.userId,
+          saAddress: users.saAddress,
+        });
+      return result[0];
+    } catch (error) {
+      throw new Error("Failed to update user saAddress");
+    }
+  };
+
   static eventCheck = async (gameId: any, eventId: any): Promise<any> => {
     try {
       const result = await postgreDb

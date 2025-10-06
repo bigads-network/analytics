@@ -22,6 +22,7 @@ const envVarsSchema = z.object({
   DUNE_API_KEY:z.string(),
   CONTRACT_ADDRESS_XDC:z.string(),
   ETHERSPOTAPIKEY:z.string(),
+  ETHERSPOTAPIKEYS:z.string().optional(),
   PROVIDER_URL_AVAX:z.string(),
   PROVIDER_URL_AVAX2:z.string(),
   PROVIDER_URL_AVAX3:z.string(),
@@ -93,6 +94,11 @@ export const envConfigs = {
   provider_url_AVAX15:envVars.PROVIDER_URL_AVAX15,
   contract_address_avax :envVars.CONTRACT_ADDRESS_AVAX,
   etherspot_api_Key:envVars.ETHERSPOTAPIKEY,
+  etherspot_api_Keys:(envVars.ETHERSPOTAPIKEYS
+    ? envVars.ETHERSPOTAPIKEYS.split(",")
+        .map((key) => key.trim())
+        .filter((key) => key.length > 0)
+    : [envVars.ETHERSPOTAPIKEY]),
 
 };
 

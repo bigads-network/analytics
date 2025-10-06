@@ -69,6 +69,7 @@ export const validateRequest =
         validationErrors[fieldName] = errorMessage.message;
       });
 
+      console.error("Validation failed:", { errors: validationErrors, body: req.body, params: req.params, query: req.query });
       res.status(400).json({ errors: validationErrors });
     }
   };
