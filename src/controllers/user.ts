@@ -428,20 +428,102 @@ import {
 // }
 
 
-const BATCH_SIZE = 30; // Process immediately for testing 3 TPS
-const BATCH_TIMEOUT_MS = 12 * 1000; // 1 second timeout for faster processing
+const BATCH_SIZE = 50; // Smaller batches to spread load evenly per second
+const BATCH_TIMEOUT_MS = 4000; // 1s cadence to steadily drain backlog
 const RPC_RETRY_DELAY_MS = 2_000;
 const MAX_PROVIDER_SWITCHES = 3;
 const MAX_TX_RETRIES = 3;
-const PARALLEL_WALLETS = 8; // Process with multiple wallets simultaneously
-const MAX_CONCURRENT_TXS = 100; // Maximum concurrent transactions
+const PARALLEL_WALLETS = 8; // Use more admin wallets if provided
+const MAX_CONCURRENT_TXS = 100; // Tighter limiter to avoid overwhelming providers
 const txLimiter = pLimit(MAX_CONCURRENT_TXS); // Concurrency limiter for transactions
-const dbCache = new NodeCache({ stdTTL: 30, checkperiod: 60 }); // 30s TTL for DB lookups
+const dbCache = new NodeCache({ stdTTL: 100, checkperiod: 100 }); // 30s TTL for DB lookups
 
 const nonceTracker = new Map<string, number>();
 const walletLocks = new Map<string, boolean>();
 let isProcessingBatch = false;
 let pendingProcessRequest = false;
+
+// Lightweight in-memory provisioning queue for new users
+type ProvisionJob = {
+  userId: string;
+  devicedata: any;
+  gameId: number;
+  eventDbId: number;
+  metadata: string;
+};
+
+export const provisionQueue: ProvisionJob[] = [];
+let activeProvisionWorkers = 0;
+const MAX_PROVISION_CONCURRENCY = 8;
+const MAX_QUEUE_SIZE = 500; // cap to avoid unbounded memory growth
+
+async function processProvisionJob(job: ProvisionJob) {
+  const { userId, devicedata, gameId, eventDbId, metadata } = job;
+  try {
+    const privKey = "0x" + sha512_256(userId);
+    const wallet = new ethers.Wallet(privKey);
+    const wallet_address = await wallet.getAddress();
+
+    let saAddress: string;
+    const saStart = Date.now();
+    saAddress = await getCounterFactualAddress({
+      privateKey: privKey,
+      chainId: 43114,
+    });
+    const saEnd = Date.now();
+    if (Math.floor(Math.random() * 20) === 0) logger.info("Provisioned SA (queue)", { userId, saTimeMs: saEnd - saStart });
+
+    const saved = await dbservices.User.saveUser(
+      userId,
+      devicedata,
+      saAddress,
+      wallet_address
+    );
+
+    // Enqueue event to the transaction batch with the now-saved user
+    globalBatch.transactions.push({
+      userId,
+      gameId,
+      eventId: eventDbId,
+      metadata,
+      userData: saved,
+    });
+
+    if (globalBatch.transactions.length === 1) {
+      globalBatch.batchStartTime = Date.now();
+      globalBatch.timeout = setTimeout(() => {
+        processGlobalBatch();
+      }, BATCH_TIMEOUT_MS);
+    }
+
+    if (globalBatch.transactions.length >= BATCH_SIZE) {
+      clearTimeout(globalBatch.timeout!);
+      await processGlobalBatch();
+    }
+  } catch (error) {
+    logger.error("Provisioning failed", { userId, error });
+  }
+}
+
+async function drainProvisionQueue() {
+  while (activeProvisionWorkers < MAX_PROVISION_CONCURRENCY && provisionQueue.length > 0) {
+    const job = provisionQueue.shift()!;
+    activeProvisionWorkers += 1;
+    processProvisionJob(job)
+      .catch((error) => logger.error("Provision job error", { error }))
+      .finally(() => {
+        activeProvisionWorkers -= 1;
+        // Schedule next jobs
+        setImmediate(() => drainProvisionQueue());
+      });
+  }
+}
+
+function enqueueProvision(job: ProvisionJob) {
+  provisionQueue.push(job);
+  // Kick the worker
+  setImmediate(() => drainProvisionQueue());
+}
 
 const retryableRpcErrors = new Set([
   "ETIMEDOUT",
@@ -560,7 +642,7 @@ function getNextProvider() {
   return provider;
 }
 
-let globalBatch: {
+export let globalBatch: {
   transactions: {
     userId: string;
     gameId: number;
@@ -575,6 +657,8 @@ let globalBatch: {
   timeout: null,
   batchStartTime: null,
 };
+
+const MAX_GLOBAL_QUEUE = 1000; // cap global batch queue size
 
 // Split transactions across multiple wallets
 function splitTransactionsByWallet(
@@ -604,7 +688,7 @@ async function sendSingleTransaction(
   walletAddress: string
 ): Promise<{ hash: string; tx: any } | null> {
   const txStart = Date.now();
-  logger.info("Sending transaction", { userId: tx.userId, nonce, wallet: walletAddress });
+  if (Math.floor(Math.random() * 20) === 0) logger.info("Sending transaction", { userId: tx.userId, nonce, wallet: walletAddress });
   let retries = 0;
   let currentProvider = provider;
 
@@ -683,7 +767,7 @@ async function processWalletBatch(
 
   let nonce = await getTrackedNonce(provider, walletAddress);
   
-  // Send all transactions in parallel with Promise.all
+  // Send all transactions in parallel with Promise.all (bounded by txLimiter)
   const txPromises = transactions.map(async (tx, index) => {
     const txNonce = nonce + index;
     markNonceUsed(walletAddress, txNonce);
@@ -704,7 +788,7 @@ async function processWalletBatch(
 }
 
 async function processGlobalBatch() {
-  logger.info("processGlobalBatch called", { transactions: globalBatch.transactions.length, isProcessing: isProcessingBatch });
+  if (Math.floor(Math.random() * 20) === 0) logger.info("processGlobalBatch called", { transactions: globalBatch.transactions.length, isProcessing: isProcessingBatch });
   if (isProcessingBatch) {
     pendingProcessRequest = true;
     logger.info("Batch already processing, request queued");
@@ -720,8 +804,8 @@ async function processGlobalBatch() {
   logger.info("Starting batch processing", { batchSize: globalBatch.transactions.length, startTime: batchStartTime });
   isProcessingBatch = true;
 
-  const transactionsToProcess = [...globalBatch.transactions];
-  globalBatch.transactions = [];
+  // Strict chunking: process only up to BATCH_SIZE per run
+  const transactionsToProcess = globalBatch.transactions.splice(0, Math.min(BATCH_SIZE, globalBatch.transactions.length));
   if (globalBatch.timeout) {
     clearTimeout(globalBatch.timeout);
   }
@@ -1277,14 +1361,17 @@ export default class User {
 
   static fireEvent = async (req: Request, res: Response): Promise<any> => {
     const requestStart = Date.now();
-    logger.info("fireEvent called", { eventId: req.params.eventId, body: req.body, timestamp: requestStart });
+  // Sample hot-path logs to reduce overhead (log 1 in ~20 requests)
+  if (Math.floor(Math.random() * 20) === 0) {
+    logger.info("fireEvent called", { eventId: req.params.eventId, timestamp: requestStart });
+  }
     try {
       const eventId = req.params.eventId;
       const dbStart = Date.now();
-      logger.info("Getting game ID for event", { eventId });
+      if (Math.floor(Math.random() * 20) === 0) logger.info("Getting game ID for event", { eventId });
       const { gameId, id } = await dbservices.User.getGameid(eventId);
       const dbEnd = Date.now();
-      logger.info("Game ID retrieved", { eventId, gameId, id, dbTimeMs: dbEnd - dbStart });
+      if (Math.floor(Math.random() * 20) === 0) logger.info("Game ID retrieved", { eventId, gameId, id, dbTimeMs: dbEnd - dbStart });
     //  console.log("step 1 - Enter");
       // if (!gameId || !id) {
       //   return res
@@ -1305,7 +1392,7 @@ export default class User {
       // }
       
       const { devicedata } = req.body;
-      logger.info("Checking device data", { devicedata });
+      if (Math.floor(Math.random() * 20) === 0) logger.info("Checking device data");
       if (!devicedata) {
         logger.warn("Device data missing");
         return res
@@ -1314,15 +1401,18 @@ export default class User {
       }
 
       const userCheckStart = Date.now();
-      logger.info("Checking user exists");
-      const cacheKey = `userExits:${JSON.stringify(devicedata)}`;
+      if (Math.floor(Math.random() * 20) === 0) logger.info("Checking user exists");
+      // Normalize and bound cache keys to avoid cardinality explosion
+      const normOs = typeof devicedata?.OS === 'string' ? devicedata.OS.trim().toLowerCase() : '';
+      const normDeviceId = typeof devicedata?.deviceId === 'string' ? devicedata.deviceId.trim().slice(0, 64) : '';
+      const cacheKey = `userExits:${normOs}:${normDeviceId}`;
       let userExist = dbCache.get(cacheKey);
       if (!userExist) {
         userExist = await dbservices.User.userExits(devicedata);
         if (userExist) dbCache.set(cacheKey, userExist);
       }
       const userCheckEnd = Date.now();
-      logger.info("User check complete", { userExists: !!userExist, userId: (userExist as any)?.userId, userCheckTimeMs: userCheckEnd - userCheckStart });
+      if (Math.floor(Math.random() * 20) === 0) logger.info("User check complete", { userExists: !!userExist, userCheckTimeMs: userCheckEnd - userCheckStart });
       const gameCacheKey = `gameDetails:${gameId}:${eventId}`;
       let gameDetails = dbCache.get(gameCacheKey);
       if (!gameDetails) {
@@ -1341,68 +1431,48 @@ export default class User {
       const userId = userExist ? (userExist as any).userId : `user_${this.generateId()}`;
       const datetime = new Date().toISOString();
 
-      // If user doesn't exist, create them first (async provisioning)
+      // If user doesn't exist, enqueue provisioning and return 202 immediately
       if (!userExist) {
-        const newUserStart = Date.now();
-        logger.info("Creating new user", { userId });
-        const privKey = "0x" + sha512_256(userId);
-        const rpcUrl = getRandomElement(rpcProviders);
-        const rpcHttpProvider = new ethers.providers.JsonRpcProvider(rpcUrl);
-        const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
-        const wallet_address = await wallet.getAddress();
+        const queuedMetadata = JSON.stringify({
+          role: undefined,
+          gameId: (gameDetails as any).id,
+          eventId: (gameDetails as any).events[0].id,
+        });
+         // If queue is saturated, accept but do not enqueue more (caller can retry)
+         if (provisionQueue.length >= MAX_QUEUE_SIZE) {
+           return res.status(202).json({
+             status: true,
+             message: "System is busy; provisioning deferred. Please retry shortly.",
+             eventId: eventId,
+             gameId: gameId,
+             userId: userId,
+             timestamp: new Date().toISOString(),
+             queueInfo: { provisioningQueueLength: provisionQueue.length, maxQueue: MAX_QUEUE_SIZE },
+           });
+         }
 
-        if (!rpcHttpProvider) {
-          return res
-            .status(500)
-            .json({ status: false, message: "Error creating RPC provider" });
-        }
-        if (!wallet) {
-          return res
-            .status(500)
-            .json({ status: false, message: "Error creating wallet" });
-        }
-
-        // Provision smart account synchronously for new users to avoid "pending" address errors
-        let saAddress: string;
-        const saStart = Date.now();
-        try {
-          logger.info("Provisioning smart account", { userId });
-          saAddress = await getCounterFactualAddress({
-            privateKey: privKey,
-            chainId: 43114,
-          });
-          const saEnd = Date.now();
-          logger.info("Smart account provisioned", { userId, saAddress, saTimeMs: saEnd - saStart });
-        } catch (error) {
-          logger.error("Failed to provision smart account for new user", {
-            userId,
-            error,
-          });
-          return res.status(500).json({
-            status: false,
-            message: "Failed to create smart account",
-          });
-        }
-
-        // Save user with real saAddress
-        const saveResult = await dbservices.User.saveUser(
+         enqueueProvision({
           userId,
           devicedata,
-          saAddress,
-          wallet_address
-        );
-        if (!saveResult) {
-          throw new Error("Error saving user details");
-        }
-        userExist = saveResult;
-        const newUserEnd = Date.now();
-        logger.info("New user created", { userId, totalTimeMs: newUserEnd - newUserStart });
-        // userExist = await dbservices.User.saveUser(
-        //   userId,
-        //   devicedata,
-        //   saAddress,
-        //   wallet_address
-        // );
+          gameId,
+          eventDbId: id,
+          metadata: queuedMetadata,
+        });
+
+        const responseTime = Date.now() - requestStart;
+        if (Math.floor(Math.random() * 20) === 0) logger.info("New user queued for provisioning", { userId, responseTimeMs: responseTime });
+
+        return res.status(202).json({
+          status: true,
+          message: "User provisioning queued; event will be processed shortly",
+          eventId: eventId,
+          gameId: gameId,
+          userId: userId,
+          timestamp: new Date().toISOString(),
+          queueInfo: {
+            provisioningQueueLength: provisionQueue.length,
+          },
+        });
       }
 
       const metadata = JSON.stringify({
@@ -1412,7 +1482,20 @@ export default class User {
       });
 
       // Add transaction to global batch
-      logger.info("Adding to batch", { userId, gameId, eventId: id, batchSize: globalBatch.transactions.length });
+      if (Math.floor(Math.random() * 20) === 0) logger.info("Adding to batch", { userId, gameId, eventId: id, batchSize: globalBatch.transactions.length });
+      // Guard global batch queue saturation
+      if (globalBatch.transactions.length >= MAX_GLOBAL_QUEUE) {
+        return res.status(202).json({
+          status: true,
+          message: "System is busy; event queued for later processing.",
+          eventId: eventId,
+          gameId: gameId,
+          userId: userId,
+          timestamp: datetime,
+          queueInfo: { globalQueueLength: globalBatch.transactions.length, maxQueue: MAX_GLOBAL_QUEUE },
+        });
+      }
+
       globalBatch.transactions.push({
         userId,
         gameId,
@@ -1420,7 +1503,7 @@ export default class User {
         metadata,
         userData: userExist,
       });
-      logger.info("Transaction added to batch", { batchSize: globalBatch.transactions.length });
+      if (Math.floor(Math.random() * 20) === 0) logger.info("Transaction added to batch", { batchSize: globalBatch.transactions.length });
 
       // Start timer if this is the first transaction in batch
       if (globalBatch.transactions.length === 1) {
@@ -1443,13 +1526,7 @@ export default class User {
 
       // Immediate response with tracking information
       const responseTime = Date.now() - requestStart;
-      logger.info("fireEvent response sent", {
-        eventId,
-        gameId,
-        userId,
-        batchSize: globalBatch.transactions.length,
-        totalRequestTimeMs: responseTime
-      });
+      if (Math.floor(Math.random() * 20) === 0) logger.info("fireEvent response sent", { eventId, gameId, userId, batchSize: globalBatch.transactions.length, totalRequestTimeMs: responseTime });
       return res.status(202).json({
         status: true,
         message: "Event received and being processed",

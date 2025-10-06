@@ -361,7 +361,7 @@ export default class User {
 
   static userExits = async (deviceDta: any): Promise<any> => {
     try {
-      const result = await postgreDb
+      const result = await postgreDbRead
         .select({
           id: users.id,
           userId: users.userId,
