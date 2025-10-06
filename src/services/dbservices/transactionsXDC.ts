@@ -10,7 +10,7 @@ import {
   lte,
   sql,
 } from "drizzle-orm";
-import postgreDb from "../../config/db";
+import postgreDb, { postgreDbRead } from "../../config/db";
 import dotenv from "dotenv";
 import {
   events,
@@ -30,7 +30,7 @@ export default class TransactionsXDC {
       const daysAgo = new Date();
       daysAgo.setDate(daysAgo.getDate() - days);
 
-      const result = await postgreDb
+      const result = await postgreDbRead
         .select({
           day: sql`DATE(${transaction_avax.createdAt})`.as("day"),
           total_transactions: sql`COUNT(*)`.as("total_transactions"),
@@ -61,7 +61,7 @@ export default class TransactionsXDC {
       const daysAgo = new Date();
       daysAgo.setDate(daysAgo.getDate() - days);
 
-      const result = await postgreDb
+      const result = await postgreDbRead
         .select({
           day: sql`DATE(${transaction_avax.createdAt})`.as("day"),
           daily_active_users:
@@ -107,7 +107,7 @@ export default class TransactionsXDC {
       );
 
       // Previous month
-      const prevResult = await postgreDb
+      const prevResult = await postgreDbRead
         .select({
           count: sql<number>`COUNT(DISTINCT ${transaction_avax.UserId})`,
         })
@@ -126,7 +126,7 @@ export default class TransactionsXDC {
 
       // If no data for previous month, get current month
       const firstDayCurrMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const currResult = await postgreDb
+      const currResult = await postgreDbRead
         .select({
           count: sql<number>`COUNT(DISTINCT ${transaction_avax.UserId})`,
         })
@@ -165,7 +165,7 @@ export default class TransactionsXDC {
       );
 
       // Previous month
-      const prevResult = await postgreDb
+      const prevResult = await postgreDbRead
         .select({
           count: sql<number>`COUNT(*)`,
         })
@@ -184,7 +184,7 @@ export default class TransactionsXDC {
 
       // If no data for previous month, get current month
       const firstDayCurrMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const currResult = await postgreDb
+      const currResult = await postgreDbRead
         .select({
           count: sql<number>`COUNT(*)`,
         })

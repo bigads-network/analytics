@@ -11,7 +11,7 @@ import {
   lte,
   sql,
 } from "drizzle-orm";
-import postgreDb from "../../config/db";
+import postgreDb, { postgreDbRead } from "../../config/db";
 import dotenv from "dotenv";
 import {
   events,
@@ -47,7 +47,7 @@ export default class User {
 
   static getGames = async (): Promise<any> => {
     try {
-      const txAgg = postgreDb
+      const txAgg = postgreDbRead
         .select({
           gameId: transaction_avax.gameId,
           transaction_count:
@@ -66,7 +66,7 @@ export default class User {
         .groupBy(transaction_avax.gameId)
         .as("txAgg");
 
-      return await postgreDb
+      return await postgreDbRead
         .select({
           id: games.id,
           gameId: games.gameId,
@@ -131,7 +131,7 @@ export default class User {
     try {
       // console.log("Counting users, games, events, and transactions...");
       const [uniqueUsers,gamesEventsTx] = await Promise.all([
-        postgreDb
+        postgreDbRead
           .select({
             count: sql`count(distinct ${users.id})`,
           })
@@ -163,7 +163,7 @@ export default class User {
 
   static getEvents = async (): Promise<any> => {
     try {
-      return await postgreDb.query.events.findMany({
+      return await postgreDbRead.query.events.findMany({
         columns: {
           eventId: true,
           eventType: true,
@@ -187,7 +187,7 @@ export default class User {
 
   static getGameid = async (eventId: string): Promise<any> => {
     try {
-      const data = await postgreDb
+      const data = await postgreDbRead
         .select()
         .from(events)
         .where(eq(events.eventId, eventId));
@@ -200,7 +200,7 @@ export default class User {
 
   static getTransactions = async (): Promise<any> => {
     try {
-      const transaction = await postgreDb.query.transactions.findMany({
+      const transaction = await postgreDbRead.query.transactions.findMany({
         columns: {
           transactionHash: true,
           transactionChain: true,
@@ -231,7 +231,7 @@ export default class User {
         },
       });
 
-      const counts = await postgreDb
+      const counts = await postgreDbRead
         .select({
           count: count(transactions.id),
         })
@@ -245,7 +245,7 @@ export default class User {
 
   static getUserTransacttion = async (userId: any): Promise<any> => {
     try {
-      const transaction = await postgreDb.query.users.findMany({
+      const transaction = await postgreDbRead.query.users.findMany({
         where: eq(userId, users.userId),
         columns: {
           id: true,
@@ -269,7 +269,7 @@ export default class User {
 
   static geteventTransacttion = async (eventId: any): Promise<any> => {
     try {
-      const transaction = await postgreDb.query.events.findMany({
+      const transaction = await postgreDbRead.query.events.findMany({
         where: eq(eventId, events.eventId),
         columns: {
           id: true,
@@ -293,7 +293,7 @@ export default class User {
 
   static getGameTransacttion = async (gameId: any): Promise<any> => {
     try {
-      const transaction = await postgreDb.query.games.findMany({
+      const transaction = await postgreDbRead.query.games.findMany({
         where: eq(gameId, games.gameId),
         columns: {
           id: true,
@@ -331,7 +331,7 @@ export default class User {
 
   static getGameDetails = async (gameId: any, eventId: any): Promise<any> => {
     try {
-      const data = await postgreDb.query.games.findFirst({
+      const data = await postgreDbRead.query.games.findFirst({
         where: eq(games.id, gameId),
         columns: {
           id: true,
@@ -556,7 +556,7 @@ export default class User {
     endTime: any
   ): Promise<any> => {
     try {
-      const result = await postgreDb
+      const result = await postgreDbRead
         .select({
           TransactionHashCount:
             sql<number>`count(DISTINCT ${transactions.transactionHash})`.mapWith(
