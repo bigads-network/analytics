@@ -1,5 +1,5 @@
 import {and, between, count, countDistinct, desc, eq, gte, inArray, isNull, lte, sql} from "drizzle-orm";
-import postgreDb from "../../config/db";
+import postgreDb, { postgreDbRead } from "../../config/db";
 import dotenv from "dotenv";
 import { events, games, transactions, transactions_xdc, users } from "../../models/schema";
 dotenv.config();
@@ -31,7 +31,7 @@ export default class User {
 
     static getGames = async (): Promise<any> => {
         try {
-          const txAgg = postgreDb
+          const txAgg = postgreDbRead
             .select({
               gameId: transactions_xdc.gameId,
               transaction_count: sql<number>`count(distinct ${transactions_xdc.id})`.as('transaction_count'),
@@ -113,14 +113,14 @@ export default class User {
     static counts = async (): Promise<any> => {
         try {
           const [uniqueUsers, gamesEventsTx] = await Promise.all([
-            postgreDb
+            postgreDbRead
               .select({
                 count: sql`count(distinct ${users.id})`,
               })
               .from(users)
               .where(sql`LOWER(${users.devicedata}->>'OS') LIKE '%xdc'`),
       
-            postgreDb.transaction(async (tx) => {
+            postgreDbRead.transaction(async (tx) => {
               const [game, event, transactions] = await Promise.all([
                 tx.select({ count: sql`count(*)` }).from(games),
                 tx.select({ count: sql`count(*)` }).from(events),
@@ -144,7 +144,7 @@ export default class User {
 
     static getEvents = async():Promise<any>=>{
         try {
-            return await postgreDb.query.events.findMany({
+            return await postgreDbRead.query.events.findMany({
                 columns:{
                     eventId:true,
                     eventType:true,
@@ -168,7 +168,7 @@ export default class User {
 
     static getGameid = async(eventId:string):Promise<any>=>{
         try {
-            const data = await postgreDb.select().from(events).where(eq(events.eventId,eventId))
+            const data = await postgreDbRead.select().from(events).where(eq(events.eventId,eventId))
             if(!data.length) throw new Error('No event found')
             return data[0]
         } catch (error) {
@@ -178,7 +178,7 @@ export default class User {
 
     static getTransactions = async():Promise<any>=>{
         try {
-            const transaction = await postgreDb.query.transactions.findMany({
+            const transaction = await postgreDbRead.query.transactions.findMany({
                 columns: {
                 transactionHash: true,
                 transactionChain: true,
@@ -209,7 +209,7 @@ export default class User {
                 }
         })
 
-        const counts =await postgreDb
+        const counts =await postgreDbRead
         .select({
         count: count(transactions.id),
         })
@@ -224,7 +224,7 @@ export default class User {
 
     static getUserTransacttion = async(userId:any): Promise<any> => {
         try {
-            const transaction = await postgreDb.query.users.findMany({
+            const transaction = await postgreDbRead.query.users.findMany({
               where : eq(userId, users.userId),
               columns: {
                 id:true,
@@ -250,7 +250,7 @@ export default class User {
 
     static geteventTransacttion = async(eventId:any): Promise<any> => {
         try {
-            const transaction = await postgreDb.query.events.findMany({
+            const transaction = await postgreDbRead.query.events.findMany({
               where : eq(eventId, events.eventId),
               columns: {
                 id:true,
@@ -275,7 +275,7 @@ export default class User {
 
     static getGameTransacttion = async(gameId:any): Promise<any> => {
         try {
-            const transaction = await postgreDb.query.games.findMany({
+            const transaction = await postgreDbRead.query.games.findMany({
               where : eq(gameId, games.gameId),
               columns: {
                 id:true,
@@ -314,7 +314,7 @@ export default class User {
 
      static getGameDetails = async(gameId: any , eventId: any): Promise<any>=>{
         try {
-            const data = await postgreDb.query.games.findFirst({
+            const data = await postgreDbRead.query.games.findFirst({
                 where: eq(games.id, gameId),
                 columns:{
                     id:true,
@@ -345,7 +345,7 @@ export default class User {
 
     static userExits = async(deviceDta: any): Promise<any> => {
         try {
-            const result = await postgreDb.select({
+            const result = await postgreDbRead.select({
                 id:users.id,
                 userId:users.userId,
                 role:users.role,
@@ -385,7 +385,7 @@ export default class User {
 
     static eventCheck = async(gameId: any, eventId: any): Promise<any> => {
         try {
-            const result = await postgreDb.select()
+            const result = await postgreDbRead.select()
            .from(events)
            .where(and(eq(events.gameId, gameId), eq(events.eventId, eventId)));
             return result[0]

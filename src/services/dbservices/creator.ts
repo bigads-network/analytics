@@ -1,5 +1,5 @@
 import {and, count, countDistinct, desc, eq, inArray, isNull, sql} from "drizzle-orm";
-import postgreDb from "../../config/db";
+import postgreDb  ,{postgreDbRead} from "../../config/db";
 import dotenv from "dotenv";
 import { events, games, users } from "../../models/schema";
 dotenv.config();
@@ -8,7 +8,7 @@ export default class Creator {
 
     static creatorExits = async(deviceDta: any): Promise<any> => {
         try {
-            const result = await postgreDb.select()
+            const result = await postgreDbRead.select()
             .from(users)
             .where(eq(users.devicedata, deviceDta));
             return result[0]
@@ -64,7 +64,7 @@ export default class Creator {
 
     static getdetails =async(adminId:any): Promise<any> => {
         try {
-            const result = await postgreDb.select()
+            const result = await postgreDbRead.select()
             .from(users)
             .where(eq(users.userId ,adminId));
             return result[0]
@@ -76,7 +76,7 @@ export default class Creator {
 
     static gameExists = async(craetorId: any , name:any ,type:any): Promise<any> => {
         try {
-            const result = await postgreDb.select()
+            const result = await postgreDbRead.select()
             .from(games)
             .where(and(eq(games.creatorId ,craetorId),eq(games.Gamename,name),eq(games.Gametype , type)));
             return result[0]
@@ -117,7 +117,7 @@ export default class Creator {
 
     static eventexists = async(gameid:any ,eventType:any): Promise<any>=>{
         try {
-            const result = await postgreDb.select()
+            const result = await postgreDbRead.select()
            .from(events)
            .where(and(eq(events.gameId, gameid),eq(events.eventType, eventType)))
             return result[0]

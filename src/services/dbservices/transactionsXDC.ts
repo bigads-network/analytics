@@ -1,5 +1,5 @@
 import {and, count, countDistinct, desc, eq, gte, inArray, isNull, lte, sql} from "drizzle-orm";
-import postgreDb from "../../config/db";
+import postgreDb, { postgreDbRead } from "../../config/db";
 import dotenv from "dotenv";
 import { events, games, users, transactions_xdc } from "../../models/schema"; // <-- import your table here
 dotenv.config();
@@ -12,7 +12,7 @@ export default class TransactionsXDC {
             const daysAgo = new Date();
             daysAgo.setDate(daysAgo.getDate() - days);
 
-            const result = await postgreDb
+            const result = await postgreDbRead
                 .select({
                     day: sql`DATE(${transactions_xdc.createdAt})`.as("day"),
                     total_transactions: sql`COUNT(*)`.as("total_transactions"),
@@ -36,7 +36,7 @@ export default class TransactionsXDC {
             const daysAgo = new Date();
             daysAgo.setDate(daysAgo.getDate() - days);
 
-            const result = await postgreDb
+            const result = await postgreDbRead
                 .select({
                     day: sql`DATE(${transactions_xdc.createdAt})`.as("day"),
                     daily_active_users: sql`COUNT(DISTINCT ${transactions_xdc.UserId})`.as("daily_active_users"),
@@ -62,7 +62,7 @@ export default class TransactionsXDC {
             const lastDayPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
 
             // Previous month
-            const prevResult = await postgreDb
+            const prevResult = await postgreDbRead
                 .select({
                     count: sql<number>`COUNT(DISTINCT ${transactions_xdc.UserId})`
                 })
@@ -81,7 +81,7 @@ export default class TransactionsXDC {
 
             // If no data for previous month, get current month
             const firstDayCurrMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-            const currResult = await postgreDb
+            const currResult = await postgreDbRead
                 .select({
                     count: sql<number>`COUNT(DISTINCT ${transactions_xdc.UserId})`
                 })
@@ -106,7 +106,7 @@ export default class TransactionsXDC {
             const lastDayPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
 
             // Previous month
-            const prevResult = await postgreDb
+            const prevResult = await postgreDbRead
                 .select({
                     count: sql<number>`COUNT(*)`
                 })
@@ -125,7 +125,7 @@ export default class TransactionsXDC {
 
             // If no data for previous month, get current month
             const firstDayCurrMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-            const currResult = await postgreDb
+            const currResult = await postgreDbRead
                 .select({
                     count: sql<number>`COUNT(*)`
                 })
