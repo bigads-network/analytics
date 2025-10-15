@@ -705,8 +705,8 @@ async function sendSingleTransaction(
         value: 0n,
         nonce: nonce,
         gasLimit: 100000,
-        maxFeePerGas: ethers.utils.parseUnits("1.4", "gwei"), // 10 gwei = current network + buffer
-        maxPriorityFeePerGas: ethers.utils.parseUnits("0.4", "gwei"), // 2 gwei priority for faster confirmation
+        maxFeePerGas: ethers.utils.parseUnits("2", "gwei"), // 10 gwei = current network + buffer
+        maxPriorityFeePerGas: ethers.utils.parseUnits("0.2", "gwei"), // 2 gwei priority for faster confirmation
       }));
 
       const txEnd = Date.now();
