@@ -422,28 +422,20 @@ import { rpc } from "viem/utils";
 // }
 
 
-// Memory management settings
-const MAX_QUEUE_SIZE = 1000; // Max transactions in globalBatch
-const CHUNK_SIZE = 50; // Process this many at once
-const MEMORY_CHECK_INTERVAL = 10000; // Check memory every 10s
-const MAX_MEMORY_USAGE = 0.8; // Reject if memory > 80%
+// Throughput tuning
+const CHUNK_SIZE = 200; // Larger chunks to maximize throughput
 
-// Performance tuning
-const BATCH_SIZE = 50;
-const BATCH_TIMEOUT_MS = 30 * 1000; // Process every 30s
+const BATCH_SIZE = 200; // Trigger processing when this many pending transactions
+const BATCH_TIMEOUT_MS = 10 * 1000; // Process every 10s
 const RPC_RETRY_DELAY_MS = 2000;
 const MAX_PROVIDER_SWITCHES = 3;
 const MAX_TX_RETRIES = 3;
 const PARALLEL_WALLETS = 8;
-const MAX_CONCURRENT_TXS = 100;
+const MAX_CONCURRENT_TXS = 500; // Global concurrency cap for on-chain sends
 
-// Memory tracking
-let lastMemoryCheck = Date.now();
-let isMemoryPressureHigh = false;
-
-// Rate limiting / throttling settings
-const TX_PER_SECOND = Number(process.env.TX_PER_SECOND) || 100; // global TPS target
-const PER_WALLET_THROTTLE_MS = Math.max(0, Math.ceil(1000 / Math.max(1, Math.floor(TX_PER_SECOND / PARALLEL_WALLETS))));
+// No per-wallet throttling — aim for maximum throughput.
+// Concurrency is controlled by MAX_CONCURRENT_TXS (globalActiveTxs + waitForSlot).
+const PER_WALLET_THROTTLE_MS = 0;
 
 // Global active sends counter to limit concurrent on-chain requests
 let globalActiveTxs = 0;
@@ -1334,51 +1326,8 @@ export default class User {
   // }
 
   // Check memory pressure
-  static checkMemoryPressure(): boolean {
-    const now = Date.now();
-    if (now - lastMemoryCheck > MEMORY_CHECK_INTERVAL) {
-      if (global.gc) {
-        // Suggest garbage collection when checking memory
-        global.gc();
-      }
-
-      const memUsage = process.memoryUsage();
-      const heapUsed = memUsage.heapUsed;
-      const heapTotal = memUsage.heapTotal;
-      const memoryUsageRatio = heapUsed / heapTotal;
-
-      isMemoryPressureHigh = memoryUsageRatio > MAX_MEMORY_USAGE;
-      lastMemoryCheck = now;
-
-      if (isMemoryPressureHigh) {
-        logger.warn("High memory pressure detected", {
-          heapUsed: Math.round(heapUsed / 1024 / 1024) + "MB",
-          heapTotal: Math.round(heapTotal / 1024 / 1024) + "MB", 
-          usageRatio: Math.round(memoryUsageRatio * 100) + "%",
-        });
-      }
-    }
-    return isMemoryPressureHigh;
-  }
-
   static fireEvent = async (req: Request, res: Response): Promise<any> => {
     try {
-      // Check queue size and memory pressure
-      if (globalBatch.transactions.length >= MAX_QUEUE_SIZE) {
-        return res.status(503).json({
-          status: false,
-          message: "Event queue is full, please retry later",
-          queueSize: globalBatch.transactions.length
-        });
-      }
-
-      if (User.checkMemoryPressure()) {
-        return res.status(503).json({
-          status: false,
-          message: "Server is under high memory pressure, please retry later"
-        });
-      }
-
       const eventId = req.params.eventId;
       const { gameId, id } = await dbservices.User.getGameid(eventId);
     //  console.log("step 1 - Enter");
