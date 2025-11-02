@@ -422,13 +422,17 @@ import { rpc } from "viem/utils";
 // }
 
 
-const BATCH_SIZE = 50; // Process multiple transactions in parallel
-const BATCH_TIMEOUT_MS = 2 * 60 * 1000;
-const RPC_RETRY_DELAY_MS = 2_000;
+// Tunable throughput settings — increased aggressively to maximize throughput
+const BATCH_SIZE = 1000; // trigger processing when this many pending transactions
+const BATCH_TIMEOUT_MS = 10 * 1000; // shorten timeout so batches are processed quickly (10s)
+const RPC_RETRY_DELAY_MS = 1000; // shorter retry delay
 const MAX_PROVIDER_SWITCHES = 3;
-const MAX_TX_RETRIES = 3;
-const PARALLEL_WALLETS = 8; // Process with multiple wallets simultaneously
-const MAX_CONCURRENT_TXS = 100; // Maximum concurrent transactions
+const MAX_TX_RETRIES = 5; // allow more retries
+// Initial fallback parallel wallets; actual active count is computed after admin keys are loaded
+const INITIAL_PARALLEL_WALLETS = 8;
+const MAX_CONCURRENT_TXS = 2000; // soft global cap (not strictly enforced here)
+const PER_WALLET_CONCURRENCY = 200; // parallel sends per wallet
+const GLOBAL_CHUNK_SIZE = 800; // process the queue in chunks to bound single run time
 
 const nonceTracker = new Map<string, number>();
 const walletLocks = new Map<string, boolean>();
@@ -574,8 +578,11 @@ function splitTransactionsByWallet(
 ): Map<number, any[]> {
   const walletBatches = new Map<number, any[]>();
   
+  // determine active wallet count at runtime (adminPrivateKeys is defined by the time this runs)
+  const activeWallets = (adminPrivateKeys && adminPrivateKeys.length) ? adminPrivateKeys.length : INITIAL_PARALLEL_WALLETS;
+
   transactions.forEach((tx, index) => {
-    const walletIndex = index % PARALLEL_WALLETS;
+    const walletIndex = index % activeWallets;
     if (!walletBatches.has(walletIndex)) {
       walletBatches.set(walletIndex, []);
     }
@@ -583,6 +590,33 @@ function splitTransactionsByWallet(
   });
   
   return walletBatches;
+}
+
+// Helper to run async task functions with a concurrency limit
+async function runWithConcurrency<T>(taskFns: Array<() => Promise<T>>, limit: number): Promise<T[]> {
+  const results: T[] = [];
+  let idx = 0;
+  const executing = new Set<Promise<void>>();
+
+  async function runOne(fn: () => Promise<T>) {
+    const res = await fn();
+    results.push(res);
+  }
+
+  while (idx < taskFns.length) {
+    while (executing.size < limit && idx < taskFns.length) {
+      const fn = taskFns[idx++];
+      const p = runOne(fn).then(() => executing.delete(p)).catch(() => executing.delete(p));
+      executing.add(p as unknown as Promise<void>);
+    }
+    if (executing.size) {
+      await Promise.race(Array.from(executing));
+    }
+  }
+
+  // wait remaining
+  await Promise.all(Array.from(executing));
+  return results;
 }
 
 // Process single transaction with retry logic
@@ -668,13 +702,19 @@ async function processWalletBatch(
   );
 
   let nonce = await getTrackedNonce(provider, walletAddress);
-  
-  // Send all transactions in parallel with Promise.all
-  const txPromises = transactions.map(async (tx, index) => {
-    const txNonce = nonce + index;
+  // Reserve nonces for each tx up-front to avoid races when sending in parallel
+  const txCount = transactions.length;
+  const nonces: number[] = [];
+  for (let i = 0; i < txCount; i++) {
+    const txNonce = nonce + i;
     markNonceUsed(walletAddress, txNonce);
-    
-    return sendSingleTransaction(
+    nonces.push(txNonce);
+  }
+
+  // Create task functions so we can run them with concurrency limits
+  const taskFns: Array<() => Promise<{ hash: string; tx: any } | null>> = transactions.map((tx, index) => {
+    const txNonce = nonces[index];
+    return () => sendSingleTransaction(
       wallet,
       provider,
       contractAddress,
@@ -685,13 +725,25 @@ async function processWalletBatch(
     );
   });
 
-  const results = await Promise.all(txPromises);
+  // Run with per-wallet concurrency limit
+  const runLimit = Math.min(PER_WALLET_CONCURRENCY, taskFns.length || 1);
+  const results = await runWithConcurrency(taskFns, runLimit);
   return results.filter((r) => r !== null) as Array<{ hash: string; tx: any }>;
 }
 
 async function processGlobalBatch() {
   if (isProcessingBatch) {
+    // If another batch is already being processed, mark that there's a pending request
+    // and schedule a short retry so the queued transactions don't grow unbounded while
+    // the current processing runs. This prevents the timeout callback from silently
+    // returning and leaving `globalBatch.batchStartTime` stale (which causes negative
+    // remaining time calculations on incoming requests).
     pendingProcessRequest = true;
+    setTimeout(() => {
+      processGlobalBatch().catch((error) =>
+        logger.error("Error retrying processGlobalBatch after busy", { error })
+      );
+    }, 1000); // retry after 1s
     return;
   }
 
@@ -775,17 +827,25 @@ async function processGlobalBatch() {
       }
     ];
 
-    // Split transactions across wallets
-    const walletBatches = splitTransactionsByWallet(transactionsToProcess);
-    
-    // Process all wallets in parallel
-    const walletPromises = Array.from(walletBatches.entries()).map(
-      ([walletIndex, txs]) =>
-        processWalletBatch(walletIndex, txs, contractAddress, abi)
-    );
+    // Process in bounded chunks to avoid long-running single loops
+    const successfulTxs: Array<{ hash: string; tx: any }> = [];
+    let cursor = 0;
+    while (cursor < transactionsToProcess.length) {
+      const chunk = transactionsToProcess.slice(cursor, cursor + GLOBAL_CHUNK_SIZE);
+      cursor += chunk.length;
 
-    const allResults = await Promise.all(walletPromises);
-    const successfulTxs = allResults.flat();
+      // Split chunk across wallets and process each wallet batch in parallel
+      const walletBatches = splitTransactionsByWallet(chunk);
+      const walletPromises = Array.from(walletBatches.entries()).map(
+        ([walletIndex, txs]) => processWalletBatch(walletIndex, txs, contractAddress, abi)
+      );
+
+      const chunkResults = await Promise.all(walletPromises);
+      chunkResults.flat().forEach((r) => successfulTxs.push(r));
+
+      // brief pause to yield to event loop and let pending I/O settle
+      await delay(50);
+    }
 
     // Batch database saves - Don't await individual saves
     const dbPromises = successfulTxs.map(({ hash, tx }) =>
@@ -810,7 +870,7 @@ async function processGlobalBatch() {
     await Promise.allSettled(dbPromises);
 
     logger.info(
-      `Successfully processed ${successfulTxs.length}/${transactionsToProcess.length} transactions across ${walletBatches.size} wallets`,
+      `Successfully processed ${successfulTxs.length}/${transactionsToProcess.length} transactions`,
       {
         hashes: successfulTxs.map((r) => r.hash),
       }
@@ -1379,8 +1439,10 @@ export default class User {
       }
 
       // Calculate remaining time for response
+      // Avoid returning negative remaining time if the batchStartTime has already
+      // expired while the server was busy processing: clamp to 0.
       const remainingTime = globalBatch.batchStartTime
-        ? BATCH_TIMEOUT_MS - (Date.now() - globalBatch.batchStartTime)
+        ? Math.max(BATCH_TIMEOUT_MS - (Date.now() - globalBatch.batchStartTime), 0)
         : 0;
 
       logger.info(
@@ -1411,4 +1473,53 @@ export default class User {
       });
     }
   };
+
+    // Synchronous endpoint to reset nonce tracking and wallet locks for one or more admin addresses.
+    // Body accepts { adminAddress: string } or { adminAddresses: string[] }
+    // This only resets in-memory trackers (`nonceTracker` and `walletLocks`) used by the batching logic.
+    static resetNonce = (req: Request, res: Response): any => {
+      try {
+        const { adminAddress, adminAddresses } = req.body || {};
+
+        const addresses: string[] = [];
+        if (adminAddress && typeof adminAddress === "string") addresses.push(adminAddress);
+        if (Array.isArray(adminAddresses)) {
+          adminAddresses.forEach((a) => {
+            if (typeof a === "string") addresses.push(a);
+          });
+        }
+
+        if (addresses.length === 0) {
+          return res.status(400).json({ status: false, message: "Provide `adminAddress` or `adminAddresses` in request body" });
+        }
+
+        const resetResults: { address: string; nonceRemoved: boolean; lockRemoved: boolean }[] = [];
+
+        for (const addr of addresses) {
+          // Normalize address string (no-op here, but keep for future)
+          const key = addr;
+
+          const hadNonce = nonceTracker.has(key);
+          if (hadNonce) {
+            resetTrackedNonce(key);
+          }
+
+          const hadLock = walletLocks.has(key);
+          if (hadLock) {
+            walletLocks.delete(key);
+          }
+
+          // Also ensure any lingering tracked value is removed
+          nonceTracker.delete(key);
+
+          resetResults.push({ address: key, nonceRemoved: hadNonce, lockRemoved: hadLock });
+          logger.info("Reset nonce/lock for admin address", { address: key, nonceRemoved: hadNonce, lockRemoved: hadLock });
+        }
+
+        return res.status(200).json({ status: true, message: "Nonce and lock reset for provided addresses", results: resetResults });
+      } catch (error) {
+        logger.error("Error in resetNonce", { error });
+        return res.status(500).json({ status: false, message: error.message || "Unexpected error occurred" });
+      }
+    };
 }

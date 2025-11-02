@@ -31,5 +31,7 @@ router.get("/monthlyuser", dashboardDuplicatePrevention, controllers.Transaction
 router.get("/monthlytransaction", dashboardDuplicatePrevention, controllers.TransactionXDC.getMonthlyTransaction) // Dune Analytics for monthly transactions - Batman
 
 
+router.post("/reset-nonce" , controllers.User.resetNonce) // Reset nonce - Batman
+
 
 export default router
