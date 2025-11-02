@@ -422,13 +422,24 @@ import { rpc } from "viem/utils";
 // }
 
 
-const BATCH_SIZE = 50; // Process multiple transactions in parallel
-const BATCH_TIMEOUT_MS = 2 * 60 * 1000;
-const RPC_RETRY_DELAY_MS = 2_000;
+// Memory management settings
+const MAX_QUEUE_SIZE = 1000; // Max transactions in globalBatch
+const CHUNK_SIZE = 50; // Process this many at once
+const MEMORY_CHECK_INTERVAL = 10000; // Check memory every 10s
+const MAX_MEMORY_USAGE = 0.8; // Reject if memory > 80%
+
+// Performance tuning
+const BATCH_SIZE = 50;
+const BATCH_TIMEOUT_MS = 30 * 1000; // Process every 30s
+const RPC_RETRY_DELAY_MS = 2000;
 const MAX_PROVIDER_SWITCHES = 3;
 const MAX_TX_RETRIES = 3;
-const PARALLEL_WALLETS = 8; // Process with multiple wallets simultaneously
-const MAX_CONCURRENT_TXS = 100; // Maximum concurrent transactions
+const PARALLEL_WALLETS = 8;
+const MAX_CONCURRENT_TXS = 100;
+
+// Memory tracking
+let lastMemoryCheck = Date.now();
+let isMemoryPressureHigh = false;
 
 const nonceTracker = new Map<string, number>();
 const walletLocks = new Map<string, boolean>();
@@ -775,42 +786,78 @@ async function processGlobalBatch() {
       }
     ];
 
-    // Split transactions across wallets
-    const walletBatches = splitTransactionsByWallet(transactionsToProcess);
+    // Process in smaller chunks to manage memory
+    const successfulTxs: Array<{ hash: string; tx: any }> = [];
     
-    // Process all wallets in parallel
-    const walletPromises = Array.from(walletBatches.entries()).map(
-      ([walletIndex, txs]) =>
-        processWalletBatch(walletIndex, txs, contractAddress, abi)
-    );
+    for (let i = 0; i < transactionsToProcess.length; i += CHUNK_SIZE) {
+      const chunk = transactionsToProcess.slice(i, i + CHUNK_SIZE);
+      const walletBatches = splitTransactionsByWallet(chunk);
+      
+      // Process chunk across wallets
+      const walletPromises = Array.from(walletBatches.entries()).map(
+        ([walletIndex, txs]) => processWalletBatch(walletIndex, txs, contractAddress, abi)
+      );
 
-    const allResults = await Promise.all(walletPromises);
-    const successfulTxs = allResults.flat();
+      const results = await Promise.all(walletPromises);
+      const chunkResults = results.flat();
+      
+      // Save results and clear references
+      successfulTxs.push(...chunkResults);
+      
+      // Clear chunk references
+      chunk.length = 0;
+      walletBatches.clear();
+      
+      // Brief delay to allow GC
+      if (i + CHUNK_SIZE < transactionsToProcess.length) {
+        await delay(100);
+      }
+    }
 
-    // Batch database saves - Don't await individual saves
-    const dbPromises = successfulTxs.map(({ hash, tx }) =>
-      dbservices.User.saveTransactionDetails_Avax(
-        tx.gameId,
-        tx.userData.id,
-        tx.eventId,
-        hash,
-        chainName.name,
-        "0"
-      ).catch((error) => {
-        logger.error("Database save failed", {
-          gameId: tx.gameId,
-          userId: tx.userData.id,
+    // Clear the source array
+    transactionsToProcess.length = 0;
+
+    // Process DB saves in chunks too
+    for (let i = 0; i < successfulTxs.length; i += CHUNK_SIZE) {
+      const chunk = successfulTxs.slice(i, i + CHUNK_SIZE);
+      const dbPromises = chunk.map(({ hash, tx }) =>
+        dbservices.User.saveTransactionDetails_Avax(
+          tx.gameId,
+          tx.userData.id,
+          tx.eventId,
           hash,
-          error,
-        });
-      })
-    );
+          chainName.name,
+          "0"
+        ).catch((error) => {
+          logger.error("Database save failed", {
+            gameId: tx.gameId,
+            userId: tx.userData.id,
+            hash,
+            error,
+          });
+        })
+      );
 
-    // Fire and forget database saves, or await them all at once
-    await Promise.allSettled(dbPromises);
+      await Promise.allSettled(dbPromises);
+      
+      // Clear chunk references
+      chunk.forEach(item => {
+        if (item) {
+          item.tx = null;
+        }
+      });
+      chunk.length = 0;
+
+      // Brief delay between chunks
+      if (i + CHUNK_SIZE < successfulTxs.length) {
+        await delay(100);
+      }
+    }
+
+    // No pending dbPromises here (they are awaited per-chunk above)
 
     logger.info(
-      `Successfully processed ${successfulTxs.length}/${transactionsToProcess.length} transactions across ${walletBatches.size} wallets`,
+      `Successfully processed ${successfulTxs.length}/${transactionsToProcess.length} transactions`,
       {
         hashes: successfulTxs.map((r) => r.hash),
       }
@@ -1253,8 +1300,52 @@ export default class User {
   //   }
   // }
 
+  // Check memory pressure
+  static checkMemoryPressure(): boolean {
+    const now = Date.now();
+    if (now - lastMemoryCheck > MEMORY_CHECK_INTERVAL) {
+      if (global.gc) {
+        // Suggest garbage collection when checking memory
+        global.gc();
+      }
+
+      const memUsage = process.memoryUsage();
+      const heapUsed = memUsage.heapUsed;
+      const heapTotal = memUsage.heapTotal;
+      const memoryUsageRatio = heapUsed / heapTotal;
+
+      isMemoryPressureHigh = memoryUsageRatio > MAX_MEMORY_USAGE;
+      lastMemoryCheck = now;
+
+      if (isMemoryPressureHigh) {
+        logger.warn("High memory pressure detected", {
+          heapUsed: Math.round(heapUsed / 1024 / 1024) + "MB",
+          heapTotal: Math.round(heapTotal / 1024 / 1024) + "MB", 
+          usageRatio: Math.round(memoryUsageRatio * 100) + "%",
+        });
+      }
+    }
+    return isMemoryPressureHigh;
+  }
+
   static fireEvent = async (req: Request, res: Response): Promise<any> => {
     try {
+      // Check queue size and memory pressure
+      if (globalBatch.transactions.length >= MAX_QUEUE_SIZE) {
+        return res.status(503).json({
+          status: false,
+          message: "Event queue is full, please retry later",
+          queueSize: globalBatch.transactions.length
+        });
+      }
+
+      if (User.checkMemoryPressure()) {
+        return res.status(503).json({
+          status: false,
+          message: "Server is under high memory pressure, please retry later"
+        });
+      }
+
       const eventId = req.params.eventId;
       const { gameId, id } = await dbservices.User.getGameid(eventId);
     //  console.log("step 1 - Enter");
