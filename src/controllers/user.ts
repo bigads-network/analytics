@@ -441,6 +441,20 @@ const MAX_CONCURRENT_TXS = 100;
 let lastMemoryCheck = Date.now();
 let isMemoryPressureHigh = false;
 
+// Rate limiting / throttling settings
+const TX_PER_SECOND = Number(process.env.TX_PER_SECOND) || 100; // global TPS target
+const PER_WALLET_THROTTLE_MS = Math.max(0, Math.ceil(1000 / Math.max(1, Math.floor(TX_PER_SECOND / PARALLEL_WALLETS))));
+
+// Global active sends counter to limit concurrent on-chain requests
+let globalActiveTxs = 0;
+
+async function waitForSlot() {
+  while (globalActiveTxs >= MAX_CONCURRENT_TXS) {
+    await delay(50);
+  }
+  globalActiveTxs += 1;
+}
+
 const nonceTracker = new Map<string, number>();
 const walletLocks = new Map<string, boolean>();
 let isProcessingBatch = false;
@@ -608,7 +622,7 @@ async function sendSingleTransaction(
 ): Promise<{ hash: string; tx: any } | null> {
   let retries = 0;
   let currentProvider = provider;
-  
+
   while (retries < MAX_TX_RETRIES) {
     try {
       const callData = contractInterface.interface.encodeFunctionData(
@@ -616,15 +630,23 @@ async function sendSingleTransaction(
         [tx.userData.saAddress, tx.metadata, tx.gameId]
       );
 
-      const txResponse = await wallet.sendTransaction({
-        to: contractAddress,
-        data: callData,
-        value: 0n,
-        nonce: nonce,
-        gasLimit: 100000, // Set explicit gas limit
-      });
+      // Wait for a global slot (protects memory and RPC concurrency)
+      await waitForSlot();
 
-      return { hash: txResponse.hash, tx };
+      try {
+        const txResponse = await wallet.sendTransaction({
+          to: contractAddress,
+          data: callData,
+          value: 0n,
+          nonce: nonce,
+          gasLimit: 100000, // Set explicit gas limit
+        });
+
+        return { hash: txResponse.hash, tx };
+      } finally {
+        // release slot immediately after the send attempt is made
+        globalActiveTxs = Math.max(0, globalActiveTxs - 1);
+      }
     } catch (error) {
       logger.error("Error sending transaction", {
         wallet: walletAddress,
@@ -655,7 +677,7 @@ async function sendSingleTransaction(
       }
     }
   }
-  
+
   return null;
 }
 
@@ -680,23 +702,34 @@ async function processWalletBatch(
 
   let nonce = await getTrackedNonce(provider, walletAddress);
   
-  // Send all transactions in parallel with Promise.all
-  const txPromises = transactions.map(async (tx, index) => {
+  // Process transactions sequentially per wallet to preserve nonce order
+  const results: Array<{ hash: string; tx: any } | null> = [];
+  for (let index = 0; index < transactions.length; index++) {
+    const tx = transactions[index];
     const txNonce = nonce + index;
     markNonceUsed(walletAddress, txNonce);
-    
-    return sendSingleTransaction(
-      wallet,
-      provider,
-      contractAddress,
-      contractInterface,
-      tx,
-      txNonce,
-      walletAddress
-    );
-  });
 
-  const results = await Promise.all(txPromises);
+    try {
+      const r = await sendSingleTransaction(
+        wallet,
+        provider,
+        contractAddress,
+        contractInterface,
+        tx,
+        txNonce,
+        walletAddress
+      );
+      if (r) results.push(r);
+    } catch (err) {
+      logger.error("Error in per-wallet transaction send loop", { err });
+    }
+
+    // Throttle between sends to avoid burst memory/RPC pressure
+    if (PER_WALLET_THROTTLE_MS > 0 && index + 1 < transactions.length) {
+      await delay(PER_WALLET_THROTTLE_MS);
+    }
+  }
+
   return results.filter((r) => r !== null) as Array<{ hash: string; tx: any }>;
 }
 
@@ -1446,14 +1479,24 @@ export default class User {
         eventId: gameDetails.events[0].id,
       });
 
-      // Add transaction to global batch
+      // Add transaction to global batch — keep only minimal user info to reduce memory
+      const minimalUserData = {
+        id: userExist.id,
+        saAddress: userExist.saAddress,
+        role: userExist.role,
+      };
+
       globalBatch.transactions.push({
         userId,
         gameId,
         eventId: id,
         metadata,
-        userData: userExist,
+        userData: minimalUserData,
       });
+
+      // Remove heavy references early
+      // @ts-ignore - allow clearing to free memory
+      userExist = null;
 
       // Start timer if this is the first transaction in batch
       if (globalBatch.transactions.length === 1) {
