@@ -422,16 +422,15 @@ import { rpc } from "viem/utils";
 // }
 
 
-// Throughput tuning
-const CHUNK_SIZE = 200; // Larger chunks to maximize throughput
-
-const BATCH_SIZE = 200; // Trigger processing when this many pending transactions
-const BATCH_TIMEOUT_MS = 10 * 1000; // Process every 10s
-const RPC_RETRY_DELAY_MS = 2000;
-const MAX_PROVIDER_SWITCHES = 3;
+// Maximum performance settings - optimized for highest possible transaction throughput
+const CHUNK_SIZE = 500; // Process very large chunks for maximum throughput
+const BATCH_SIZE = 1000; // Larger batch size to maximize transactions
+const BATCH_TIMEOUT_MS = 2000; // Process very frequently (2s)
+const RPC_RETRY_DELAY_MS = 500; // Minimal retry delay
+const MAX_PROVIDER_SWITCHES = 5; // More provider retries
 const MAX_TX_RETRIES = 3;
-const PARALLEL_WALLETS = 8;
-const MAX_CONCURRENT_TXS = 500; // Global concurrency cap for on-chain sends
+const PARALLEL_WALLETS = 16; // Use maximum parallel wallets
+const MAX_CONCURRENT_TXS = 2000; // Very high concurrent transaction limit
 
 // No per-wallet throttling — aim for maximum throughput.
 // Concurrency is controlled by MAX_CONCURRENT_TXS (globalActiveTxs + waitForSlot).
@@ -694,33 +693,33 @@ async function processWalletBatch(
 
   let nonce = await getTrackedNonce(provider, walletAddress);
   
-  // Process transactions sequentially per wallet to preserve nonce order
-  const results: Array<{ hash: string; tx: any } | null> = [];
+  // Process transactions in parallel per wallet while preserving nonce order
+  const sendPromises: Promise<{ hash: string; tx: any } | null>[] = [];
+  
   for (let index = 0; index < transactions.length; index++) {
     const tx = transactions[index];
     const txNonce = nonce + index;
     markNonceUsed(walletAddress, txNonce);
 
-    try {
-      const r = await sendSingleTransaction(
-        wallet,
-        provider,
-        contractAddress,
-        contractInterface,
-        tx,
-        txNonce,
-        walletAddress
-      );
-      if (r) results.push(r);
-    } catch (err) {
-      logger.error("Error in per-wallet transaction send loop", { err });
-    }
+    // Queue up transaction sends without waiting
+    const sendPromise = sendSingleTransaction(
+      wallet,
+      provider,
+      contractAddress,
+      contractInterface,
+      tx,
+      txNonce,
+      walletAddress
+    ).catch(err => {
+      logger.error("Error in parallel transaction send", { err });
+      return null;
+    });
 
-    // Throttle between sends to avoid burst memory/RPC pressure
-    if (PER_WALLET_THROTTLE_MS > 0 && index + 1 < transactions.length) {
-      await delay(PER_WALLET_THROTTLE_MS);
-    }
+    sendPromises.push(sendPromise);
   }
+
+  // Wait for all transactions to complete
+  const results = await Promise.all(sendPromises);
 
   return results.filter((r) => r !== null) as Array<{ hash: string; tx: any }>;
 }
@@ -811,33 +810,35 @@ async function processGlobalBatch() {
       }
     ];
 
-    // Process in smaller chunks to manage memory
+    // Process in large parallel chunks for maximum throughput
     const successfulTxs: Array<{ hash: string; tx: any }> = [];
+    const processingPromises: Promise<any>[] = [];
     
     for (let i = 0; i < transactionsToProcess.length; i += CHUNK_SIZE) {
       const chunk = transactionsToProcess.slice(i, i + CHUNK_SIZE);
       const walletBatches = splitTransactionsByWallet(chunk);
       
-      // Process chunk across wallets
-      const walletPromises = Array.from(walletBatches.entries()).map(
-        ([walletIndex, txs]) => processWalletBatch(walletIndex, txs, contractAddress, abi)
-      );
+      // Queue up all wallet batch processing without waiting
+      const chunkPromise = Promise.all(
+        Array.from(walletBatches.entries()).map(
+          ([walletIndex, txs]) => processWalletBatch(walletIndex, txs, contractAddress, abi)
+        )
+      ).then(results => {
+        const chunkResults = results.flat();
+        successfulTxs.push(...chunkResults);
+        
+        // Clean up references
+        chunk.length = 0;
+        walletBatches.clear();
+      }).catch(err => {
+        logger.error("Error processing chunk", { err, chunkStart: i });
+      });
 
-      const results = await Promise.all(walletPromises);
-      const chunkResults = results.flat();
-      
-      // Save results and clear references
-      successfulTxs.push(...chunkResults);
-      
-      // Clear chunk references
-      chunk.length = 0;
-      walletBatches.clear();
-      
-      // Brief delay to allow GC
-      if (i + CHUNK_SIZE < transactionsToProcess.length) {
-        await delay(100);
-      }
+      processingPromises.push(chunkPromise);
     }
+
+    // Wait for all chunks to complete
+    await Promise.all(processingPromises);
 
     // Clear the source array
     transactionsToProcess.length = 0;
