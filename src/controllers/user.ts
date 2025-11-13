@@ -428,10 +428,10 @@ const RPC_RETRY_DELAY_MS = 2_000;
 const MAX_PROVIDER_SWITCHES = 3;
 const MAX_TX_RETRIES = 3;
 const PARALLEL_WALLETS = 8; // Process with multiple wallets simultaneously
-const MAX_CONCURRENT_TXS = 100; // Maximum concurrent transactions
+const MAX_QUEUE_SIZE = 2000; // Hard cap on in-memory queue to avoid OOM
+const MAX_REQUEUE_ATTEMPTS = 3;
 
 const nonceTracker = new Map<string, number>();
-const walletLocks = new Map<string, boolean>();
 let isProcessingBatch = false;
 let pendingProcessRequest = false;
 
@@ -552,14 +552,21 @@ function getNextProvider() {
   return provider;
 }
 
+type QueuedTransaction = {
+  userId: string;
+  gameId: number;
+  eventId: number;
+  metadata: string;
+  userSnapshot: {
+    id: number | null;
+    role: string | null;
+    saAddress: string | null;
+  };
+  attempts: number;
+};
+
 let globalBatch: {
-  transactions: {
-    userId: string;
-    gameId: number;
-    eventId: number;
-    metadata: string;
-    userData: any;
-  }[];
+  transactions: QueuedTransaction[];
   timeout: NodeJS.Timeout | null;
   batchStartTime: number | null;
 } = {
@@ -568,11 +575,38 @@ let globalBatch: {
   batchStartTime: null,
 };
 
+const createUserSnapshot = (user: any): QueuedTransaction["userSnapshot"] => ({
+  id: typeof user?.id === "number" ? user.id : null,
+  role: user?.role ?? null,
+  saAddress: user?.saAddress ?? null,
+});
+
+const trimTransactionsForRequeue = (transactions: QueuedTransaction[]) => {
+  const retryable: QueuedTransaction[] = [];
+  const dropped: QueuedTransaction[] = [];
+
+  transactions.forEach((tx) => {
+    if (tx.attempts + 1 > MAX_REQUEUE_ATTEMPTS) {
+      dropped.push(tx);
+    } else {
+      retryable.push({ ...tx, attempts: tx.attempts + 1 });
+    }
+  });
+
+  if (dropped.length) {
+    logger.error("Dropping transactions after max retry attempts", {
+      dropped: dropped.length,
+    });
+  }
+
+  return retryable;
+};
+
 // Split transactions across multiple wallets
 function splitTransactionsByWallet(
-  transactions: any[]
-): Map<number, any[]> {
-  const walletBatches = new Map<number, any[]>();
+  transactions: QueuedTransaction[]
+): Map<number, QueuedTransaction[]> {
+  const walletBatches = new Map<number, QueuedTransaction[]>();
   
   transactions.forEach((tx, index) => {
     const walletIndex = index % PARALLEL_WALLETS;
@@ -591,10 +625,10 @@ async function sendSingleTransaction(
   provider: ethers.providers.JsonRpcProvider,
   contractAddress: string,
   contractInterface: ethers.Contract,
-  tx: any,
+  tx: QueuedTransaction,
   nonce: number,
   walletAddress: string
-): Promise<{ hash: string; tx: any } | null> {
+): Promise<{ hash: string; tx: QueuedTransaction } | null> {
   let retries = 0;
   let currentProvider = provider;
   
@@ -602,7 +636,7 @@ async function sendSingleTransaction(
     try {
       const callData = contractInterface.interface.encodeFunctionData(
         "storeMetadata",
-        [tx.userData.saAddress, tx.metadata, tx.gameId]
+        [tx.userSnapshot.saAddress, tx.metadata, tx.gameId]
       );
 
       const txResponse = await wallet.sendTransaction({
@@ -651,10 +685,10 @@ async function sendSingleTransaction(
 // Process transactions for a single wallet in parallel
 async function processWalletBatch(
   walletIndex: number,
-  transactions: any[],
+  transactions: QueuedTransaction[],
   contractAddress: string,
   abi: any[]
-): Promise<Array<{ hash: string; tx: any }>> {
+): Promise<Array<{ hash: string; tx: QueuedTransaction }>> {
   const privKey = adminPrivateKeys[walletIndex];
   const provider = getNextProvider();
   
@@ -686,7 +720,10 @@ async function processWalletBatch(
   });
 
   const results = await Promise.all(txPromises);
-  return results.filter((r) => r !== null) as Array<{ hash: string; tx: any }>;
+  return results.filter((r) => r !== null) as Array<{
+    hash: string;
+    tx: QueuedTransaction;
+  }>;
 }
 
 async function processGlobalBatch() {
@@ -791,7 +828,7 @@ async function processGlobalBatch() {
     const dbPromises = successfulTxs.map(({ hash, tx }) =>
       dbservices.User.saveTransactionDetails_Avax(
         tx.gameId,
-        tx.userData.id,
+        tx.userSnapshot.id!,
         tx.eventId,
         hash,
         chainName.name,
@@ -799,7 +836,7 @@ async function processGlobalBatch() {
       ).catch((error) => {
         logger.error("Database save failed", {
           gameId: tx.gameId,
-          userId: tx.userData.id,
+          userId: tx.userSnapshot.id,
           hash,
           error,
         });
@@ -817,9 +854,33 @@ async function processGlobalBatch() {
     );
   } catch (error) {
     console.error(`Error processing global batch:`, error);
-    
-    // Requeue failed transactions
-    globalBatch.transactions = [...transactionsToProcess, ...globalBatch.transactions];
+
+    const retryable = trimTransactionsForRequeue(transactionsToProcess);
+
+    if (!retryable.length) {
+      globalBatch.batchStartTime = null;
+      globalBatch.timeout = null;
+      return;
+    }
+
+    const projectedSize = retryable.length + globalBatch.transactions.length;
+    if (projectedSize > MAX_QUEUE_SIZE) {
+      const allowed = Math.max(MAX_QUEUE_SIZE - globalBatch.transactions.length, 0);
+      if (allowed > 0) {
+        globalBatch.transactions = [
+          ...retryable.slice(0, allowed),
+          ...globalBatch.transactions,
+        ];
+      }
+      logger.error("Queue at capacity while requeueing failed transactions", {
+        attempted: retryable.length,
+        enqueued: Math.min(allowed, retryable.length),
+        dropped: retryable.length - Math.min(allowed, retryable.length),
+      });
+    } else {
+      globalBatch.transactions = [...retryable, ...globalBatch.transactions];
+    }
+
     globalBatch.batchStartTime = Date.now();
 
     if (globalBatch.timeout) {
@@ -1348,12 +1409,44 @@ export default class User {
         // );
       }
 
+      const userSnapshot = createUserSnapshot(userExist);
+
+      if (userSnapshot.id === null || !userSnapshot.saAddress) {
+        logger.error("User snapshot missing critical identifiers", {
+          userId: userSnapshot.id,
+          saAddress: userSnapshot.saAddress,
+        });
+        return res.status(500).json({
+          status: false,
+          message: "Unable to queue transaction for processing",
+        });
+      }
+
+      const eventDetails = gameDetails?.events?.[0];
+      if (!eventDetails) {
+        return res.status(400).json({
+          status: false,
+          message: "Event details are unavailable for the provided event id",
+        });
+      }
+
       const metadata = JSON.stringify({
-        role: userExist?.role,
-        // smartAccountAddress: userExist?.walletAddress,
+        role: userSnapshot.role,
         gameId: gameDetails.id,
-        eventId: gameDetails.events[0].id,
+        eventId: eventDetails.id,
       });
+
+      if (globalBatch.transactions.length >= MAX_QUEUE_SIZE) {
+        logger.warn("Rejecting request because queue is full", {
+          queueSize: globalBatch.transactions.length,
+        });
+
+        return res.status(503).json({
+          status: false,
+          message:
+            "System is processing a high volume of requests. Please retry shortly.",
+        });
+      }
 
       // Add transaction to global batch
       globalBatch.transactions.push({
@@ -1361,7 +1454,8 @@ export default class User {
         gameId,
         eventId: id,
         metadata,
-        userData: userExist,
+        userSnapshot,
+        attempts: 0,
       });
 
       // Start timer if this is the first transaction in batch
@@ -1374,7 +1468,10 @@ export default class User {
 
       // Process immediately if batch size reached
       if (globalBatch.transactions.length >= BATCH_SIZE) {
-        clearTimeout(globalBatch.timeout!);
+        if (globalBatch.timeout) {
+          clearTimeout(globalBatch.timeout);
+          globalBatch.timeout = null;
+        }
         await processGlobalBatch();
       }
 
