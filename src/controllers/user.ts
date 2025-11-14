@@ -423,17 +423,17 @@ import { rpc } from "viem/utils";
 // }
 
 
-const BATCH_SIZE = 50; // Process multiple transactions in parallel
+const BATCH_SIZE = 16; // Process multiple transactions in parallel
 const BATCH_TIMEOUT_MS = 2 * 60 * 1000;
 const RPC_RETRY_DELAY_MS = 2_000;
 const MAX_PROVIDER_SWITCHES = 3;
 const MAX_TX_RETRIES = 3;
 const PARALLEL_WALLETS = 8; // Process with multiple wallets simultaneously
-const MAX_WALLET_CONCURRENCY = 5; // limit concurrent sends per wallet
-const MAX_QUEUE_SIZE = 2000; // Hard cap on in-memory queue length
+const MAX_WALLET_CONCURRENCY = 2; // limit concurrent sends per wallet
+const MAX_QUEUE_SIZE = 1000; // Hard cap on in-memory queue length
 const MAX_QUEUE_BYTES = 32 * 1024 * 1024; // 32MB soft cap
-const MAX_REQUEUE_ATTEMPTS = 3;
-const MAX_PENDING_PER_WALLET = 10;
+const MAX_REQUEUE_ATTEMPTS = 2;
+const MAX_PENDING_PER_WALLET = 5;
 const WALLET_COOLDOWN_MS = 15_000;
 
 const nonceTracker = new Map<string, number>();
@@ -622,19 +622,68 @@ const trimTransactionsForRequeue = (transactions: QueuedTransaction[]) => {
   return retryable;
 };
 
-// Split transactions across multiple wallets
-function splitTransactionsByWallet(
+// Split transactions across multiple wallets respecting pending limits
+async function splitTransactionsByWallet(
   transactions: QueuedTransaction[]
-): Map<number, QueuedTransaction[]> {
+): Promise<Map<number, QueuedTransaction[]>> {
   const walletBatches = new Map<number, QueuedTransaction[]>();
+  
+  // Initialize all wallet batches
+  for (let i = 0; i < PARALLEL_WALLETS; i++) {
+    walletBatches.set(i, []);
+  }
 
-  transactions.forEach((tx, index) => {
-    const walletIndex = index % PARALLEL_WALLETS;
-    if (!walletBatches.has(walletIndex)) {
-      walletBatches.set(walletIndex, []);
+  // Check pending status for all wallets upfront
+  const walletCapacities = await Promise.all(
+    Array.from({ length: PARALLEL_WALLETS }, async (_, walletIndex) => {
+      const privKey = adminPrivateKeys[walletIndex];
+      const provider = getNextProvider();
+      const wallet = new ethers.Wallet(privKey, provider);
+      const walletAddress = await wallet.getAddress();
+      
+      const cooldownUntil = walletCooldowns.get(walletIndex) ?? 0;
+      if (Date.now() < cooldownUntil) {
+        return { walletIndex, available: 0, pending: MAX_PENDING_PER_WALLET };
+      }
+      
+      try {
+        const pendingDelta = await getPendingDelta(provider, walletAddress);
+        const available = Math.max(0, MAX_PENDING_PER_WALLET - pendingDelta);
+        return { walletIndex, available, pending: pendingDelta };
+      } catch (error) {
+        logger.error("Error checking wallet capacity", { walletIndex, error });
+        return { walletIndex, available: 0, pending: MAX_PENDING_PER_WALLET };
+      }
+    })
+  );
+
+  // Distribute transactions to wallets with available capacity
+  for (const tx of transactions) {
+    // Find wallet with most available capacity
+    const availableWallets = walletCapacities
+      .filter((w) => w.available > 0)
+      .sort((a, b) => b.available - a.available);
+
+    if (availableWallets.length === 0) {
+      // All wallets are at capacity, assign to least loaded wallet anyway
+      // (will be requeued by processWalletBatch if still over limit)
+      const leastLoaded = walletCapacities.sort((a, b) => a.pending - b.pending)[0];
+      walletBatches.get(leastLoaded.walletIndex)!.push(tx);
+      continue;
     }
-    walletBatches.get(walletIndex)!.push(tx);
-  });
+
+    // Assign to wallet with most capacity
+    const targetWallet = availableWallets[0];
+    walletBatches.get(targetWallet.walletIndex)!.push(tx);
+    targetWallet.available--; // Decrement available capacity
+  }
+
+  // Remove empty wallet batches
+  for (const [walletIndex, txs] of walletBatches.entries()) {
+    if (txs.length === 0) {
+      walletBatches.delete(walletIndex);
+    }
+  }
 
   return walletBatches;
 }
@@ -817,14 +866,27 @@ async function processWalletBatch(
     return { successes: [], retry: transactions };
   }
 
+  // Calculate how many transactions we can send without exceeding the limit
+  const availableCapacity = MAX_PENDING_PER_WALLET - pendingDelta;
+  const maxTransactionsToProcess = Math.min(
+    transactions.length,
+    availableCapacity,
+    BATCH_SIZE // Also respect batch size limit
+  );
+
+  // Split transactions: process what we can, requeue the rest
+  const transactionsToProcess = transactions.slice(0, maxTransactionsToProcess);
+  const transactionsToRequeue = transactions.slice(maxTransactionsToProcess);
+
   let nonce = await getTrackedNonce(provider, walletAddress);
 
   const successes: Array<{ hash: string; tx: QueuedTransaction }> = [];
   const retry: QueuedTransaction[] = [];
 
+  // Process only the transactions that fit within capacity
   await processWithConcurrencyLimit(
-    transactions,
-    MAX_WALLET_CONCURRENCY,
+    transactionsToProcess,
+    Math.min(MAX_WALLET_CONCURRENCY, availableCapacity),
     async (tx, index) => {
       const txNonce = nonce + index;
       markNonceUsed(walletAddress, txNonce);
@@ -846,6 +908,18 @@ async function processWalletBatch(
       }
     }
   );
+
+  // Add unprocessed transactions to retry queue
+  if (transactionsToRequeue.length > 0) {
+    retry.push(...transactionsToRequeue);
+    logger.info("Requeueing transactions that exceed wallet capacity", {
+      wallet: walletAddress,
+      requeued: transactionsToRequeue.length,
+      processed: transactionsToProcess.length,
+      pendingDelta,
+      availableCapacity,
+    });
+  }
 
   if (retry.length) {
     walletCooldowns.set(walletIndex, Date.now() + WALLET_COOLDOWN_MS);
@@ -952,8 +1026,8 @@ async function processGlobalBatch() {
       }
     ];
 
-    // Split transactions across wallets
-    const walletBatches = splitTransactionsByWallet(transactionsToProcess);
+    // Split transactions across wallets respecting pending limits
+    const walletBatches = await splitTransactionsByWallet(transactionsToProcess);
     
     // Process all wallets in parallel
     const walletPromises = Array.from(walletBatches.entries()).map(
@@ -1032,6 +1106,17 @@ async function processGlobalBatch() {
     }, BATCH_TIMEOUT_MS);
   } finally {
     isProcessingBatch = false;
+
+    // If there are remaining transactions after processing, ensure batchStartTime is set
+    // This handles the case where transactions accumulated during processing
+    if (globalBatch.transactions.length > 0 && !globalBatch.batchStartTime) {
+      globalBatch.batchStartTime = Date.now();
+      if (!globalBatch.timeout) {
+        globalBatch.timeout = setTimeout(() => {
+          processGlobalBatch();
+        }, BATCH_TIMEOUT_MS);
+      }
+    }
 
     if (pendingProcessRequest) {
       pendingProcessRequest = false;
@@ -1618,8 +1703,9 @@ export default class User {
       globalBatch.transactions.push(newTransaction);
       currentQueueBytes += newTransaction.sizeBytes;
 
-      // Start timer if this is the first transaction in batch
-      if (globalBatch.transactions.length === 1) {
+      // Start timer if this is the first transaction in batch AND not currently processing
+      // This prevents setting batchStartTime while processing is in progress
+      if (globalBatch.transactions.length === 1 && !isProcessingBatch) {
         globalBatch.batchStartTime = Date.now();
         globalBatch.timeout = setTimeout(() => {
           processGlobalBatch();
@@ -1636,8 +1722,9 @@ export default class User {
       }
 
       // Calculate remaining time for response
+      // Clamp to 0 to avoid negative values (which occur when batch timeout has passed)
       const remainingTime = globalBatch.batchStartTime
-        ? BATCH_TIMEOUT_MS - (Date.now() - globalBatch.batchStartTime)
+        ? Math.max(0, BATCH_TIMEOUT_MS - (Date.now() - globalBatch.batchStartTime))
         : 0;
 
       logger.info(
