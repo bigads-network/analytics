@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { Request, Response } from "express";
 import { privateKeyToAccount } from "viem/accounts";
 import { createWalletClient, http } from "viem";
@@ -428,12 +429,17 @@ const RPC_RETRY_DELAY_MS = 2_000;
 const MAX_PROVIDER_SWITCHES = 3;
 const MAX_TX_RETRIES = 3;
 const PARALLEL_WALLETS = 8; // Process with multiple wallets simultaneously
-const MAX_QUEUE_SIZE = 2000; // Hard cap on in-memory queue to avoid OOM
+const MAX_WALLET_CONCURRENCY = 5; // limit concurrent sends per wallet
+const MAX_QUEUE_SIZE = 2000; // Hard cap on in-memory queue length
+const MAX_QUEUE_BYTES = 32 * 1024 * 1024; // 32MB soft cap
 const MAX_REQUEUE_ATTEMPTS = 3;
+const MAX_PENDING_PER_WALLET = 10;
+const WALLET_COOLDOWN_MS = 15_000;
 
 const nonceTracker = new Map<string, number>();
 let isProcessingBatch = false;
 let pendingProcessRequest = false;
+let currentQueueBytes = 0;
 
 const retryableRpcErrors = new Set([
   "ETIMEDOUT",
@@ -563,6 +569,7 @@ type QueuedTransaction = {
     saAddress: string | null;
   };
   attempts: number;
+  sizeBytes: number;
 };
 
 let globalBatch: {
@@ -575,11 +582,24 @@ let globalBatch: {
   batchStartTime: null,
 };
 
+const walletCooldowns = new Map<number, number>();
+
 const createUserSnapshot = (user: any): QueuedTransaction["userSnapshot"] => ({
   id: typeof user?.id === "number" ? user.id : null,
   role: user?.role ?? null,
   saAddress: user?.saAddress ?? null,
 });
+
+const estimateTransactionSize = (
+  tx: Omit<QueuedTransaction, "sizeBytes" | "attempts">
+): number => {
+  try {
+    return Buffer.byteLength(JSON.stringify(tx), "utf8");
+  } catch (error) {
+    logger.warn("Failed to estimate transaction size", { error });
+    return 1024; // fall back to 1KB
+  }
+};
 
 const trimTransactionsForRequeue = (transactions: QueuedTransaction[]) => {
   const retryable: QueuedTransaction[] = [];
@@ -607,7 +627,7 @@ function splitTransactionsByWallet(
   transactions: QueuedTransaction[]
 ): Map<number, QueuedTransaction[]> {
   const walletBatches = new Map<number, QueuedTransaction[]>();
-  
+
   transactions.forEach((tx, index) => {
     const walletIndex = index % PARALLEL_WALLETS;
     if (!walletBatches.has(walletIndex)) {
@@ -615,9 +635,79 @@ function splitTransactionsByWallet(
     }
     walletBatches.get(walletIndex)!.push(tx);
   });
-  
+
   return walletBatches;
 }
+
+const getPendingDelta = async (
+  provider: ethers.providers.JsonRpcProvider,
+  address: string
+) => {
+  const [latest, pending] = await Promise.all([
+    provider.getTransactionCount(address, "latest"),
+    provider.getTransactionCount(address, "pending"),
+  ]);
+  return Math.max(0, pending - latest);
+};
+
+const processWithConcurrencyLimit = async <T>(
+  items: T[],
+  limit: number,
+  handler: (item: T, index: number) => Promise<void>
+) => {
+  for (let i = 0; i < items.length; i += limit) {
+    const chunk = items.slice(i, i + limit);
+    await Promise.all(
+      chunk.map((item, offset) => handler(item, i + offset))
+    );
+  }
+};
+
+const enqueueTransactionsAtFront = (transactions: QueuedTransaction[]) => {
+  if (!transactions.length) {
+    return;
+  }
+
+  const projectedCount = transactions.length + globalBatch.transactions.length;
+  if (projectedCount > MAX_QUEUE_SIZE) {
+    logger.error("Queue length capacity hit while enqueueing", {
+      attempted: transactions.length,
+      allowed: Math.max(MAX_QUEUE_SIZE - globalBatch.transactions.length, 0),
+    });
+  }
+
+  const allowedCount = Math.max(
+    Math.min(MAX_QUEUE_SIZE - globalBatch.transactions.length, transactions.length),
+    0
+  );
+
+  let allowedBytes = 0;
+  const allowedTxs = transactions.slice(0, allowedCount).filter((tx) => {
+    if (currentQueueBytes + allowedBytes + tx.sizeBytes > MAX_QUEUE_BYTES) {
+      logger.error("Queue byte capacity hit while enqueueing retries", {
+        attemptedBytes: tx.sizeBytes,
+        currentQueueBytes,
+      });
+      return false;
+    }
+    allowedBytes += tx.sizeBytes;
+    return true;
+  });
+
+  if (allowedTxs.length) {
+    globalBatch.transactions = [...allowedTxs, ...globalBatch.transactions];
+    currentQueueBytes += allowedBytes;
+    globalBatch.batchStartTime = Date.now();
+
+    if (!globalBatch.timeout) {
+      globalBatch.timeout = setTimeout(() => {
+        processGlobalBatch().catch((error) =>
+          logger.error("Error processing scheduled retry batch", { error })
+        );
+      }, BATCH_TIMEOUT_MS);
+    }
+  }
+};
 
 // Process single transaction with retry logic
 async function sendSingleTransaction(
@@ -631,7 +721,7 @@ async function sendSingleTransaction(
 ): Promise<{ hash: string; tx: QueuedTransaction } | null> {
   let retries = 0;
   let currentProvider = provider;
-  
+
   while (retries < MAX_TX_RETRIES) {
     try {
       const callData = contractInterface.interface.encodeFunctionData(
@@ -664,7 +754,7 @@ async function sendSingleTransaction(
       if (isRetryableNetworkError(error) && retries < MAX_TX_RETRIES - 1) {
         retries++;
         await delay(RPC_RETRY_DELAY_MS * retries);
-        
+
         // Switch provider
         currentProvider = getNextProvider();
         wallet = new ethers.Wallet(wallet.privateKey, currentProvider);
@@ -678,7 +768,7 @@ async function sendSingleTransaction(
       }
     }
   }
-  
+
   return null;
 }
 
@@ -688,10 +778,17 @@ async function processWalletBatch(
   transactions: QueuedTransaction[],
   contractAddress: string,
   abi: any[]
-): Promise<Array<{ hash: string; tx: QueuedTransaction }>> {
+): Promise<{
+  successes: Array<{ hash: string; tx: QueuedTransaction }>;
+  retry: QueuedTransaction[];
+}> {
+  if (!transactions.length) {
+    return { successes: [], retry: [] };
+  }
+
   const privKey = adminPrivateKeys[walletIndex];
   const provider = getNextProvider();
-  
+
   let wallet = new ethers.Wallet(privKey, provider);
   const walletAddress = await wallet.getAddress();
 
@@ -701,29 +798,62 @@ async function processWalletBatch(
     provider
   );
 
-  let nonce = await getTrackedNonce(provider, walletAddress);
-  
-  // Send all transactions in parallel with Promise.all
-  const txPromises = transactions.map(async (tx, index) => {
-    const txNonce = nonce + index;
-    markNonceUsed(walletAddress, txNonce);
-    
-    return sendSingleTransaction(
-      wallet,
-      provider,
-      contractAddress,
-      contractInterface,
-      tx,
-      txNonce,
-      walletAddress
-    );
-  });
+  const cooldownUntil = walletCooldowns.get(walletIndex) ?? 0;
+  if (Date.now() < cooldownUntil) {
+    logger.warn("Wallet cooling down, requeueing transactions", {
+      wallet: walletAddress,
+      cooldownRemaining: cooldownUntil - Date.now(),
+    });
+    return { successes: [], retry: transactions };
+  }
 
-  const results = await Promise.all(txPromises);
-  return results.filter((r) => r !== null) as Array<{
-    hash: string;
-    tx: QueuedTransaction;
-  }>;
+  const pendingDelta = await getPendingDelta(provider, walletAddress);
+  if (pendingDelta >= MAX_PENDING_PER_WALLET) {
+    walletCooldowns.set(walletIndex, Date.now() + WALLET_COOLDOWN_MS);
+    logger.warn("Wallet pending threshold hit, requeueing transactions", {
+      wallet: walletAddress,
+      pendingDelta,
+    });
+    return { successes: [], retry: transactions };
+  }
+
+  let nonce = await getTrackedNonce(provider, walletAddress);
+
+  const successes: Array<{ hash: string; tx: QueuedTransaction }> = [];
+  const retry: QueuedTransaction[] = [];
+
+  await processWithConcurrencyLimit(
+    transactions,
+    MAX_WALLET_CONCURRENCY,
+    async (tx, index) => {
+      const txNonce = nonce + index;
+      markNonceUsed(walletAddress, txNonce);
+
+      const result = await sendSingleTransaction(
+        wallet,
+        provider,
+        contractAddress,
+        contractInterface,
+        tx,
+        txNonce,
+        walletAddress
+      );
+
+      if (result) {
+        successes.push(result);
+      } else {
+        retry.push(tx);
+      }
+    }
+  );
+
+  if (retry.length) {
+    walletCooldowns.set(walletIndex, Date.now() + WALLET_COOLDOWN_MS);
+  } else {
+    walletCooldowns.set(walletIndex, Date.now());
+  }
+
+  return { successes, retry };
 }
 
 async function processGlobalBatch() {
@@ -738,8 +868,18 @@ async function processGlobalBatch() {
 
   isProcessingBatch = true;
 
-  const transactionsToProcess = [...globalBatch.transactions];
-  globalBatch.transactions = [];
+  const batchCount = Math.min(BATCH_SIZE, globalBatch.transactions.length);
+  const transactionsToProcess = globalBatch.transactions.splice(0, batchCount);
+  const batchBytes = transactionsToProcess.reduce(
+    (total, tx) => total + tx.sizeBytes,
+    0
+  );
+  currentQueueBytes = Math.max(currentQueueBytes - batchBytes, 0);
+
+  if (!globalBatch.transactions.length) {
+    currentQueueBytes = 0;
+  }
+
   if (globalBatch.timeout) {
     clearTimeout(globalBatch.timeout);
   }
@@ -822,7 +962,13 @@ async function processGlobalBatch() {
     );
 
     const allResults = await Promise.all(walletPromises);
-    const successfulTxs = allResults.flat();
+    const successfulTxs = allResults.flatMap((result) => result.successes);
+
+    const retryCandidates = allResults.flatMap((result) => result.retry);
+    if (retryCandidates.length) {
+      const trimmed = trimTransactionsForRequeue(retryCandidates);
+      enqueueTransactionsAtFront(trimmed);
+    }
 
     // Batch database saves - Don't await individual saves
     const dbPromises = successfulTxs.map(({ hash, tx }) =>
@@ -864,22 +1010,14 @@ async function processGlobalBatch() {
     }
 
     const projectedSize = retryable.length + globalBatch.transactions.length;
-    if (projectedSize > MAX_QUEUE_SIZE) {
-      const allowed = Math.max(MAX_QUEUE_SIZE - globalBatch.transactions.length, 0);
-      if (allowed > 0) {
-        globalBatch.transactions = [
-          ...retryable.slice(0, allowed),
-          ...globalBatch.transactions,
-        ];
-      }
+    if (projectedSize > MAX_QUEUE_SIZE || currentQueueBytes > MAX_QUEUE_BYTES) {
       logger.error("Queue at capacity while requeueing failed transactions", {
         attempted: retryable.length,
-        enqueued: Math.min(allowed, retryable.length),
-        dropped: retryable.length - Math.min(allowed, retryable.length),
+        queueSize: globalBatch.transactions.length,
+        queueBytes: currentQueueBytes,
       });
-    } else {
-      globalBatch.transactions = [...retryable, ...globalBatch.transactions];
     }
+    enqueueTransactionsAtFront(retryable);
 
     globalBatch.batchStartTime = Date.now();
 
@@ -1448,15 +1586,37 @@ export default class User {
         });
       }
 
-      // Add transaction to global batch
-      globalBatch.transactions.push({
+      const newTransaction: QueuedTransaction = {
         userId,
         gameId,
         eventId: id,
         metadata,
         userSnapshot,
         attempts: 0,
-      });
+        sizeBytes: estimateTransactionSize({
+          userId,
+          gameId,
+          eventId: id,
+          metadata,
+          userSnapshot,
+        }),
+      };
+
+      if (currentQueueBytes + newTransaction.sizeBytes > MAX_QUEUE_BYTES) {
+        logger.warn("Rejecting request due to queue byte pressure", {
+          queueBytes: currentQueueBytes,
+          incomingBytes: newTransaction.sizeBytes,
+        });
+        return res.status(503).json({
+          status: false,
+          message:
+            "System is processing a high volume of requests. Please retry shortly.",
+        });
+      }
+
+      // Add transaction to global batch
+      globalBatch.transactions.push(newTransaction);
+      currentQueueBytes += newTransaction.sizeBytes;
 
       // Start timer if this is the first transaction in batch
       if (globalBatch.transactions.length === 1) {
