@@ -9,6 +9,7 @@ import logger from "./config/logger";
 import path from "path";
 import swagger from "swagger-ui-express"
 import apiDocs from "./config/swagger";
+import { initializeNonces } from "./controllers/user";
 // import './cronDashboardCacheWorker'; // Start dashboard cache cron worker automatically
 // import './cronGamesCacheWorker'; // Start games cache cron worker automatically
 // import "./services/bot"; // Import bot instance
@@ -30,7 +31,17 @@ app.use("/", router);
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views')); // Adjust the path based on your project structure
 
+const PORT = envConfigs.port;
+const server = app.listen(PORT, async () => {
+  logger.info(`Server started on ${PORT}`);
+  
+  // Initialize nonces from blockchain at startup
+  try {
+    await initializeNonces();
+    logger.info('Nonce initialization completed');
+  } catch (error) {
+    logger.error('Failed to initialize nonces at startup', { error });
+  }
+});
 
-app.listen(envConfigs.port, () => {
-  logger.info(`Server started on ${envConfigs.port}`);
-})
+export default server;

@@ -449,7 +449,9 @@ const MAX_REQUEUE_ATTEMPTS = 0; // No requeue - fire once and forget
 const MAX_PENDING_PER_WALLET = 8; // Allow more pending per wallet
 const WALLET_COOLDOWN_MS = 5_000; // Shorter cooldown
 
-const nonceTracker = new Map<string, number>();
+const nonceByWallet = new Map<number, number>();
+let noncesInitialized = false;
+
 let isProcessingBatch = false;
 let pendingProcessRequest = false;
 let currentQueueBytes = 0;
@@ -467,37 +469,92 @@ const delay = (ms: number) =>
     setTimeout(resolve, ms);
   });
 
-async function getTrackedNonce(
-  provider: ethers.providers.JsonRpcProvider,
-  walletAddress: string
-) {
-  const pendingNonce = await provider.getTransactionCount(
-    walletAddress,
-    "pending"
-  );
-  const trackedNonce = nonceTracker.get(walletAddress);
-  const effectiveNonce =
-    trackedNonce !== undefined && trackedNonce >= pendingNonce
-      ? trackedNonce
-      : pendingNonce;
-  nonceTracker.set(walletAddress, effectiveNonce);
+// Initialize nonces once at server startup
+async function initializeNonces() {
+  if (noncesInitialized) return;
   
-  // Log nonce calculation for debugging
-  if (trackedNonce !== effectiveNonce) {
-    logger.debug(`Nonce mismatch for ${walletAddress.slice(0, 8)}: pending=${pendingNonce} tracked=${trackedNonce} using=${effectiveNonce}`);
+  logger.info('Initializing nonces from blockchain...');
+  
+  try {
+    for (let walletIndex = 0; walletIndex < adminPrivateKeys.length; walletIndex++) {
+      const privKey = adminPrivateKeys[walletIndex];
+      if (!privKey) continue;
+      
+      const provider = getNextProvider();
+      const wallet = new ethers.Wallet(privKey, provider);
+      const walletAddress = await wallet.getAddress();
+      
+      // Get pending nonce from blockchain (includes pending transactions)
+      const pendingNonce = await provider.getTransactionCount(walletAddress, "pending");
+      nonceByWallet.set(walletIndex, pendingNonce);
+      
+      logger.info(`Wallet ${walletIndex} (${walletAddress.slice(0, 8)}): initialized nonce=${pendingNonce}`);
+    }
+    
+    noncesInitialized = true;
+    logger.info('Nonce initialization complete');
+  } catch (error) {
+    logger.error('Error initializing nonces', {
+      error: error instanceof Error ? error.message.slice(0, 100) : 'unknown',
+    });
+    // Continue anyway, nonces will be fetched on first use
   }
-  
-  return effectiveNonce;
 }
 
-const markNonceUsed = (walletAddress: string, nonce: number) => {
-  const nextNonce = nonce + 1;
-  nonceTracker.set(walletAddress, nextNonce);
-  logger.debug(`Nonce marked used: ${walletAddress.slice(0, 8)} sent=${nonce} next=${nextNonce}`);
+// Get current nonce for wallet (local, no RPC call)
+const getNonceForWallet = (walletIndex: number): number => {
+  return nonceByWallet.get(walletIndex) ?? 0;
 };
 
+// Increment nonce locally after sending
+const incrementNonce = (walletIndex: number) => {
+  const current = getNonceForWallet(walletIndex);
+  nonceByWallet.set(walletIndex, current + 1);
+};
+
+// Sync nonces back to blockchain every 5 minutes
+async function syncNoncesWithBlockchain() {
+  logger.info('Syncing nonces with blockchain...');
+  
+  try {
+    for (let walletIndex = 0; walletIndex < adminPrivateKeys.length; walletIndex++) {
+      const privKey = adminPrivateKeys[walletIndex];
+      if (!privKey) continue;
+      
+      const provider = getNextProvider();
+      const wallet = new ethers.Wallet(privKey, provider);
+      const walletAddress = await wallet.getAddress();
+      
+      // Get current pending nonce from blockchain
+      const pendingNonce = await provider.getTransactionCount(walletAddress, "pending");
+      const localNonce = getNonceForWallet(walletIndex);
+      
+      // Update to max of blockchain pending and our local nonce
+      const syncedNonce = Math.max(pendingNonce, localNonce);
+      nonceByWallet.set(walletIndex, syncedNonce);
+      
+      if (syncedNonce !== localNonce) {
+        logger.info(`Nonce sync wallet ${walletIndex}: local=${localNonce} blockchain=${pendingNonce} synced=${syncedNonce}`);
+      }
+    }
+    
+    logger.info('Nonce sync complete');
+  } catch (error) {
+    logger.error('Error syncing nonces', {
+      error: error instanceof Error ? error.message.slice(0, 100) : 'unknown',
+    });
+  }
+}
+
+// Start nonce sync every 5 minutes (300000 ms)
+setInterval(() => {
+  syncNoncesWithBlockchain().catch((error) =>
+    logger.error('Scheduled nonce sync failed', { error })
+  );
+}, 300000);
+
 const resetTrackedNonce = (walletAddress: string) => {
-  nonceTracker.delete(walletAddress);
+  // No longer used - nonces are per wallet index now
 };
 
 const nonceErrorMessages = [
@@ -622,7 +679,7 @@ setInterval(() => {
       uptime: Math.floor(process.uptime()),
     });
   }
-}, 5000);
+}, 10000);
 
 const createUserSnapshot = (user: any): QueuedTransaction["userSnapshot"] => ({
   id: typeof user?.id === "number" ? user.id : null,
@@ -655,85 +712,28 @@ async function splitTransactionsByWallet(
 ): Promise<Map<number, QueuedTransaction[]>> {
   const walletBatches = new Map<number, QueuedTransaction[]>();
   
-  // Initialize all wallet batches (but only for available wallets)
-  for (let i = 0; i < PARALLEL_WALLETS; i++) {
-    walletBatches.set(i, []);
-  }
-
-  // Check pending status for all wallets upfront
-  const walletCapacities = await Promise.all(
-    Array.from({ length: PARALLEL_WALLETS }, async (_, walletIndex) => {
-      const privKey = adminPrivateKeys[walletIndex];
-      
-      // Skip if wallet not configured
-      if (!privKey) {
-        return { walletIndex, available: 0, pending: MAX_PENDING_PER_WALLET };
-      }
-      
-      const provider = getNextProvider();
-      const wallet = new ethers.Wallet(privKey, provider);
-      const walletAddress = await wallet.getAddress();
-      
-      const cooldownUntil = walletCooldowns.get(walletIndex) ?? 0;
-      if (Date.now() < cooldownUntil) {
-        return { walletIndex, available: 0, pending: MAX_PENDING_PER_WALLET };
-      }
-      
-      try {
-        const pendingDelta = await getPendingDelta(provider, walletAddress);
-        const available = Math.max(0, MAX_PENDING_PER_WALLET - pendingDelta);
-        return { walletIndex, available, pending: pendingDelta };
-      } catch (error) {
-        logger.error("Error checking wallet capacity", { 
-          walletIndex, 
-          error: error instanceof Error ? error.message.slice(0, 100) : "unknown" 
-        });
-        return { walletIndex, available: 0, pending: MAX_PENDING_PER_WALLET };
-      }
-    })
-  );
-
-  // Distribute transactions to wallets with available capacity
+  // Simple round-robin distribution without RPC calls - DON'T BLOCK on capacity checks
+  // Fire-and-forget: if wallet is at capacity, send will fail and be retried
+  let walletIndex = 0;
   for (const tx of transactions) {
-    // Find wallet with most available capacity
-    const availableWallets = walletCapacities
-      .filter((w) => w.available > 0)
-      .sort((a, b) => b.available - a.available);
-
-    if (availableWallets.length === 0) {
-      // All wallets are at capacity, assign to least loaded wallet anyway
-      // (will be requeued by processWalletBatch if still over limit)
-      const leastLoaded = walletCapacities.sort((a, b) => a.pending - b.pending)[0];
-      walletBatches.get(leastLoaded.walletIndex)!.push(tx);
-      continue;
+    // Skip invalid wallet indices
+    if (walletIndex >= PARALLEL_WALLETS || !adminPrivateKeys[walletIndex]) {
+      walletIndex = (walletIndex + 1) % PARALLEL_WALLETS;
+      if (!adminPrivateKeys[walletIndex]) {
+        walletIndex = 0; // Fall back to first wallet
+      }
     }
 
-    // Assign to wallet with most capacity
-    const targetWallet = availableWallets[0];
-    walletBatches.get(targetWallet.walletIndex)!.push(tx);
-    targetWallet.available--; // Decrement available capacity
-  }
-
-  // Remove empty wallet batches
-  for (const [walletIndex, txs] of walletBatches.entries()) {
-    if (txs.length === 0) {
-      walletBatches.delete(walletIndex);
+    if (!walletBatches.has(walletIndex)) {
+      walletBatches.set(walletIndex, []);
     }
+    
+    walletBatches.get(walletIndex)!.push(tx);
+    walletIndex = (walletIndex + 1) % PARALLEL_WALLETS;
   }
 
   return walletBatches;
 }
-
-const getPendingDelta = async (
-  provider: ethers.providers.JsonRpcProvider,
-  address: string
-) => {
-  const [latest, pending] = await Promise.all([
-    provider.getTransactionCount(address, "latest"),
-    provider.getTransactionCount(address, "pending"),
-  ]);
-  return Math.max(0, pending - latest);
-};
 
 const processWithConcurrencyLimit = async <T>(
   items: T[],
@@ -871,47 +871,19 @@ async function processWalletBatch(
     provider
   );
 
-  const cooldownUntil = walletCooldowns.get(walletIndex) ?? 0;
-  if (Date.now() < cooldownUntil) {
-    logger.warn("Wallet cooling down, requeueing transactions", {
-      wallet: walletAddress,
-      cooldownRemaining: cooldownUntil - Date.now(),
-    });
-    return { successes: [], retry: transactions };
-  }
-
-  const pendingDelta = await getPendingDelta(provider, walletAddress);
-  if (pendingDelta >= MAX_PENDING_PER_WALLET) {
-    walletCooldowns.set(walletIndex, Date.now() + WALLET_COOLDOWN_MS);
-    // Drop excess transactions in fire-and-forget mode to prevent memory buildup
-    logger.warn(`Admin ${walletIndex} at capacity pending=${pendingDelta}`);
-    return { successes: [], retry: [] };
-  }
-
-  // Calculate how many transactions we can send without exceeding the limit
-  const availableCapacity = MAX_PENDING_PER_WALLET - pendingDelta;
-  const maxTransactionsToProcess = Math.min(
-    transactions.length,
-    availableCapacity,
-    BATCH_SIZE // Also respect batch size limit
-  );
-
-  // Split transactions: process what we can, requeue the rest
-  const transactionsToProcess = transactions.slice(0, maxTransactionsToProcess);
-  const transactionsToRequeue = transactions.slice(maxTransactionsToProcess);
-
-  let nonce = await getTrackedNonce(provider, walletAddress);
+  // Get current nonce for this wallet (local, no RPC call) - initialized at startup
+  let nonce = getNonceForWallet(walletIndex);
 
   const successes: Array<{ hash: string; tx: QueuedTransaction }> = [];
   const retry: QueuedTransaction[] = [];
 
-  // Process only the transactions that fit within capacity
+  // Process all transactions concurrently (no capacity limit)
   await processWithConcurrencyLimit(
-    transactionsToProcess,
-    Math.min(MAX_WALLET_CONCURRENCY, availableCapacity),
+    transactions,
+    MAX_WALLET_CONCURRENCY,
     async (tx, index) => {
       const txNonce = nonce + index;
-      markNonceUsed(walletAddress, txNonce);
+      incrementNonce(walletIndex);  // Increment locally, no RPC call
 
       const result = await sendSingleTransaction(
         wallet,
@@ -926,28 +898,11 @@ async function processWalletBatch(
       if (result) {
         successes.push(result);
       } else {
-        retry.push(tx);
+        // Drop failed transactions in fire-and-forget mode
+        logger.debug(`TX dropped: wallet=${walletIndex} nonce=${txNonce}`);
       }
     }
   );
-
-  // Add unprocessed transactions to retry queue
-  if (transactionsToRequeue.length > 0) {
-    retry.push(...transactionsToRequeue);
-    logger.info("Requeueing transactions that exceed wallet capacity", {
-      wallet: walletAddress,
-      requeued: transactionsToRequeue.length,
-      processed: transactionsToProcess.length,
-      pendingDelta,
-      availableCapacity,
-    });
-  }
-
-  if (retry.length) {
-    walletCooldowns.set(walletIndex, Date.now() + WALLET_COOLDOWN_MS);
-  } else {
-    walletCooldowns.set(walletIndex, Date.now());
-  }
 
   return { successes, retry };
 }
@@ -1767,3 +1722,6 @@ export default class User {
     }
   };
 }
+
+// Export nonce functions for server initialization
+export { initializeNonces, syncNoncesWithBlockchain };
