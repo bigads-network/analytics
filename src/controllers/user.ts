@@ -68,7 +68,7 @@ async function initializeNonces() {
     return;
   }
   
-  logger.info(`[NONCE] Initializing nonces for ${adminPrivateKeys.length} wallets...`);
+  logger.info(`[NONCE] Initializing nonces and balances for ${adminPrivateKeys.length} wallets...`);
   
   try {
     for (let walletIndex = 0; walletIndex < adminPrivateKeys.length; walletIndex++) {
@@ -86,11 +86,15 @@ async function initializeNonces() {
       const pendingNonce = await provider.getTransactionCount(walletAddress, "pending");
       nonceByWallet.set(walletIndex, pendingNonce);
       
-      logger.info(`[NONCE] Wallet ${walletIndex} (${walletAddress.slice(0, 8)}...): nonce=${pendingNonce}`);
+      // Get balance
+      const balance = await provider.getBalance(walletAddress);
+      const balanceInAvax = ethers.utils.formatEther(balance);
+      
+      logger.info(`[WALLET] ${walletIndex} | address=${walletAddress.slice(0, 12)}... | nonce=${pendingNonce} | balance=${balanceInAvax} AVAX | has_balance=${parseFloat(balanceInAvax) > 0}`);
     }
     
     noncesInitialized = true;
-    logger.info(`[NONCE] Initialization complete: ${nonceByWallet.size} wallets initialized`);
+    logger.info(`[NONCE] Initialization complete: ${adminPrivateKeys.length} wallets ready`);
   } catch (error) {
     logger.error('[NONCE] Error initializing nonces', {
       error: error instanceof Error ? error.message.slice(0, 100) : 'unknown',
@@ -1244,6 +1248,17 @@ export default class User {
             const wallet = new ethers.Wallet(privKey, provider);
             const walletAddress = await wallet.getAddress();
 
+            // Check balance
+            const balance = await provider.getBalance(walletAddress);
+            const balanceInAvax = ethers.utils.formatEther(balance);
+            logger.info(`[SEND] Selected wallet ${walletIndex}: ${walletAddress.slice(0, 12)}... | balance=${balanceInAvax} AVAX`);
+
+            if (parseFloat(balanceInAvax) === 0) {
+              logger.warn(`[SEND] Wallet ${walletIndex} has 0 balance, skipping`);
+              totalTransactionsFailed++;
+              return;
+            }
+
             const contractAddress = envConfigs.contract_address_avax;
             const abi = [
               {
@@ -1263,7 +1278,7 @@ export default class User {
 
             // Get nonce from blockchain
             const nonce = await provider.getTransactionCount(walletAddress, "pending");
-            logger.info(`[SEND] Got nonce=${nonce}`);
+            logger.info(`[SEND] Got nonce=${nonce} from blockchain`);
 
             // Encode and send
             const callData = contractInterface.interface.encodeFunctionData("storeMetadata", [
@@ -1272,7 +1287,7 @@ export default class User {
               gameId
             ]);
 
-            logger.info(`[SEND] Sending tx...`);
+            logger.info(`[SEND] Encoding done, about to send transaction to ${contractAddress.slice(0, 12)}...`);
             const txResponse = await wallet.sendTransaction({
               to: contractAddress,
               data: callData,
@@ -1282,7 +1297,7 @@ export default class User {
             });
 
             totalTransactionsSent++;
-            logger.info(`[SEND] ✓ SUCCESS: hash=${txResponse.hash.slice(0, 16)} total=${totalTransactionsSent}`);
+            logger.info(`[SEND] ✓ SUCCESS: hash=${txResponse.hash.slice(0, 16)} wallet=${walletIndex} nonce=${nonce} total_sent=${totalTransactionsSent}`);
 
             // Save to DB async
             dbservices.User.saveTransactionDetails_Avax(
@@ -1297,7 +1312,7 @@ export default class User {
           } catch (sendError) {
             totalTransactionsFailed++;
             logger.error(`[SEND] ✗ FAILED`, {
-              error: sendError instanceof Error ? sendError.message.slice(0, 100) : String(sendError).slice(0, 100),
+              error: sendError instanceof Error ? sendError.message : String(sendError),
               total_failed: totalTransactionsFailed,
             });
           }
