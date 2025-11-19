@@ -423,18 +423,19 @@ import { rpc } from "viem/utils";
 // }
 
 
-const BATCH_SIZE = 16; // Process multiple transactions in parallel
-const BATCH_TIMEOUT_MS = 2 * 60 * 1000;
-const RPC_RETRY_DELAY_MS = 2_000;
-const MAX_PROVIDER_SWITCHES = 3;
-const MAX_TX_RETRIES = 3;
-const PARALLEL_WALLETS = 8; // Process with multiple wallets simultaneously
-const MAX_WALLET_CONCURRENCY = 2; // limit concurrent sends per wallet
-const MAX_QUEUE_SIZE = 1000; // Hard cap on in-memory queue length
-const MAX_QUEUE_BYTES = 32 * 1024 * 1024; // 32MB soft cap
-const MAX_REQUEUE_ATTEMPTS = 2;
-const MAX_PENDING_PER_WALLET = 5;
-const WALLET_COOLDOWN_MS = 15_000;
+// Fire-and-forget configuration - send immediately without waiting for confirmation
+const BATCH_SIZE = 1; // Send each transaction immediately - no batching delays
+const BATCH_TIMEOUT_MS = 500; // 500ms max wait to batch with others
+const RPC_RETRY_DELAY_MS = 1_000;
+const MAX_PROVIDER_SWITCHES = 2;
+const MAX_TX_RETRIES = 1; // No retries - fire and forget
+const PARALLEL_WALLETS = 12; // Round-robin admin wallet distribution
+const MAX_WALLET_CONCURRENCY = 4; // Send up to 4 txs per wallet concurrently
+const MAX_QUEUE_SIZE = 500; // Reduced from 1000 to control memory
+const MAX_QUEUE_BYTES = 16 * 1024 * 1024; // Reduced from 32MB to 16MB
+const MAX_REQUEUE_ATTEMPTS = 0; // No requeue - fire once and forget
+const MAX_PENDING_PER_WALLET = 8; // Allow more pending per wallet
+const WALLET_COOLDOWN_MS = 5_000; // Shorter cooldown
 
 const nonceTracker = new Map<string, number>();
 let isProcessingBatch = false;
@@ -602,24 +603,11 @@ const estimateTransactionSize = (
 };
 
 const trimTransactionsForRequeue = (transactions: QueuedTransaction[]) => {
-  const retryable: QueuedTransaction[] = [];
-  const dropped: QueuedTransaction[] = [];
-
-  transactions.forEach((tx) => {
-    if (tx.attempts + 1 > MAX_REQUEUE_ATTEMPTS) {
-      dropped.push(tx);
-    } else {
-      retryable.push({ ...tx, attempts: tx.attempts + 1 });
-    }
-  });
-
-  if (dropped.length) {
-    logger.error("Dropping transactions after max retry attempts", {
-      dropped: dropped.length,
-    });
+  // Fire-and-forget: drop failed transactions immediately, no requeue
+  if (transactions.length) {
+    logger.warn(`Dropped ${transactions.length} failed txs (fire-and-forget)`)
   }
-
-  return retryable;
+  return [];
 };
 
 // Split transactions across multiple wallets respecting pending limits
@@ -758,7 +746,7 @@ const enqueueTransactionsAtFront = (transactions: QueuedTransaction[]) => {
   }
 };
 
-// Process single transaction with retry logic
+// Fire-and-forget: send transaction immediately without waiting for confirmation
 async function sendSingleTransaction(
   wallet: ethers.Wallet,
   provider: ethers.providers.JsonRpcProvider,
@@ -768,57 +756,31 @@ async function sendSingleTransaction(
   nonce: number,
   walletAddress: string
 ): Promise<{ hash: string; tx: QueuedTransaction } | null> {
-  let retries = 0;
-  let currentProvider = provider;
+  try {
+    const callData = contractInterface.interface.encodeFunctionData(
+      "storeMetadata",
+      [tx.userSnapshot.saAddress, tx.metadata, tx.gameId]
+    );
 
-  while (retries < MAX_TX_RETRIES) {
-    try {
-      const callData = contractInterface.interface.encodeFunctionData(
-        "storeMetadata",
-        [tx.userSnapshot.saAddress, tx.metadata, tx.gameId]
-      );
+    // Send transaction immediately without waiting for confirmation
+    const txResponse = await wallet.sendTransaction({
+      to: contractAddress,
+      data: callData,
+      value: 0n,
+      nonce: nonce,
+      gasLimit: 100000,
+    });
 
-      const txResponse = await wallet.sendTransaction({
-        to: contractAddress,
-        data: callData,
-        value: 0n,
-        nonce: nonce,
-        gasLimit: 100000, // Set explicit gas limit
-      });
-
-      return { hash: txResponse.hash, tx };
-    } catch (error) {
-      logger.error("Error sending transaction", {
-        wallet: walletAddress,
-        nonce,
-        retry: retries,
-        error,
-      });
-
-      if (isNonceError(error)) {
-        resetTrackedNonce(walletAddress);
-        return null; // Skip this transaction
-      }
-
-      if (isRetryableNetworkError(error) && retries < MAX_TX_RETRIES - 1) {
-        retries++;
-        await delay(RPC_RETRY_DELAY_MS * retries);
-
-        // Switch provider
-        currentProvider = getNextProvider();
-        wallet = new ethers.Wallet(wallet.privateKey, currentProvider);
-      } else {
-        logger.error("Transaction failed after retries", {
-          wallet: walletAddress,
-          nonce,
-          error,
-        });
-        return null;
-      }
-    }
+    // Log minimal info only - don't include large error objects
+    logger.debug(`TX sent: ${txResponse.hash.slice(0, 12)} nonce=${nonce}`);
+    return { hash: txResponse.hash, tx };
+  } catch (error) {
+    // Log error but don't retry - fire and forget
+    logger.warn(`TX send error nonce=${nonce}`, { 
+      error: error instanceof Error ? error.message.slice(0, 100) : "unknown"
+    });
+    return null;
   }
-
-  return null;
 }
 
 // Process transactions for a single wallet in parallel
@@ -859,11 +821,9 @@ async function processWalletBatch(
   const pendingDelta = await getPendingDelta(provider, walletAddress);
   if (pendingDelta >= MAX_PENDING_PER_WALLET) {
     walletCooldowns.set(walletIndex, Date.now() + WALLET_COOLDOWN_MS);
-    logger.warn("Wallet pending threshold hit, requeueing transactions", {
-      wallet: walletAddress,
-      pendingDelta,
-    });
-    return { successes: [], retry: transactions };
+    // Drop excess transactions in fire-and-forget mode to prevent memory buildup
+    logger.warn(`Admin ${walletIndex} at capacity pending=${pendingDelta}`);
+    return { successes: [], retry: [] };
   }
 
   // Calculate how many transactions we can send without exceeding the limit
@@ -1073,7 +1033,9 @@ async function processGlobalBatch() {
       }
     );
   } catch (error) {
-    console.error(`Error processing global batch:`, error);
+    logger.error(`Batch processing error`, { 
+      error: error instanceof Error ? error.message.slice(0, 100) : "unknown" 
+    });
 
     const retryable = trimTransactionsForRequeue(transactionsToProcess);
 
@@ -1541,7 +1503,6 @@ export default class User {
     try {
       const eventId = req.params.eventId;
       const { gameId, id } = await dbservices.User.getGameid(eventId);
-    //  console.log("step 1 - Enter");
       // if (!gameId || !id) {
       //   return res
       //     .status(400)
@@ -1566,8 +1527,6 @@ export default class User {
           .status(400)
           .json({ status: false, message: "Device data is required" });
       }
-
-      // console.log(devicedata)
       let userExist = await dbservices.User.userExits(devicedata);
       const gameDetails = await dbservices.User.getGameDetails(gameId, eventId);
 
@@ -1584,9 +1543,7 @@ export default class User {
 
       // If user doesn't exist, create them first
       if (!userExist) {
-        // console.log("not exisssss")
         const privKey = "0x" + sha512_256(userId);
-        // const privKey ="0x63a2075b2432ec19652761fa4d3c585bf5ccb6360c5a5666ebb2e2b63929cc41";
         const rpcUrl = getRandomElement(rpcProviders);
         const rpcHttpProvider= new ethers.providers.JsonRpcProvider(rpcUrl);
         const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
@@ -1601,9 +1558,6 @@ export default class User {
             .status(500)
             .json({ status: false, message: "Error creating wallet" });
         }
-
-        // console.log(wallet_address, "wallet_address");
-        // console.log(wallet_address ,"wallet addressssss")
         // return ;
         const chainName = avalanche;
 
@@ -1616,7 +1570,6 @@ export default class User {
         });
 
         const saAddress = await modularSdk.getCounterFactualAddress();
-        // console.log(saAddress ,"Account................................");
         const saveResult = await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
 
         if (!saveResult) {
@@ -1624,12 +1577,6 @@ export default class User {
         }
 
         userExist = saveResult;
-        // userExist = await dbservices.User.saveUser(
-        //   userId,
-        //   devicedata,
-        //   saAddress,
-        //   wallet_address
-        // );
       }
 
       const userSnapshot = createUserSnapshot(userExist);
@@ -1727,9 +1674,7 @@ export default class User {
         ? Math.max(0, BATCH_TIMEOUT_MS - (Date.now() - globalBatch.batchStartTime))
         : 0;
 
-      logger.info(
-        ` current batch size:${globalBatch.transactions.length} with remaining time: ${remainingTime}`
-      );
+      logger.debug(`Queue: ${globalBatch.transactions.length}/${BATCH_SIZE} | Wait: ${remainingTime}ms`);
       // Immediate response with tracking information
       return res.status(202).json({
         status: true,
@@ -1748,7 +1693,9 @@ export default class User {
         // },
       });
     } catch (error) {
-      console.error("Error in fireEvent:", error);
+      logger.error("Error in fireEvent", { 
+        error: error instanceof Error ? error.message.slice(0, 100) : "unknown" 
+      });
       res.status(500).json({
         status: false,
         message: error.message || "Unexpected error occurred",
