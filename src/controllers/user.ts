@@ -1166,71 +1166,34 @@ export default class User {
       const eventId = req.params.eventId;
       const { devicedata } = req.body;
       
-      // RETURN 202 IMMEDIATELY - do all heavy work in background
-      const transactionId = this.generateId();
-      const timestamp = new Date().toISOString();
-      
-      // Increment request counter immediately
       totalRequestsReceived++;
       Monitoring.setRequestsReceived(totalRequestsReceived);
       
-      logger.info(`Event received: eventId=${eventId} transactionId=${transactionId}`);
-      
-      // Return 202 INSTANTLY - do NOT wait for anything
+      // Return 202 INSTANTLY
       res.status(202).json({
         status: true,
-        message: "Event accepted for processing",
-        transactionId: transactionId,
+        message: "Event accepted",
         eventId: eventId,
-        timestamp: timestamp,
       });
 
-      // ============ ALL HEAVY WORK HAPPENS HERE IN BACKGROUND (NO AWAIT) ============
-      // This function doesn't block the response
+      // Send directly without any queue - just send immediately
       (async () => {
-        logger.info(`[BG] Background IIFE started for eventId=${eventId}`);
         try {
-          // Validate request
-          if (!devicedata) {
-            logger.warn(`Event rejected - no device data: eventId=${eventId}`);
-            return;
-          }
+          if (!devicedata) return;
 
-          logger.debug(`[BG] Getting game details for eventId=${eventId}`);
-          // DB lookups
           const gameIdResult = await dbservices.User.getGameid(eventId);
           const { gameId, id } = gameIdResult;
-          logger.debug(`[BG] Got gameId=${gameId}, id=${id}`);
           
-          if (!gameId || !id) {
-            logger.warn(`Event rejected - invalid game: eventId=${eventId}`);
-            return;
-          }
+          if (!gameId || !id) return;
 
-          logger.debug(`[BG] Checking if user exists...`);
           let userExist = await dbservices.User.userExits(devicedata);
-          logger.debug(`[BG] User exists: ${!!userExist}`);
-          
-          logger.debug(`[BG] Getting game details...`);
           const gameDetails = await dbservices.User.getGameDetails(gameId, eventId);
-          logger.debug(`[BG] Got game details: ${!!gameDetails}`);
 
-          if (!gameDetails) {
-            logger.warn(`Event rejected - no game details: eventId=${eventId}`);
-            return;
-          }
-
-          if (userExist && gameDetails.creatorId === userExist.id) {
-            logger.warn(`Event rejected - creator firing own game: eventId=${eventId}`);
-            return;
-          }
+          if (!gameDetails || (userExist && gameDetails.creatorId === userExist.id)) return;
 
           const userId = userExist ? userExist.userId : `user_${this.generateId()}`;
-          logger.debug(`[BG] userId=${userId}, userExist=${!!userExist}`);
 
-          // If user doesn't exist, create them (non-blocking background operation)
           if (!userExist) {
-            logger.info(`[BG] Creating new user: userId=${userId}`);
             try {
               const privKey = "0x" + sha512_256(userId);
               const rpcUrl = getRandomElement(rpcProviders);
@@ -1239,56 +1202,25 @@ export default class User {
               const wallet_address = await wallet.getAddress();
 
               const modularSdk = new ModularSdk(privKey, {
-                chainId: 43114, // XDC Mainnet
-                bundlerProvider: new EtherspotBundler(
-                  43114,
-                  "etherspot_3ZmG9JseTT1MD3v9QgPezHKB"
-                ),
+                chainId: 43114,
+                bundlerProvider: new EtherspotBundler(43114, "etherspot_3ZmG9JseTT1MD3v9QgPezHKB"),
               });
 
               const saAddress = await modularSdk.getCounterFactualAddress();
-              logger.debug(`[BG] Got saAddress: ${saAddress}`);
-              
               const saveResult = await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
-
-              if (!saveResult) {
-                logger.error(`Failed to save new user: userId=${userId}`);
-                return;
-              }
-
+              if (!saveResult) return;
               userExist = saveResult;
-              logger.info(`[BG] ✓ New user created: userId=${userId}`);
             } catch (error) {
-              logger.error(`[BG] ✗ Error creating user`, {
-                error: error instanceof Error ? error.message : "unknown",
-                stack: error instanceof Error ? error.stack?.split('\n').slice(0, 3).join(' | ') : undefined,
-                userId,
-              });
+              logger.error(`Error creating user`, { userId, error: String(error).slice(0, 50) });
               return;
             }
-          } else {
-            logger.debug(`[BG] User already exists: ${userExist.userId}`);
           }
 
-          // Build transaction
           const userSnapshot = createUserSnapshot(userExist);
-          logger.debug(`[BG] Created user snapshot: id=${userSnapshot.id}, saAddress=${userSnapshot.saAddress?.slice(0, 12)}...`);
-
-          if (userSnapshot.id === null || !userSnapshot.saAddress) {
-            logger.error("User snapshot missing critical identifiers in background", {
-              userId: userSnapshot.id,
-              saAddress: userSnapshot.saAddress,
-            });
-            return;
-          }
+          if (!userSnapshot.id || !userSnapshot.saAddress) return;
 
           const eventDetails = gameDetails?.events?.[0];
-          if (!eventDetails) {
-            logger.warn(`Event details unavailable: eventId=${eventId}`);
-            return;
-          }
-
-          logger.debug(`[BG] Building metadata...`);
+          if (!eventDetails) return;
 
           const metadata = JSON.stringify({
             role: userSnapshot.role,
@@ -1296,98 +1228,86 @@ export default class User {
             eventId: eventDetails.id,
           });
 
-          // Check queue capacity
-          if (globalBatch.transactions.length >= MAX_QUEUE_SIZE) {
-            logger.warn("Queue full, dropping event", {
-              eventId: eventId,
-              queueSize: globalBatch.transactions.length,
-            });
-            return;
-          }
+          // ============ DIRECT SEND - NO QUEUE ============
+          try {
+            logger.info(`[SEND] START: eventId=${eventId} gameId=${gameId}`);
+            
+            // Pick random wallet
+            const walletIndex = Math.floor(Math.random() * adminPrivateKeys.length);
+            const privKey = adminPrivateKeys[walletIndex];
+            if (!privKey) {
+              logger.error(`[SEND] No key at index ${walletIndex}`);
+              return;
+            }
 
-          const newTransaction: QueuedTransaction = {
-            userId,
-            gameId,
-            eventId: id,
-            metadata,
-            userSnapshot,
-            attempts: 0,
-            sizeBytes: estimateTransactionSize({
-              userId,
-              gameId,
-              eventId: id,
+            const provider = getNextProvider();
+            const wallet = new ethers.Wallet(privKey, provider);
+            const walletAddress = await wallet.getAddress();
+
+            const contractAddress = envConfigs.contract_address_avax;
+            const abi = [
+              {
+                "inputs": [
+                  { "internalType": "address", "name": "user", "type": "address" },
+                  { "internalType": "string", "name": "metadata", "type": "string" },
+                  { "internalType": "uint256", "name": "gameId", "type": "uint256" }
+                ],
+                "name": "storeMetadata",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+              }
+            ];
+
+            const contractInterface = new ethers.Contract(contractAddress, abi, provider);
+
+            // Get nonce from blockchain
+            const nonce = await provider.getTransactionCount(walletAddress, "pending");
+            logger.info(`[SEND] Got nonce=${nonce}`);
+
+            // Encode and send
+            const callData = contractInterface.interface.encodeFunctionData("storeMetadata", [
+              userSnapshot.saAddress,
               metadata,
-              userSnapshot,
-            }),
-          };
+              gameId
+            ]);
 
-          logger.debug(`[BG] Created transaction object, queueCapacity check...`);
-
-          if (currentQueueBytes + newTransaction.sizeBytes > MAX_QUEUE_BYTES) {
-            logger.warn("Queue byte pressure, dropping event", {
-              eventId: eventId,
-              queueBytes: currentQueueBytes,
-              incomingBytes: newTransaction.sizeBytes,
+            logger.info(`[SEND] Sending tx...`);
+            const txResponse = await wallet.sendTransaction({
+              to: contractAddress,
+              data: callData,
+              value: 0n,
+              nonce: nonce,
+              gasLimit: 100000,
             });
-            return;
-          }
 
-          // Queue the transaction
-          globalBatch.transactions.push(newTransaction);
-          currentQueueBytes += newTransaction.sizeBytes;
+            totalTransactionsSent++;
+            logger.info(`[SEND] ✓ SUCCESS: hash=${txResponse.hash.slice(0, 16)} total=${totalTransactionsSent}`);
 
-          logger.info(`[BG] ✓ QUEUED: eventId=${eventId} userId=${userId} queueSize=${globalBatch.transactions.length} sizeBytes=${newTransaction.sizeBytes}`);
+            // Save to DB async
+            dbservices.User.saveTransactionDetails_Avax(
+              gameId,
+              userSnapshot.id,
+              id,
+              txResponse.hash,
+              "Avalanche",
+              "0"
+            ).catch(e => logger.error(`DB save failed`, { error: String(e).slice(0, 50) }));
 
-          // Start timer if this is the first transaction in batch AND not currently processing
-          if (globalBatch.transactions.length === 1 && !isProcessingBatch) {
-            logger.info(`[BG] First transaction, setting ${BATCH_TIMEOUT_MS}ms timeout`);
-            globalBatch.batchStartTime = Date.now();
-            globalBatch.timeout = setTimeout(() => {
-              logger.info(`[BG] Timeout triggered, calling processGlobalBatch`);
-              processGlobalBatch().catch(e => logger.error(`[BG] Timeout batch error`, { error: String(e).slice(0, 100) }));
-            }, BATCH_TIMEOUT_MS);
-          }
-
-          // Process immediately if batch size reached (fire-and-forget)
-          if (globalBatch.transactions.length >= BATCH_SIZE) {
-            logger.info(`[BG] ✓ BATCH_READY: size=${globalBatch.transactions.length} >= BATCH_SIZE=${BATCH_SIZE}, calling processGlobalBatch NOW`);
-            if (globalBatch.timeout) {
-              clearTimeout(globalBatch.timeout);
-              globalBatch.timeout = null;
-            }
-            // Fire-and-forget: don't await
-            try {
-              processGlobalBatch().catch((error) => {
-                logger.error("[BG] processGlobalBatch rejected", {
-                  error: error instanceof Error ? error.message.slice(0, 200) : "unknown",
-                  stack: error instanceof Error ? error.stack?.split('\n').slice(0, 3).join(' | ') : undefined,
-                });
-              });
-            } catch (syncError) {
-              logger.error("[BG] processGlobalBatch threw sync error", {
-                error: syncError instanceof Error ? syncError.message : String(syncError),
-              });
-            }
-          } else {
-            logger.debug(`[BG] Batch not ready (size=${globalBatch.transactions.length}/${BATCH_SIZE})`);
+          } catch (sendError) {
+            totalTransactionsFailed++;
+            logger.error(`[SEND] ✗ FAILED`, {
+              error: sendError instanceof Error ? sendError.message.slice(0, 100) : String(sendError).slice(0, 100),
+              total_failed: totalTransactionsFailed,
+            });
           }
         } catch (bgError) {
-          logger.error("[BG] ✗ CRITICAL ERROR in background event processing", {
-            error: bgError instanceof Error ? bgError.message : String(bgError),
-            stack: bgError instanceof Error ? bgError.stack?.split('\n').slice(0, 5).join(' | ') : undefined,
-            eventId,
-          });
+          logger.error(`[BG] Error`, { error: String(bgError).slice(0, 100) });
         }
-        logger.info(`[BG] Background IIFE completed for eventId=${eventId}`);
-      })(); // Invoke immediately but don't await
+      })();
     } catch (error) {
-      logger.error("Error in fireEvent endpoint", { 
-        error: error instanceof Error ? error.message.slice(0, 100) : "unknown" 
-      });
-      return res.status(500).json({
-        status: false,
-        message: "Internal server error",
-      });
+      logger.error("fireEvent error", { error: String(error).slice(0, 100) });
+      return res.status(500).json({ status: false, message: "Error" });
     }
   };
 }
