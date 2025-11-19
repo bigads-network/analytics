@@ -7,11 +7,16 @@ export default class Monitoring {
     sent: 0,
     failed: 0,
     dropped: 0,
+    requestsReceived: 0,
     lastReset: new Date(),
   };
 
   static setQueueSize(size: number) {
     Monitoring.transactionStats.queued = size;
+  }
+
+  static setRequestsReceived(count: number) {
+    Monitoring.transactionStats.requestsReceived = count;
   }
 
   static getQueueStatus = async (req: Request, res: Response): Promise<any> => {
@@ -49,6 +54,7 @@ export default class Monitoring {
         sent: 0,
         failed: 0,
         dropped: 0,
+        requestsReceived: 0,
         lastReset: new Date(),
       };
       logger.info('Stats reset');
