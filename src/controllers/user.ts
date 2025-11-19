@@ -429,7 +429,18 @@ const BATCH_TIMEOUT_MS = 500; // 500ms max wait to batch with others
 const RPC_RETRY_DELAY_MS = 1_000;
 const MAX_PROVIDER_SWITCHES = 2;
 const MAX_TX_RETRIES = 1; // No retries - fire and forget
-const PARALLEL_WALLETS = 12; // Round-robin admin wallet distribution
+// Initialize admin keys first, then set PARALLEL_WALLETS based on available keys
+const ADMIN_KEYS_CONFIG = [
+  envConfigs.adminPrivatKey_avax,
+  envConfigs.adminPrivatKey_avax1,
+  envConfigs.adminPrivatKey_avax2,
+  envConfigs.adminPrivatKey_avax3,
+  envConfigs.adminPrivatKey_avax4,
+  envConfigs.adminPrivatKey_avax5,
+  envConfigs.adminPrivatKey_avax6,
+  envConfigs.adminPrivatKey_avax7,
+].filter(key => key && key.length > 0).length;
+const PARALLEL_WALLETS = Math.max(1, ADMIN_KEYS_CONFIG); // Use available keys, min 1
 const MAX_WALLET_CONCURRENCY = 4; // Send up to 4 txs per wallet concurrently
 const MAX_QUEUE_SIZE = 500; // Reduced from 1000 to control memory
 const MAX_QUEUE_BYTES = 16 * 1024 * 1024; // Reduced from 32MB to 16MB
@@ -522,7 +533,7 @@ const adminPrivateKeys = [
   envConfigs.adminPrivatKey_avax5,
   envConfigs.adminPrivatKey_avax6,
   envConfigs.adminPrivatKey_avax7,
-];
+].filter(key => key && key.length > 0); // Filter out empty keys
 
 const rpcProviders = [
   envConfigs.provider_url_AVAX,
@@ -616,7 +627,7 @@ async function splitTransactionsByWallet(
 ): Promise<Map<number, QueuedTransaction[]>> {
   const walletBatches = new Map<number, QueuedTransaction[]>();
   
-  // Initialize all wallet batches
+  // Initialize all wallet batches (but only for available wallets)
   for (let i = 0; i < PARALLEL_WALLETS; i++) {
     walletBatches.set(i, []);
   }
@@ -625,6 +636,12 @@ async function splitTransactionsByWallet(
   const walletCapacities = await Promise.all(
     Array.from({ length: PARALLEL_WALLETS }, async (_, walletIndex) => {
       const privKey = adminPrivateKeys[walletIndex];
+      
+      // Skip if wallet not configured
+      if (!privKey) {
+        return { walletIndex, available: 0, pending: MAX_PENDING_PER_WALLET };
+      }
+      
       const provider = getNextProvider();
       const wallet = new ethers.Wallet(privKey, provider);
       const walletAddress = await wallet.getAddress();
@@ -639,7 +656,10 @@ async function splitTransactionsByWallet(
         const available = Math.max(0, MAX_PENDING_PER_WALLET - pendingDelta);
         return { walletIndex, available, pending: pendingDelta };
       } catch (error) {
-        logger.error("Error checking wallet capacity", { walletIndex, error });
+        logger.error("Error checking wallet capacity", { 
+          walletIndex, 
+          error: error instanceof Error ? error.message.slice(0, 100) : "unknown" 
+        });
         return { walletIndex, available: 0, pending: MAX_PENDING_PER_WALLET };
       }
     })
@@ -797,9 +817,21 @@ async function processWalletBatch(
     return { successes: [], retry: [] };
   }
 
-  const privKey = adminPrivateKeys[walletIndex];
-  const provider = getNextProvider();
+  // Validate wallet index is within range
+  if (walletIndex < 0 || walletIndex >= adminPrivateKeys.length) {
+    logger.error(`Invalid wallet index ${walletIndex} (available: ${adminPrivateKeys.length})`);
+    return { successes: [], retry: [] };
+  }
 
+  const privKey = adminPrivateKeys[walletIndex];
+  
+  // Validate private key exists and is valid before processing
+  if (!privKey || privKey.length === 0) {
+    logger.error(`Admin wallet ${walletIndex} has invalid/empty private key`);
+    return { successes: [], retry: [] };
+  }
+
+  const provider = getNextProvider();
   let wallet = new ethers.Wallet(privKey, provider);
   const walletAddress = await wallet.getAddress();
 
@@ -1033,8 +1065,11 @@ async function processGlobalBatch() {
       }
     );
   } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : '';
     logger.error(`Batch processing error`, { 
-      error: error instanceof Error ? error.message.slice(0, 100) : "unknown" 
+      error: errorMsg.slice(0, 100),
+      stack: errorStack.split('\n')[1] // Log just the next line of stack for context
     });
 
     const retryable = trimTransactionsForRequeue(transactionsToProcess);
