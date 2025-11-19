@@ -1188,6 +1188,7 @@ export default class User {
       // ============ ALL HEAVY WORK HAPPENS HERE IN BACKGROUND (NO AWAIT) ============
       // This function doesn't block the response
       (async () => {
+        logger.info(`[BG] Background IIFE started for eventId=${eventId}`);
         try {
           // Validate request
           if (!devicedata) {
@@ -1195,17 +1196,24 @@ export default class User {
             return;
           }
 
+          logger.debug(`[BG] Getting game details for eventId=${eventId}`);
           // DB lookups
           const gameIdResult = await dbservices.User.getGameid(eventId);
           const { gameId, id } = gameIdResult;
+          logger.debug(`[BG] Got gameId=${gameId}, id=${id}`);
           
           if (!gameId || !id) {
             logger.warn(`Event rejected - invalid game: eventId=${eventId}`);
             return;
           }
 
+          logger.debug(`[BG] Checking if user exists...`);
           let userExist = await dbservices.User.userExits(devicedata);
+          logger.debug(`[BG] User exists: ${!!userExist}`);
+          
+          logger.debug(`[BG] Getting game details...`);
           const gameDetails = await dbservices.User.getGameDetails(gameId, eventId);
+          logger.debug(`[BG] Got game details: ${!!gameDetails}`);
 
           if (!gameDetails) {
             logger.warn(`Event rejected - no game details: eventId=${eventId}`);
@@ -1218,9 +1226,11 @@ export default class User {
           }
 
           const userId = userExist ? userExist.userId : `user_${this.generateId()}`;
+          logger.debug(`[BG] userId=${userId}, userExist=${!!userExist}`);
 
           // If user doesn't exist, create them (non-blocking background operation)
           if (!userExist) {
+            logger.info(`[BG] Creating new user: userId=${userId}`);
             try {
               const privKey = "0x" + sha512_256(userId);
               const rpcUrl = getRandomElement(rpcProviders);
@@ -1237,6 +1247,8 @@ export default class User {
               });
 
               const saAddress = await modularSdk.getCounterFactualAddress();
+              logger.debug(`[BG] Got saAddress: ${saAddress}`);
+              
               const saveResult = await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
 
               if (!saveResult) {
@@ -1245,18 +1257,22 @@ export default class User {
               }
 
               userExist = saveResult;
-              logger.debug(`New user created: userId=${userId} eventId=${eventId}`);
+              logger.info(`[BG] ✓ New user created: userId=${userId}`);
             } catch (error) {
-              logger.error(`Error creating user in background`, {
-                error: error instanceof Error ? error.message.slice(0, 100) : "unknown",
+              logger.error(`[BG] ✗ Error creating user`, {
+                error: error instanceof Error ? error.message : "unknown",
+                stack: error instanceof Error ? error.stack?.split('\n').slice(0, 3).join(' | ') : undefined,
                 userId,
               });
               return;
             }
+          } else {
+            logger.debug(`[BG] User already exists: ${userExist.userId}`);
           }
 
           // Build transaction
           const userSnapshot = createUserSnapshot(userExist);
+          logger.debug(`[BG] Created user snapshot: id=${userSnapshot.id}, saAddress=${userSnapshot.saAddress?.slice(0, 12)}...`);
 
           if (userSnapshot.id === null || !userSnapshot.saAddress) {
             logger.error("User snapshot missing critical identifiers in background", {
@@ -1271,6 +1287,8 @@ export default class User {
             logger.warn(`Event details unavailable: eventId=${eventId}`);
             return;
           }
+
+          logger.debug(`[BG] Building metadata...`);
 
           const metadata = JSON.stringify({
             role: userSnapshot.role,
@@ -1303,6 +1321,8 @@ export default class User {
             }),
           };
 
+          logger.debug(`[BG] Created transaction object, queueCapacity check...`);
+
           if (currentQueueBytes + newTransaction.sizeBytes > MAX_QUEUE_BYTES) {
             logger.warn("Queue byte pressure, dropping event", {
               eventId: eventId,
@@ -1316,38 +1336,49 @@ export default class User {
           globalBatch.transactions.push(newTransaction);
           currentQueueBytes += newTransaction.sizeBytes;
 
-          logger.debug(`[FIRE] Event queued: eventId=${eventId} userId=${userId} queueSize=${globalBatch.transactions.length}`);
+          logger.info(`[BG] ✓ QUEUED: eventId=${eventId} userId=${userId} queueSize=${globalBatch.transactions.length} sizeBytes=${newTransaction.sizeBytes}`);
 
           // Start timer if this is the first transaction in batch AND not currently processing
           if (globalBatch.transactions.length === 1 && !isProcessingBatch) {
+            logger.info(`[BG] First transaction, setting ${BATCH_TIMEOUT_MS}ms timeout`);
             globalBatch.batchStartTime = Date.now();
             globalBatch.timeout = setTimeout(() => {
-              processGlobalBatch();
+              logger.info(`[BG] Timeout triggered, calling processGlobalBatch`);
+              processGlobalBatch().catch(e => logger.error(`[BG] Timeout batch error`, { error: String(e).slice(0, 100) }));
             }, BATCH_TIMEOUT_MS);
           }
 
           // Process immediately if batch size reached (fire-and-forget)
           if (globalBatch.transactions.length >= BATCH_SIZE) {
-            logger.info(`[FIRE] Batch ready (size=${globalBatch.transactions.length}), calling processGlobalBatch`);
+            logger.info(`[BG] ✓ BATCH_READY: size=${globalBatch.transactions.length} >= BATCH_SIZE=${BATCH_SIZE}, calling processGlobalBatch NOW`);
             if (globalBatch.timeout) {
               clearTimeout(globalBatch.timeout);
               globalBatch.timeout = null;
             }
             // Fire-and-forget: don't await
-            processGlobalBatch().catch((error) => {
-              logger.error("[FIRE] Background batch processing error", {
-                error: error instanceof Error ? error.message.slice(0, 100) : "unknown",
+            try {
+              processGlobalBatch().catch((error) => {
+                logger.error("[BG] processGlobalBatch rejected", {
+                  error: error instanceof Error ? error.message.slice(0, 200) : "unknown",
+                  stack: error instanceof Error ? error.stack?.split('\n').slice(0, 3).join(' | ') : undefined,
+                });
               });
-            });
+            } catch (syncError) {
+              logger.error("[BG] processGlobalBatch threw sync error", {
+                error: syncError instanceof Error ? syncError.message : String(syncError),
+              });
+            }
           } else {
-            logger.debug(`[FIRE] Batch not ready (size=${globalBatch.transactions.length}/${BATCH_SIZE})`);
+            logger.debug(`[BG] Batch not ready (size=${globalBatch.transactions.length}/${BATCH_SIZE})`);
           }
         } catch (bgError) {
-          logger.error("Error in background event processing", {
-            error: bgError instanceof Error ? bgError.message.slice(0, 100) : "unknown",
+          logger.error("[BG] ✗ CRITICAL ERROR in background event processing", {
+            error: bgError instanceof Error ? bgError.message : String(bgError),
+            stack: bgError instanceof Error ? bgError.stack?.split('\n').slice(0, 5).join(' | ') : undefined,
             eventId,
           });
         }
+        logger.info(`[BG] Background IIFE completed for eventId=${eventId}`);
       })(); // Invoke immediately but don't await
     } catch (error) {
       logger.error("Error in fireEvent endpoint", { 
