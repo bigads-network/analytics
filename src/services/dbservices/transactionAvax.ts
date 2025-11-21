@@ -145,6 +145,28 @@ export default class TransactionsAvax {
     }
   };
 
+  static getMonthlyActiveUsersSeries = async (
+    months: number = 4
+  ): Promise<any[]> => {
+    try {
+      const now = new Date();
+      const startMonth = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
+
+      return await postgreDb
+        .select({
+          month: sql<string>`to_char(date_trunc('month', ${transaction_avax.createdAt}), 'YYYY-MM')`.as("month"),
+          active_users: sql<number>`COUNT(DISTINCT ${transaction_avax.UserId})`.as("active_users"),
+        })
+        .from(transaction_avax)
+        .where(gte(transaction_avax.createdAt, startMonth))
+        .groupBy(sql`date_trunc('month', ${transaction_avax.createdAt})`)
+        .orderBy(sql`date_trunc('month', ${transaction_avax.createdAt}) DESC`);
+    } catch (error) {
+      console.log(error.message, "getMonthlyActiveUsersSeries transactions");
+      throw new Error(error.message || "Failed to fetch monthly active users series");
+    }
+  };
+
   // Get all transactions from previous month
   static getMonthlyTransactions = async (): Promise<number> => {
     try {

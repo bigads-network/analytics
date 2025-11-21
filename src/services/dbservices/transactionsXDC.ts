@@ -98,6 +98,25 @@ export default class TransactionsXDC {
         }
     };
 
+    static getMonthlyActiveUsersSeries = async (months: number = 4): Promise<any[]> => {
+        try {
+            const now = new Date();
+            const startMonth = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
+
+            return await postgreDb
+                .select({
+                    month: sql<string>`to_char(date_trunc('month', ${transactions_xdc.createdAt}), 'YYYY-MM')`.as("month"),
+                    active_users: sql<number>`COUNT(DISTINCT ${transactions_xdc.UserId})`.as("active_users"),
+                })
+                .from(transactions_xdc)
+                .where(gte(transactions_xdc.createdAt, startMonth))
+                .groupBy(sql`date_trunc('month', ${transactions_xdc.createdAt})`)
+                .orderBy(sql`date_trunc('month', ${transactions_xdc.createdAt}) DESC`);
+        } catch (error) {
+            throw new Error(error.message || "Failed to fetch monthly active users series");
+        }
+    };
+
     // Get all transactions from previous month
     static getMonthlyTransactions = async (): Promise<number> => {
         try {

@@ -193,7 +193,7 @@ class DashboardCacheManager {
       userCounts,
       dailyActiveUsers,
       dailyTransactions,
-      monthlyUsers,
+      monthlyUsersSeries,
       monthlyTransactions,
     ] = await Promise.all([
       this.timed("xdc.user.counts", () => dbservices.User.counts()),
@@ -203,13 +203,30 @@ class DashboardCacheManager {
       this.timed("xdc.daily.transactions", () =>
         dbservices.TransactionsXDC.getDailyTransactionCounts(days),
       ),
-      this.timed("xdc.monthly.activeUsers", () =>
-        dbservices.TransactionsXDC.getMonthlyActiveUsers(),
+      this.timed("xdc.monthly.activeUsersSeries", () =>
+        dbservices.TransactionsXDC.getMonthlyActiveUsersSeries(4),
       ),
       this.timed("xdc.monthly.transactions", () =>
         dbservices.TransactionsXDC.getMonthlyTransactions(),
       ),
     ]);
+
+    const dailyActiveUsersAverage60 =
+      this.computeAverageOfLastN(
+        dailyActiveUsers.data,
+        60,
+        (item: any) => Number(item.daily_active_users) || 0,
+      );
+
+    const monthlyUsersAverage4 =
+      this.computeAverageOfFirstN(
+        monthlyUsersSeries,
+        4,
+        (item: any) => Number(item.active_users) || 0,
+      );
+
+    const monthlyUsersCurrent =
+      (monthlyUsersSeries?.[0] && Number(monthlyUsersSeries[0].active_users)) || 0;
 
     return {
       success: true,
@@ -220,12 +237,18 @@ class DashboardCacheManager {
         dailyActiveUsers: {
           count: dailyActiveUsers.count,
           data: dailyActiveUsers.data,
+          averageLast60Days: dailyActiveUsersAverage60,
         },
         dailyTransactions: {
           count: dailyTransactions.count,
           data: dailyTransactions.data,
         },
-        monthlyUsers,
+        monthlyUsers: monthlyUsersCurrent,
+        monthlyUsersDetail: {
+          currentMonth: monthlyUsersCurrent,
+          averageLast4Months: monthlyUsersAverage4,
+          data: monthlyUsersSeries,
+        },
         monthlyTransactions,
       },
     };
@@ -237,7 +260,7 @@ class DashboardCacheManager {
       userCounts,
       dailyActiveUsers,
       dailyTransactions,
-      monthlyUsers,
+      monthlyUsersSeries,
       monthlyTransactions,
     ] = await Promise.all([
       this.timed("avax.user.counts", () => dbservices.User.countsAvax()),
@@ -247,13 +270,30 @@ class DashboardCacheManager {
       this.timed("avax.daily.transactions", () =>
         dbservices.TransactionsAvax.getDailyTransactionCounts(days),
       ),
-      this.timed("avax.monthly.activeUsers", () =>
-        dbservices.TransactionsAvax.getMonthlyActiveUsers(),
+      this.timed("avax.monthly.activeUsersSeries", () =>
+        dbservices.TransactionsAvax.getMonthlyActiveUsersSeries(4),
       ),
       this.timed("avax.monthly.transactions", () =>
         dbservices.TransactionsAvax.getMonthlyTransactions(),
       ),
     ]);
+
+    const dailyActiveUsersAverage60 =
+      this.computeAverageOfLastN(
+        dailyActiveUsers.data,
+        60,
+        (item: any) => Number(item.daily_active_users) || 0,
+      );
+
+    const monthlyUsersAverage4 =
+      this.computeAverageOfFirstN(
+        monthlyUsersSeries,
+        4,
+        (item: any) => Number(item.active_users) || 0,
+      );
+
+    const monthlyUsersCurrent =
+      (monthlyUsersSeries?.[0] && Number(monthlyUsersSeries[0].active_users)) || 0;
 
     return {
       success: true,
@@ -264,12 +304,18 @@ class DashboardCacheManager {
         dailyActiveUsers: {
           count: dailyActiveUsers.count,
           data: dailyActiveUsers.data,
+          averageLast60Days: dailyActiveUsersAverage60,
         },
         dailyTransactions: {
           count: dailyTransactions.count,
           data: dailyTransactions.data,
         },
-        monthlyUsers,
+        monthlyUsers: monthlyUsersCurrent,
+        monthlyUsersDetail: {
+          currentMonth: monthlyUsersCurrent,
+          averageLast4Months: monthlyUsersAverage4,
+          data: monthlyUsersSeries,
+        },
         monthlyTransactions,
       },
     };
@@ -292,6 +338,40 @@ class DashboardCacheManager {
       );
       throw error;
     }
+  }
+
+  private static computeAverage(values: number[]): number {
+    if (!values.length) {
+      return 0;
+    }
+    const sum = values.reduce((acc, value) => acc + value, 0);
+    return Math.round(sum / values.length);
+  }
+
+  private static computeAverageOfLastN<T>(
+    items: T[],
+    n: number,
+    selector: (item: T) => number,
+  ): number {
+    if (!items || !items.length) {
+      return 0;
+    }
+    const slice = items.slice(-n);
+    const values = slice.map(selector).filter((v) => Number.isFinite(v));
+    return this.computeAverage(values);
+  }
+
+  private static computeAverageOfFirstN<T>(
+    items: T[],
+    n: number,
+    selector: (item: T) => number,
+  ): number {
+    if (!items || !items.length) {
+      return 0;
+    }
+    const slice = items.slice(0, n);
+    const values = slice.map(selector).filter((v) => Number.isFinite(v));
+    return this.computeAverage(values);
   }
 }
 
