@@ -6,3 +6,4 @@ views
 .env.example
 src/testingscript.ts
 dist
+.env.local

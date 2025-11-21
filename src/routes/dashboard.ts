@@ -1,11 +1,7 @@
 import express from "express";
 import controllers from "../controllers";
-import { dashboardDuplicatePrevention } from "../middleware/preventDuplicates";
 
 const router = express.Router();
-
-// Apply duplicate prevention middleware to all dashboard routes
-router.use(dashboardDuplicatePrevention);
 
 // Unified dashboard endpoint - returns all data at once
 router.get("/all", controllers.Dashboard.getAllDashboardData);

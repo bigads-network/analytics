@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import dbservices from '../services/dbservices';
 import { dashboardCache } from '../config/cache';
-import crypto from 'crypto';
+import DashboardCacheManager from '../services/dashboardCacheManager';
 
 export default class Dashboard {
   // Unified dashboard endpoint that returns all data
@@ -87,65 +87,103 @@ export default class Dashboard {
   //   }
   // };
 
-  static getAllDashboardData:any = async (req: Request, res: Response) => {
-  try {
-    const cacheKey = "dashboardData:all";
-    const cached = dashboardCache.get(cacheKey);
+  static getAllDashboardData = async (
+    req: Request,
+    res: Response,
+  ): Promise<any> => {
+    try {
+      const { snapshot, freshness, refreshTriggered } =
+        await DashboardCacheManager.getAllSnapshot();
 
-    if (!cached) {
-      return res.status(503).json({
+      const { response, etag, refreshedAt, expiresAt } = snapshot;
+
+      if (req.headers["if-none-match"] === etag) {
+        res.setHeader("ETag", etag);
+        return res.status(304).end();
+      }
+
+      const now = Date.now();
+      const cacheAgeSeconds = Math.max(
+        0,
+        Math.floor((now - refreshedAt) / 1000),
+      );
+      const ttlRemainingSeconds = Math.max(
+        0,
+        Math.floor((expiresAt - now) / 1000),
+      );
+
+      res.setHeader("ETag", etag);
+      res.setHeader("Cache-Control", "public, max-age=0, must-revalidate");
+      res.setHeader("X-Cache", freshness === "fresh" ? "HIT" : "STALE");
+      res.setHeader("X-Cache-Age", cacheAgeSeconds.toString());
+      res.setHeader("X-Cache-TTL", ttlRemainingSeconds.toString());
+
+      if (refreshTriggered) {
+        res.setHeader("X-Cache-Refresh", "in-progress");
+      }
+
+      const lastError = DashboardCacheManager.getLastError("all");
+      if (lastError) {
+        res.setHeader("X-Cache-Last-Error", lastError);
+      }
+
+      return res.status(200).json(response);
+    } catch (error: any) {
+      return res.status(500).json({
         success: false,
-        message: "Dashboard cache not available yet. Please try again later.",
+        error: error?.message || "Failed to fetch dashboard data",
       });
     }
+  };
 
-    const { response, etag }:any = cached;
+  static getAllDashboardDataAVAX = async (
+    req: Request,
+    res: Response,
+  ): Promise<any> => {
+    try {
+      const { snapshot, freshness, refreshTriggered } =
+        await DashboardCacheManager.getAvaxSnapshot();
 
-    res.setHeader("ETag", etag);
-    res.setHeader("Cache-Control", "private, no-store");
+      const { response, etag, refreshedAt, expiresAt } = snapshot;
 
-    if (req.headers["if-none-match"] === etag) {
-      return res.status(304).end(); // Client already has latest
-    }
+      if (req.headers["if-none-match"] === etag) {
+        res.setHeader("ETag", etag);
+        return res.status(304).end();
+      }
 
-    return res.status(200).json(response);
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message || "Failed to fetch dashboard data",
-    });
-  }
-};
+      const now = Date.now();
+      const cacheAgeSeconds = Math.max(
+        0,
+        Math.floor((now - refreshedAt) / 1000),
+      );
+      const ttlRemainingSeconds = Math.max(
+        0,
+        Math.floor((expiresAt - now) / 1000),
+      );
 
-  static getAllDashboardDataAVAX:any = async (req: Request, res: Response) => {
-  try {
-    const cacheKey = "dashboardData:avax";
-    const cached = dashboardCache.get(cacheKey);
+      res.setHeader("ETag", etag);
+      res.setHeader("Cache-Control", "public, max-age=0, must-revalidate");
+      res.setHeader("X-Cache", freshness === "fresh" ? "HIT" : "STALE");
+      res.setHeader("X-Cache-Age", cacheAgeSeconds.toString());
+      res.setHeader("X-Cache-TTL", ttlRemainingSeconds.toString());
 
-    if (!cached) {
-      return res.status(503).json({
+      if (refreshTriggered) {
+        res.setHeader("X-Cache-Refresh", "in-progress");
+      }
+
+      const lastError = DashboardCacheManager.getLastError("avax");
+      if (lastError) {
+        res.setHeader("X-Cache-Last-Error", lastError);
+      }
+
+      return res.status(200).json(response);
+    } catch (error: any) {
+      return res.status(500).json({
         success: false,
-        message: "Dashboard cache not available yet. Please try again later.",
+        error: error?.message || "Failed to fetch dashboard data",
       });
     }
-
-    const { response, etag }:any = cached;
-
-    res.setHeader("ETag", etag);
-    res.setHeader("Cache-Control", "private, no-store");
-
-    if (req.headers["if-none-match"] === etag) {
-      return res.status(304).end(); // Client already has latest
-    }
-
-    return res.status(200).json(response);
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message || "Failed to fetch dashboard data",
-    });
-  }
-};
+  };
 
   //   static getAllDashboardDataAVAX = async (req: Request, res: Response): Promise<any> => {
   //   try {
@@ -351,110 +389,23 @@ export default class Dashboard {
   };
 
   // Utility function to refresh the dashboard cache (for cron worker)
-static refreshDashboardCache = async () => {
-  try {
-    const cacheKey = "dashboardData:all";
-    const days = 90;
+  static refreshDashboardCache = async (): Promise<boolean> => {
+    try {
+      await DashboardCacheManager.refreshAll("external-trigger");
+      return true;
+    } catch (error) {
+      return false;
+    }
+  };
 
-    const [
-      userCounts,
-      dailyActiveUsers,
-      dailyTransactions,
-      monthlyUsers,
-      monthlyTransactions,
-    ] = await Promise.all([
-      dbservices.User.counts(),
-      dbservices.TransactionsXDC.getDailyActiveUsers(days),
-      dbservices.TransactionsXDC.getDailyTransactionCounts(days),
-      dbservices.TransactionsXDC.getMonthlyActiveUsers(),
-      dbservices.TransactionsXDC.getMonthlyTransactions(),
-    ]);
-
-    const response = {
-      success: true,
-      timestamp: new Date().toISOString(),
-      data: {
-        userCounts,
-        dailyActiveUsers: {
-          count: dailyActiveUsers.count,
-          data: dailyActiveUsers.data,
-        },
-        dailyTransactions: {
-          count: dailyTransactions.count,
-          data: dailyTransactions.data,
-        },
-        monthlyUsers,
-        monthlyTransactions,
-      },
-    };
-
-    // Generate ETag
-    const etag = crypto
-      .createHash("md5")
-      .update(JSON.stringify(response))
-      .digest("hex");
-
-    // Store both response and etag
-    dashboardCache.set(cacheKey, { response, etag });
-
-    return true;
-  } catch (error) {
-    return false;
-  }
-};
-
-
-static refreshDashboardCacheAvax = async () => {
-  try {
-    const cacheKey = "dashboardData:avax";
-    const days = 90;
-
-    const [
-      userCounts,
-      dailyActiveUsers,
-      dailyTransactions,
-      monthlyUsers,
-      monthlyTransactions,
-    ] = await Promise.all([
-      dbservices.User.countsAvax(),
-      dbservices.TransactionsAvax.getDailyActiveUsers(days),
-      dbservices.TransactionsAvax.getDailyTransactionCounts(days),
-      dbservices.TransactionsAvax.getMonthlyActiveUsers(),
-      dbservices.TransactionsAvax.getMonthlyTransactions(),
-    ]);
-
-    const response = {
-      success: true,
-      timestamp: new Date().toISOString(),
-      data: {
-        userCounts,
-        dailyActiveUsers: {
-          count: dailyActiveUsers.count,
-          data: dailyActiveUsers.data,
-        },
-        dailyTransactions: {
-          count: dailyTransactions.count,
-          data: dailyTransactions.data,
-        },
-        monthlyUsers,
-        monthlyTransactions,
-      },
-    };
-
-    // Generate ETag
-    const etag = crypto
-      .createHash("md5")
-      .update(JSON.stringify(response))
-      .digest("hex");
-
-    // Store both response and etag
-    dashboardCache.set(cacheKey, { response, etag });
-
-    return true;
-  } catch (error) {
-    return false;
-  }
-};
+  static refreshDashboardCacheAvax = async (): Promise<boolean> => {
+    try {
+      await DashboardCacheManager.refreshAvax("external-trigger");
+      return true;
+    } catch (error) {
+      return false;
+    }
+  };
 
 
   //   static refreshDashboardCacheAvax = async () => {
