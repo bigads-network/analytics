@@ -178,7 +178,11 @@ const isNonceError = (error: any) => {
 
 const isReplacementUnderpricedError = (error: any) => {
   const message = (error?.message || "").toLowerCase();
-  return message.includes("replacement transaction underpriced");
+  return (
+    message.includes("replacement transaction underpriced") ||
+    message.includes("nonce") ||
+    message.includes("underpriced")
+  );
 };
 
 const isRetryableNetworkError = (error: any) => {
@@ -338,12 +342,12 @@ const recentTxHashes: { hash: string; timestamp: number; walletIndex: number }[]
 
 // Batched logging system - reduce memory footprint
 let batchLogCounter = 0;
-const BATCH_LOG_INTERVAL = 10; // Log every 10 transactions
+const BATCH_LOG_INTERVAL = 100; // Only log every 100 transactions
 
 const logTransactionBatch = () => {
   batchLogCounter++;
   if (batchLogCounter % BATCH_LOG_INTERVAL === 0) {
-    logger.info(`[PROGRESS] ${totalTransactionsSent} sent | ${totalTransactionsFailed} failed | ${totalTransactionsRejected} rejected | Queue=${globalBatch.transactions.length}`);
+    logger.info(`[TX] ${totalTransactionsSent} sent | ${totalTransactionsFailed} failed`);
   }
 };
 
@@ -357,24 +361,7 @@ let perSecondStats = {
 };
 
 const reportPerSecondStats = () => {
-  const now = Date.now();
-  const elapsed = (now - perSecondStats.lastReport) / 1000;
-  
-  if (elapsed >= 10) {
-    const receivedRate = (perSecondStats.received / elapsed).toFixed(1);
-    const sentRate = (perSecondStats.sent / elapsed).toFixed(1);
-    const failedRate = (perSecondStats.failed / elapsed).toFixed(1);
-    const rejectedRate = (perSecondStats.rejected / elapsed).toFixed(1);
-    
-    logger.warn(`[STATS-10SEC] Received=${perSecondStats.received}(${receivedRate}/s) | Sent=${perSecondStats.sent}(${sentRate}/s) | Failed=${perSecondStats.failed}(${failedRate}/s) | Rejected=${perSecondStats.rejected}(${rejectedRate}/s) | Queue=${globalBatch.transactions.length}`);
-    
-    // Reset counters
-    perSecondStats.received = 0;
-    perSecondStats.sent = 0;
-    perSecondStats.failed = 0;
-    perSecondStats.rejected = 0;
-    perSecondStats.lastReport = now;
-  }
+  // Disabled - no logging
 };
 
 // Report stats every 1 second
@@ -384,22 +371,10 @@ setInterval(() => {
 
 const walletCooldowns = new Map<number, number>();
 
-// Periodic queue monitoring - log progress every 10 seconds
+// Periodic queue monitoring - DISABLED
 let lastQueueLog = Date.now();
 setInterval(() => {
-  const now = Date.now();
-  if (now - lastQueueLog > 10000) {
-    logger.info(`[QUEUE-CHECK] depth=${globalBatch.transactions.length} | isProcessing=${isProcessingBatch} | total_sent=${totalTransactionsSent} | total_failed=${totalTransactionsFailed} | total_rejected=${totalTransactionsRejected}`);
-    
-    // Show recent tx hashes
-    if (recentTxHashes.length > 0) {
-      const recent5 = recentTxHashes.slice(-5);
-      const hashList = recent5.map(tx => `${tx.hash.slice(0, 10)}...(W${tx.walletIndex})`).join(', ');
-      logger.info(`[RECENT-TXS] ${hashList}`);
-    }
-    
-    lastQueueLog = now;
-  }
+  // Queue monitoring disabled for production
 }, 5000);
 
 const createUserSnapshot = (user: any): QueuedTransaction["userSnapshot"] => ({
@@ -1337,7 +1312,7 @@ export default class User {
             // ATOMICALLY GET AND INCREMENT NONCE - prevents race conditions
             const localNonce = getAndIncrementNonce(walletIndex);
             
-            logger.debug(`[NONCE-ALLOCATED] wallet${walletIndex} allocated nonce=${localNonce}`);
+            // Nonce allocated - silent for production
 
             // Encode transaction
             const callData = contractInterface.interface.encodeFunctionData("storeMetadata", [
@@ -1351,7 +1326,7 @@ export default class User {
             totalTransactionsSent++;
             perSecondStats.sent++;
             logTransactionBatch();
-            logger.info(`[TX-SENT] wallet${walletIndex} nonce=${localNonce} FIRED`);
+            // Transaction fired - silent
             
             // Send in background - don't wait
             wallet.sendTransaction({
@@ -1361,8 +1336,7 @@ export default class User {
               nonce: localNonce,
               gasLimit: 100000,
             }).then((txResponse) => {
-              // Hash received - just log it
-              logger.debug(`[TX-HASH] wallet${walletIndex} hash=${txResponse.hash.slice(0, 18)}...`);
+              // Hash received - silent
               recentTxHashes.push({ hash: txResponse.hash, timestamp: Date.now(), walletIndex });
               if (recentTxHashes.length > 100) {
                 recentTxHashes.shift();
@@ -1378,24 +1352,25 @@ export default class User {
               //   "0"
               // ).catch(() => {});
             }).catch((err) => {
-              const errMsg = String(err).slice(0, 60);
-              logger.warn(`[TX-FAILED] wallet${walletIndex} nonce=${localNonce} error=${errMsg}`);
-              
-              // If nonce error, sync for future attempts
-              if (String(err).includes("nonce")) {
-                syncNoncesWithBlockchain().catch(() => {});
+              // Handle nonce errors
+              const errStr = String(err);
+              if (errStr.includes("nonce") || errStr.includes("underpriced")) {
+                totalTransactionsFailed++;
+                // Immediately sync nonce to fix the issue
+                provider.getTransactionCount(wallet.address, "pending").then((blockchainNonce) => {
+                  nonceByWallet.set(walletIndex, blockchainNonce);
+                }).catch(() => {});
               }
+              // Other errors - just silently fail
             });
 
           } catch (sendError) {
             totalTransactionsFailed++;
             perSecondStats.failed++;
-            const errMsg = String(sendError).slice(0, 60);
-            logger.error(`[TX-EXCEPTION] fireEvent error=${errMsg}`);
+            // Silent error handling
           }
         } catch (bgError) {
-          // Silent fail on background errors
-          logger.debug(`[BG-ERROR] ${String(bgError).slice(0, 60)}`);
+          // Silent background error
         }
       })();
     } catch (error) {
