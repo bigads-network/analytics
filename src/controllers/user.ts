@@ -484,52 +484,51 @@ async function sendSingleTransaction(
       [tx.userSnapshot.saAddress, tx.metadata, tx.gameId]
     );
 
-    // Send transaction with timeout to prevent hanging
-    const txPromise = wallet.sendTransaction({
+    // FIRE AND FORGET - No await, no timeout
+    // Let ethers handle RPC call in background
+    wallet.sendTransaction({
       to: contractAddress,
       data: callData,
       value: 0n,
       nonce: nonce,
       gasLimit: 100000,
+    }).then((txResponse) => {
+      totalTransactionsSent++;
+      logTransactionBatch();
+    }).catch((error) => {
+      totalTransactionsFailed++;
+      
+      // Handle replacement underpriced error by syncing nonce
+      if (isReplacementUnderpricedError(error)) {
+        logger.warn(`[NONCE] Underpriced wallet${walletIndex}`);
+        // Async sync in background - don't block
+        provider.getTransactionCount(walletAddress, "pending").then((blockchainNonce) => {
+          nonceByWallet.set(walletIndex, blockchainNonce);
+        }).catch(() => {
+          // Silently fail nonce sync
+        });
+      }
+      
+      // Check if error is RPC-related
+      if (isRetryableNetworkError(error)) {
+        if (providerUrl) {
+          markProviderFailed(providerUrl);
+        }
+      }
+
+      const errorMsg = error instanceof Error ? error.message : "unknown";
+      if (!errorMsg.includes("timeout")) {
+        logger.warn(`[TX-ERROR] wallet${walletIndex} nonce=${nonce}`);
+      }
     });
     
-    // Add 30s timeout to prevent indefinite hanging
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error("RPC timeout")), 30000)
-    );
-    
-    const txResponse = await Promise.race([txPromise, timeoutPromise]);
-
-    // Increment sent counter - use batched logging
+    // Return immediately with hash or null
+    // This doesn't wait - just returns immediately to allow next tx
     totalTransactionsSent++;
     logTransactionBatch();
-    return { hash: (txResponse as any).hash, tx };
+    return { hash: `pending_${nonce}`, tx };
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : "unknown";
-    
-    // Handle replacement underpriced error by syncing nonce
-    if (isReplacementUnderpricedError(error)) {
-      logger.warn(`[NONCE] Underpriced`);
-      try {
-        const blockchainNonce = await provider.getTransactionCount(walletAddress, "pending");
-        nonceByWallet.set(walletIndex, blockchainNonce);
-      } catch (syncError) {
-        // Silently continue, don't block on nonce sync failures
-      }
-    }
-    
-    // Check if error is RPC-related and mark provider as failed
-    if (isRetryableNetworkError(error) || errorMsg.includes("timeout")) {
-      if (providerUrl) {
-        markProviderFailed(providerUrl);
-      }
-    }
-
-    // Increment failed counter
     totalTransactionsFailed++;
-    if (!errorMsg.includes("timeout")) {
-      logger.error(`[TX-ERROR] gameId=${tx.gameId} nonce=${nonce} | ${errorMsg.slice(0, 50)}`);
-    }
     return null;
   }
 }
@@ -576,22 +575,12 @@ async function processWalletBatch(
       provider
     );
 
-    // Get current nonce from blockchain before sending batch (with timeout)
-    let blockchainNonce: number;
-    try {
-      const noncePromise = provider.getTransactionCount(walletAddress, "pending");
-      const timeoutPromise = new Promise<number>((_, reject) =>
-        setTimeout(() => reject(new Error("Nonce fetch timeout")), 10000)
-      );
-      blockchainNonce = await Promise.race([noncePromise, timeoutPromise]);
-    } catch (nonceError) {
-      logger.warn(`[NONCE] Fetch timeout for wallet${walletIndex}`);
-      return { successes: [], retry: transactions }; // Retry later
-    }
+    // USE LOCAL NONCE - NO RPC BLOCKING
+    // This is the cached value from initialization or last sync
+    let blockchainNonce = getNonceForWallet(walletIndex);
     
-    let nonce = blockchainNonce;
-    
-    // Update local nonce tracker to blockchain value
+    // Update local nonce tracker for next batch
+    // Add transactions count so we reserve nonces for all pending txs
     nonceByWallet.set(walletIndex, blockchainNonce + transactions.length);
 
     const successes: Array<{ hash: string; tx: QueuedTransaction }> = [];
@@ -741,16 +730,12 @@ async function processGlobalBatch() {
       ([walletIndex, txs]) => processWalletBatch(walletIndex, txs, contractAddress, abi)
     );
 
-    // Add 120s timeout to prevent hanging batch processing
-    const batchTimeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Batch processing timeout")), 120000)
-    );
+    // Process all wallets - no timeout needed since we're fire-and-forget now
+    const allResults = await Promise.all(walletPromises);
     
-    const allResults = await Promise.race([Promise.all(walletPromises), batchTimeoutPromise]);
-    
-    const successfulTxs = (allResults as any).flatMap((result: any) => result.successes);
+    const successfulTxs = allResults.flatMap((result) => result.successes);
 
-    const retryCandidates = (allResults as any).flatMap((result: any) => result.retry);
+    const retryCandidates = allResults.flatMap((result) => result.retry);
     if (retryCandidates.length) {
       const trimmed = trimTransactionsForRequeue(retryCandidates);
       enqueueTransactionsAtFront(trimmed);
@@ -758,7 +743,7 @@ async function processGlobalBatch() {
 
     // Batch database saves (don't await, fire and forget)
     if (successfulTxs.length > 0) {
-      const dbPromises = successfulTxs.map(({ hash, tx }: any) =>
+      const dbPromises = successfulTxs.map(({ hash, tx }) =>
         dbservices.User.saveTransactionDetails_Avax(
           tx.gameId,
           tx.userSnapshot.id!,
@@ -775,16 +760,10 @@ async function processGlobalBatch() {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     
-    // Timeout is expected under heavy load, just requeue
-    if (errorMsg.includes("timeout")) {
-      logger.warn(`[BATCH] Timeout, requeueing ${transactionsToProcess.length} transactions`);
-      enqueueTransactionsAtFront(transactionsToProcess);
-    } else {
-      logger.error(`[BATCH] FAILED`, { error: errorMsg.slice(0, 80) });
-      const retryable = trimTransactionsForRequeue(transactionsToProcess);
-      if (retryable.length) {
-        enqueueTransactionsAtFront(retryable);
-      }
+    logger.error(`[BATCH] FAILED`, { error: errorMsg.slice(0, 80) });
+    const retryable = trimTransactionsForRequeue(transactionsToProcess);
+    if (retryable.length) {
+      enqueueTransactionsAtFront(retryable);
     }
   } finally {
     isProcessingBatch = false;
@@ -1324,58 +1303,49 @@ export default class User {
 
             const contractInterface = new ethers.Contract(contractAddress, abi, provider);
 
-            // Get nonce from blockchain with timeout protection
-            let nonce: number;
-            try {
-              const noncePromise = provider.getTransactionCount(walletAddress, "pending");
-              const nonceTimeoutPromise = new Promise<number>((_, reject) =>
-                setTimeout(() => reject(new Error("Nonce fetch timeout")), 10000)
-              );
-              nonce = await Promise.race([noncePromise, nonceTimeoutPromise]);
-            } catch (nonceErr) {
-              totalTransactionsFailed++;
-              logger.warn(`[TX-ERROR] Nonce fetch timeout for wallet${walletIndex}`);
-              return;
-            }
+            // USE LOCAL NONCE - NO RPC BLOCKING
+            const localNonce = getNonceForWallet(walletIndex);
+            
+            // Increment for next time
+            nonceByWallet.set(walletIndex, localNonce + 1);
 
-            // Encode and send with timeout protection
+            // Encode transaction
             const callData = contractInterface.interface.encodeFunctionData("storeMetadata", [
               userSnapshot.saAddress,
               metadata,
               gameId
             ]);
 
-            let txResponse: any;
-            try {
-              const txPromise = wallet.sendTransaction({
-                to: contractAddress,
-                data: callData,
-                value: 0n,
-                nonce: nonce,
-                gasLimit: 100000,
-              });
-              const txTimeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error("TX timeout")), 30000)
-              );
-              txResponse = await Promise.race([txPromise, txTimeoutPromise]);
-            } catch (sendErr) {
+            // FIRE AND FORGET - No waiting for confirmation
+            // Fire the transaction without awaiting
+            wallet.sendTransaction({
+              to: contractAddress,
+              data: callData,
+              value: 0n,
+              nonce: localNonce,
+              gasLimit: 100000,
+            }).then((txResponse) => {
+              totalTransactionsSent++;
+              logTransactionBatch();
+              
+              // Save to DB async (fire and forget)
+              dbservices.User.saveTransactionDetails_Avax(
+                gameId,
+                userSnapshot.id,
+                id,
+                txResponse.hash,
+                "Avalanche",
+                "0"
+              ).catch(() => {});
+            }).catch((err) => {
               totalTransactionsFailed++;
-              logger.warn(`[TX-ERROR] Send timeout wallet${walletIndex}`);
-              return;
-            }
-
-            totalTransactionsSent++;
-            logTransactionBatch();
-
-            // Save to DB async
-            dbservices.User.saveTransactionDetails_Avax(
-              gameId,
-              userSnapshot.id,
-              id,
-              txResponse.hash,
-              "Avalanche",
-              "0"
-            ).catch(e => {});
+              logger.warn(`[TX-ERROR] wallet${walletIndex}`);
+              
+              // If nonce error, trigger sync for next attempt
+              if (String(err).includes("nonce")) {
+                syncNoncesWithBlockchain().catch(() => {});
+              }
+            });
 
           } catch (sendError) {
             totalTransactionsFailed++;
