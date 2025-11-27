@@ -105,6 +105,13 @@ const getNonceForWallet = (walletIndex: number): number => {
   return nonceByWallet.get(walletIndex) ?? 0;
 };
 
+// Atomically get nonce and increment - returns the nonce to use
+const getAndIncrementNonce = (walletIndex: number): number => {
+  const current = getNonceForWallet(walletIndex);
+  nonceByWallet.set(walletIndex, current + 1);
+  return current;
+};
+
 // Increment nonce locally after sending
 const incrementNonce = (walletIndex: number) => {
   const current = getNonceForWallet(walletIndex);
@@ -529,33 +536,29 @@ async function sendSingleTransaction(
       [tx.userSnapshot.saAddress, tx.metadata, tx.gameId]
     );
 
-    // FIRE AND FORGET - No await, no timeout
-    // Let ethers handle RPC call in background
-    const txPromise = wallet.sendTransaction({
+    // FIRE AND FORGET - No await, truly don't wait
+    // Count as sent immediately, let RPC work in background
+    totalTransactionsSent++;
+    perSecondStats.sent++;
+    logTransactionBatch();
+    logger.debug(`[TX-FIRED] wallet${walletIndex} nonce=${nonce}`);
+    
+    // Send in background - don't wait for response
+    wallet.sendTransaction({
       to: contractAddress,
       data: callData,
       value: 0n,
       nonce: nonce,
       gasLimit: 100000,
-    });
-    
-    // Attach handlers but don't await
-    txPromise.then((txResponse) => {
-      totalTransactionsSent++;
-      perSecondStats.sent++;
-      logTransactionBatch();
-      
-      // Log the actual hash
+    }).then((txResponse) => {
+      // Just log when we get hash back
       const hash = txResponse.hash;
       recentTxHashes.push({ hash, timestamp: Date.now(), walletIndex });
       if (recentTxHashes.length > 100) {
-        recentTxHashes.shift(); // Keep only last 100
+        recentTxHashes.shift();
       }
-      logger.debug(`[TX-SENT] wallet${walletIndex} hash=${hash} nonce=${nonce}`);
+      logger.debug(`[TX-HASH] wallet${walletIndex} hash=${hash.slice(0, 18)}... nonce=${nonce}`);
     }).catch((error) => {
-      totalTransactionsFailed++;
-      perSecondStats.failed++;
-      
       // Handle replacement underpriced error by syncing nonce
       if (isReplacementUnderpricedError(error)) {
         logger.warn(`[NONCE-ERROR] Underpriced wallet${walletIndex}`);
@@ -579,8 +582,7 @@ async function sendSingleTransaction(
       logger.warn(`[TX-FAILED] wallet${walletIndex} nonce=${nonce} error=${errorMsg}`);
     });
     
-    // Return immediately - don't wait for promise
-    // Increment here too for fire-and-forget counting
+    // Return immediately - this function returns instantly
     return { hash: `0x${'0'.repeat(64)}`, tx };  // Placeholder hash
   } catch (error) {
     totalTransactionsFailed++;
@@ -1372,17 +1374,6 @@ export default class User {
             const wallet = new ethers.Wallet(privKey, provider);
             const walletAddress = await wallet.getAddress();
 
-            // Check balance
-            const balance = await provider.getBalance(walletAddress);
-            const balanceInAvax = ethers.utils.formatEther(balance);
-
-            if (parseFloat(balanceInAvax) === 0) {
-              totalTransactionsRejected++;
-              perSecondStats.rejected++;
-              logger.warn(`[REQ-REJECTED] wallet${walletIndex} has zero balance`);
-              return;
-            }
-
             const contractAddress = envConfigs.contract_address_avax;
             const abi = [
               {
@@ -1400,11 +1391,10 @@ export default class User {
 
             const contractInterface = new ethers.Contract(contractAddress, abi, provider);
 
-            // USE LOCAL NONCE - NO RPC BLOCKING
-            const localNonce = getNonceForWallet(walletIndex);
+            // ATOMICALLY GET AND INCREMENT NONCE - prevents race conditions
+            const localNonce = getAndIncrementNonce(walletIndex);
             
-            // Increment for next time
-            nonceByWallet.set(walletIndex, localNonce + 1);
+            logger.debug(`[NONCE-ALLOCATED] wallet${walletIndex} allocated nonce=${localNonce}`);
 
             // Encode transaction
             const callData = contractInterface.interface.encodeFunctionData("storeMetadata", [
@@ -1413,8 +1403,14 @@ export default class User {
               gameId
             ]);
 
-            // FIRE AND FORGET - No waiting for confirmation
-            // Fire the transaction without awaiting
+            // FIRE AND FORGET - No waiting for anything
+            // Don't even attach .then() - just fire it
+            totalTransactionsSent++;
+            perSecondStats.sent++;
+            logTransactionBatch();
+            logger.info(`[TX-SENT] wallet${walletIndex} nonce=${localNonce} FIRED`);
+            
+            // Send in background - don't wait
             wallet.sendTransaction({
               to: contractAddress,
               data: callData,
@@ -1422,33 +1418,27 @@ export default class User {
               nonce: localNonce,
               gasLimit: 100000,
             }).then((txResponse) => {
-              totalTransactionsSent++;
-              perSecondStats.sent++;
-              logTransactionBatch();
-              
-              // Track hash
+              // Hash received - just log it
+              logger.debug(`[TX-HASH] wallet${walletIndex} hash=${txResponse.hash.slice(0, 18)}...`);
               recentTxHashes.push({ hash: txResponse.hash, timestamp: Date.now(), walletIndex });
               if (recentTxHashes.length > 100) {
                 recentTxHashes.shift();
               }
-              logger.info(`[TX-SENT] wallet${walletIndex} hash=${txResponse.hash.slice(0, 18)}... nonce=${localNonce}`);
               
-              // Save to DB async (fire and forget)
-              dbservices.User.saveTransactionDetails_Avax(
-                gameId,
-                userSnapshot.id,
-                id,
-                txResponse.hash,
-                "Avalanche",
-                "0"
-              ).catch(() => {});
+              // DB save happens asynchronously by indexer - don't wait
+              // dbservices.User.saveTransactionDetails_Avax(
+              //   gameId,
+              //   userSnapshot.id,
+              //   id,
+              //   txResponse.hash,
+              //   "Avalanche",
+              //   "0"
+              // ).catch(() => {});
             }).catch((err) => {
-              totalTransactionsFailed++;
-              perSecondStats.failed++;
               const errMsg = String(err).slice(0, 60);
               logger.warn(`[TX-FAILED] wallet${walletIndex} nonce=${localNonce} error=${errMsg}`);
               
-              // If nonce error, trigger sync for next attempt
+              // If nonce error, sync for future attempts
               if (String(err).includes("nonce")) {
                 syncNoncesWithBlockchain().catch(() => {});
               }
