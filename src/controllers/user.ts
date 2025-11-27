@@ -324,6 +324,10 @@ let globalBatch: {
 let totalRequestsReceived = 0;
 let totalTransactionsSent = 0;
 let totalTransactionsFailed = 0;
+let totalTransactionsRejected = 0;
+
+// Track sent transaction hashes
+const recentTxHashes: { hash: string; timestamp: number; walletIndex: number }[] = [];
 
 // Batched logging system - reduce memory footprint
 let batchLogCounter = 0;
@@ -332,23 +336,64 @@ const BATCH_LOG_INTERVAL = 10; // Log every 10 transactions
 const logTransactionBatch = () => {
   batchLogCounter++;
   if (batchLogCounter % BATCH_LOG_INTERVAL === 0) {
-    logger.info(`[PROGRESS] ${totalTransactionsSent} sent | ${totalTransactionsFailed} failed`);
+    logger.info(`[PROGRESS] ${totalTransactionsSent} sent | ${totalTransactionsFailed} failed | ${totalTransactionsRejected} rejected | Queue=${globalBatch.transactions.length}`);
   }
 };
 
+// Track per-second metrics
+let perSecondStats = {
+  received: 0,
+  sent: 0,
+  failed: 0,
+  rejected: 0,
+  lastReport: Date.now(),
+};
+
+const reportPerSecondStats = () => {
+  const now = Date.now();
+  const elapsed = (now - perSecondStats.lastReport) / 1000;
+  
+  if (elapsed >= 10) {
+    const receivedRate = (perSecondStats.received / elapsed).toFixed(1);
+    const sentRate = (perSecondStats.sent / elapsed).toFixed(1);
+    const failedRate = (perSecondStats.failed / elapsed).toFixed(1);
+    const rejectedRate = (perSecondStats.rejected / elapsed).toFixed(1);
+    
+    logger.warn(`[STATS-10SEC] Received=${perSecondStats.received}(${receivedRate}/s) | Sent=${perSecondStats.sent}(${sentRate}/s) | Failed=${perSecondStats.failed}(${failedRate}/s) | Rejected=${perSecondStats.rejected}(${rejectedRate}/s) | Queue=${globalBatch.transactions.length}`);
+    
+    // Reset counters
+    perSecondStats.received = 0;
+    perSecondStats.sent = 0;
+    perSecondStats.failed = 0;
+    perSecondStats.rejected = 0;
+    perSecondStats.lastReport = now;
+  }
+};
+
+// Report stats every 1 second
+setInterval(() => {
+  reportPerSecondStats();
+}, 1000);
+
 const walletCooldowns = new Map<number, number>();
 
-// Periodic queue monitoring - log progress every 60 seconds
+// Periodic queue monitoring - log progress every 10 seconds
 let lastQueueLog = Date.now();
 setInterval(() => {
   const now = Date.now();
-  if (now - lastQueueLog > 60000) {
-    if (globalBatch.transactions.length > 0 || isProcessingBatch) {
-      logger.info(`[QUEUE] depth=${globalBatch.transactions.length} | sent=${totalTransactionsSent} | failed=${totalTransactionsFailed}`);
-      lastQueueLog = now;
+  if (now - lastQueueLog > 10000) {
+    logger.info(`[QUEUE-CHECK] depth=${globalBatch.transactions.length} | isProcessing=${isProcessingBatch} | total_sent=${totalTransactionsSent} | total_failed=${totalTransactionsFailed} | total_rejected=${totalTransactionsRejected}`);
+    
+    // Show recent tx hashes
+    if (recentTxHashes.length > 0) {
+      const recent5 = recentTxHashes.slice(-5);
+      const hashList = recent5.map(tx => `${tx.hash.slice(0, 10)}...(W${tx.walletIndex})`).join(', ');
+      logger.info(`[RECENT-TXS] ${hashList}`);
     }
+    
+    lastQueueLog = now;
   }
-}, 30000);
+}, 5000);
 
 const createUserSnapshot = (user: any): QueuedTransaction["userSnapshot"] => ({
   id: typeof user?.id === "number" ? user.id : null,
@@ -486,24 +531,38 @@ async function sendSingleTransaction(
 
     // FIRE AND FORGET - No await, no timeout
     // Let ethers handle RPC call in background
-    wallet.sendTransaction({
+    const txPromise = wallet.sendTransaction({
       to: contractAddress,
       data: callData,
       value: 0n,
       nonce: nonce,
       gasLimit: 100000,
-    }).then((txResponse) => {
+    });
+    
+    // Attach handlers but don't await
+    txPromise.then((txResponse) => {
       totalTransactionsSent++;
+      perSecondStats.sent++;
       logTransactionBatch();
+      
+      // Log the actual hash
+      const hash = txResponse.hash;
+      recentTxHashes.push({ hash, timestamp: Date.now(), walletIndex });
+      if (recentTxHashes.length > 100) {
+        recentTxHashes.shift(); // Keep only last 100
+      }
+      logger.debug(`[TX-SENT] wallet${walletIndex} hash=${hash} nonce=${nonce}`);
     }).catch((error) => {
       totalTransactionsFailed++;
+      perSecondStats.failed++;
       
       // Handle replacement underpriced error by syncing nonce
       if (isReplacementUnderpricedError(error)) {
-        logger.warn(`[NONCE] Underpriced wallet${walletIndex}`);
+        logger.warn(`[NONCE-ERROR] Underpriced wallet${walletIndex}`);
         // Async sync in background - don't block
         provider.getTransactionCount(walletAddress, "pending").then((blockchainNonce) => {
           nonceByWallet.set(walletIndex, blockchainNonce);
+          logger.info(`[NONCE-SYNC] wallet${walletIndex} synced to ${blockchainNonce}`);
         }).catch(() => {
           // Silently fail nonce sync
         });
@@ -516,19 +575,18 @@ async function sendSingleTransaction(
         }
       }
 
-      const errorMsg = error instanceof Error ? error.message : "unknown";
-      if (!errorMsg.includes("timeout")) {
-        logger.warn(`[TX-ERROR] wallet${walletIndex} nonce=${nonce}`);
-      }
+      const errorMsg = error instanceof Error ? error.message.slice(0, 50) : "unknown";
+      logger.warn(`[TX-FAILED] wallet${walletIndex} nonce=${nonce} error=${errorMsg}`);
     });
     
-    // Return immediately with hash or null
-    // This doesn't wait - just returns immediately to allow next tx
-    totalTransactionsSent++;
-    logTransactionBatch();
-    return { hash: `pending_${nonce}`, tx };
+    // Return immediately - don't wait for promise
+    // Increment here too for fire-and-forget counting
+    return { hash: `0x${'0'.repeat(64)}`, tx };  // Placeholder hash
   } catch (error) {
     totalTransactionsFailed++;
+    perSecondStats.failed++;
+    const errorMsg = error instanceof Error ? error.message.slice(0, 50) : "unknown";
+    logger.error(`[TX-EXCEPTION] wallet${walletIndex} error=${errorMsg}`);
     return null;
   }
 }
@@ -1203,7 +1261,9 @@ export default class User {
       const { devicedata } = req.body;
       
       totalRequestsReceived++;
+      perSecondStats.received++;
       Monitoring.setRequestsReceived(totalRequestsReceived);
+      logger.debug(`[REQ-IN] eventId=${eventId} total_received=${totalRequestsReceived}`);
       
       // Return 202 INSTANTLY
       res.status(202).json({
@@ -1215,17 +1275,32 @@ export default class User {
       // Send directly without any queue - just send immediately
       (async () => {
         try {
-          if (!devicedata) return;
+          if (!devicedata) {
+            totalTransactionsRejected++;
+            perSecondStats.rejected++;
+            logger.warn(`[REQ-REJECTED] no devicedata`);
+            return;
+          }
 
           const gameIdResult = await dbservices.User.getGameid(eventId);
           const { gameId, id } = gameIdResult;
           
-          if (!gameId || !id) return;
+          if (!gameId || !id) {
+            totalTransactionsRejected++;
+            perSecondStats.rejected++;
+            logger.warn(`[REQ-REJECTED] invalid gameId or id`);
+            return;
+          }
 
           let userExist = await dbservices.User.userExits(devicedata);
           const gameDetails = await dbservices.User.getGameDetails(gameId, eventId);
 
-          if (!gameDetails || (userExist && gameDetails.creatorId === userExist.id)) return;
+          if (!gameDetails || (userExist && gameDetails.creatorId === userExist.id)) {
+            totalTransactionsRejected++;
+            perSecondStats.rejected++;
+            logger.warn(`[REQ-REJECTED] invalid gameDetails or creator`);
+            return;
+          }
 
           const userId = userExist ? userExist.userId : `user_${this.generateId()}`;
 
@@ -1244,19 +1319,36 @@ export default class User {
 
               const saAddress = await modularSdk.getCounterFactualAddress();
               const saveResult = await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
-              if (!saveResult) return;
+              if (!saveResult) {
+                totalTransactionsRejected++;
+                perSecondStats.rejected++;
+                logger.warn(`[REQ-REJECTED] user save failed`);
+                return;
+              }
               userExist = saveResult;
             } catch (error) {
-              logger.error(`Error creating user`, { userId, error: String(error).slice(0, 50) });
+              totalTransactionsRejected++;
+              perSecondStats.rejected++;
+              logger.error(`[REQ-REJECTED] user creation error: ${String(error).slice(0, 50)}`);
               return;
             }
           }
 
           const userSnapshot = createUserSnapshot(userExist);
-          if (!userSnapshot.id || !userSnapshot.saAddress) return;
+          if (!userSnapshot.id || !userSnapshot.saAddress) {
+            totalTransactionsRejected++;
+            perSecondStats.rejected++;
+            logger.warn(`[REQ-REJECTED] missing snapshot fields`);
+            return;
+          }
 
           const eventDetails = gameDetails?.events?.[0];
-          if (!eventDetails) return;
+          if (!eventDetails) {
+            totalTransactionsRejected++;
+            perSecondStats.rejected++;
+            logger.warn(`[REQ-REJECTED] no event details`);
+            return;
+          }
 
           const metadata = JSON.stringify({
             role: userSnapshot.role,
@@ -1270,6 +1362,9 @@ export default class User {
             const walletIndex = Math.floor(Math.random() * adminPrivateKeys.length);
             const privKey = adminPrivateKeys[walletIndex];
             if (!privKey) {
+              totalTransactionsRejected++;
+              perSecondStats.rejected++;
+              logger.warn(`[REQ-REJECTED] no privkey for wallet${walletIndex}`);
               return;
             }
 
@@ -1282,7 +1377,9 @@ export default class User {
             const balanceInAvax = ethers.utils.formatEther(balance);
 
             if (parseFloat(balanceInAvax) === 0) {
-              totalTransactionsFailed++;
+              totalTransactionsRejected++;
+              perSecondStats.rejected++;
+              logger.warn(`[REQ-REJECTED] wallet${walletIndex} has zero balance`);
               return;
             }
 
@@ -1326,7 +1423,15 @@ export default class User {
               gasLimit: 100000,
             }).then((txResponse) => {
               totalTransactionsSent++;
+              perSecondStats.sent++;
               logTransactionBatch();
+              
+              // Track hash
+              recentTxHashes.push({ hash: txResponse.hash, timestamp: Date.now(), walletIndex });
+              if (recentTxHashes.length > 100) {
+                recentTxHashes.shift();
+              }
+              logger.info(`[TX-SENT] wallet${walletIndex} hash=${txResponse.hash.slice(0, 18)}... nonce=${localNonce}`);
               
               // Save to DB async (fire and forget)
               dbservices.User.saveTransactionDetails_Avax(
@@ -1339,7 +1444,9 @@ export default class User {
               ).catch(() => {});
             }).catch((err) => {
               totalTransactionsFailed++;
-              logger.warn(`[TX-ERROR] wallet${walletIndex}`);
+              perSecondStats.failed++;
+              const errMsg = String(err).slice(0, 60);
+              logger.warn(`[TX-FAILED] wallet${walletIndex} nonce=${localNonce} error=${errMsg}`);
               
               // If nonce error, trigger sync for next attempt
               if (String(err).includes("nonce")) {
@@ -1349,10 +1456,13 @@ export default class User {
 
           } catch (sendError) {
             totalTransactionsFailed++;
-            logger.error(`[TX-ERROR] fireEvent`);
+            perSecondStats.failed++;
+            const errMsg = String(sendError).slice(0, 60);
+            logger.error(`[TX-EXCEPTION] fireEvent error=${errMsg}`);
           }
         } catch (bgError) {
           // Silent fail on background errors
+          logger.debug(`[BG-ERROR] ${String(bgError).slice(0, 60)}`);
         }
       })();
     } catch (error) {
