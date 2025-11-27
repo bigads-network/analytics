@@ -64,17 +64,15 @@ const delay = (ms: number) =>
 // Initialize nonces once at server startup
 async function initializeNonces() {
   if (noncesInitialized) {
-    logger.info('[NONCE] Already initialized, skipping');
     return;
   }
   
-  logger.info(`[NONCE] Initializing nonces and balances for ${adminPrivateKeys.length} wallets...`);
+  logger.info(`[NONCE] Initializing ${adminPrivateKeys.length} wallets...`);
   
   try {
     for (let walletIndex = 0; walletIndex < adminPrivateKeys.length; walletIndex++) {
       const privKey = adminPrivateKeys[walletIndex];
       if (!privKey) {
-        logger.debug(`[NONCE] Wallet ${walletIndex}: no key, skipping`);
         continue;
       }
       
@@ -90,17 +88,15 @@ async function initializeNonces() {
       const balance = await provider.getBalance(walletAddress);
       const balanceInAvax = ethers.utils.formatEther(balance);
       
-      logger.info(`[WALLET] ${walletIndex} | address=${walletAddress.slice(0, 12)}... | nonce=${pendingNonce} | balance=${balanceInAvax} AVAX | has_balance=${parseFloat(balanceInAvax) > 0}`);
+      logger.info(`[WALLET${walletIndex}] nonce=${pendingNonce} balance=${balanceInAvax} AVAX`);
     }
     
     noncesInitialized = true;
-    logger.info(`[NONCE] Initialization complete: ${adminPrivateKeys.length} wallets ready`);
+    logger.info(`[NONCE] Ready: ${adminPrivateKeys.length} wallets`);
   } catch (error) {
-    logger.error('[NONCE] Error initializing nonces', {
-      error: error instanceof Error ? error.message.slice(0, 100) : 'unknown',
-      stack: error instanceof Error ? error.stack?.split('\n')[1] : undefined,
+    logger.error('[NONCE] Initialization failed', {
+      error: error instanceof Error ? error.message.slice(0, 80) : 'unknown',
     });
-    // Continue anyway, nonces will be fetched on first use
   }
 }
 
@@ -117,8 +113,6 @@ const incrementNonce = (walletIndex: number) => {
 
 // Sync nonces back to blockchain every 5 minutes
 async function syncNoncesWithBlockchain() {
-  logger.info('Syncing nonces with blockchain...');
-  
   try {
     for (let walletIndex = 0; walletIndex < adminPrivateKeys.length; walletIndex++) {
       const privKey = adminPrivateKeys[walletIndex];
@@ -137,14 +131,12 @@ async function syncNoncesWithBlockchain() {
       nonceByWallet.set(walletIndex, syncedNonce);
       
       if (syncedNonce !== localNonce) {
-        logger.info(`Nonce sync wallet ${walletIndex}: local=${localNonce} blockchain=${pendingNonce} synced=${syncedNonce}`);
+        logger.info(`[NONCE] Wallet${walletIndex}: synced local=${localNonce} -> blockchain=${pendingNonce}`);
       }
     }
-    
-    logger.info('Nonce sync complete');
   } catch (error) {
-    logger.error('Error syncing nonces', {
-      error: error instanceof Error ? error.message.slice(0, 100) : 'unknown',
+    logger.error('Nonce sync error', {
+      error: error instanceof Error ? error.message.slice(0, 80) : 'unknown',
     });
   }
 }
@@ -175,6 +167,11 @@ const isNonceError = (error: any) => {
   }
   const message = (error?.message || "").toLowerCase();
   return nonceErrorMessages.some((x) => message.includes(x));
+};
+
+const isReplacementUnderpricedError = (error: any) => {
+  const message = (error?.message || "").toLowerCase();
+  return message.includes("replacement transaction underpriced");
 };
 
 const isRetryableNetworkError = (error: any) => {
@@ -227,16 +224,59 @@ function getRandomElement<T>(array: T[]): T {
   return array[Math.floor(Math.random() * array.length)];
 }
 
-// Create persistent provider pool
-const providerPool = rpcProviders.map(
-  (url) => new ethers.providers.JsonRpcProvider(url)
-);
+// Provider health tracking (no persistent pool - creates fresh instances)
+interface ProviderStatus {
+  url: string;
+  failCount: number;
+  lastFailTime: number;
+  isHealthy: boolean;
+}
+
+const providerStatus = new Map<string, ProviderStatus>();
+rpcProviders.forEach(url => {
+  providerStatus.set(url, { url, failCount: 0, lastFailTime: 0, isHealthy: true });
+});
 
 let currentProviderIndex = 0;
-function getNextProvider() {
-  const provider = providerPool[currentProviderIndex];
-  currentProviderIndex = (currentProviderIndex + 1) % providerPool.length;
-  return provider;
+function getNextProvider(): ethers.providers.JsonRpcProvider {
+  // Round-robin with health check - skip failed providers for 5 minutes
+  let attempts = 0;
+  while (attempts < rpcProviders.length) {
+    const url = rpcProviders[currentProviderIndex];
+    currentProviderIndex = (currentProviderIndex + 1) % rpcProviders.length;
+    
+    const status = providerStatus.get(url);
+    if (!status) continue;
+    
+    // Skip provider if recently failed (within 5 minutes)
+    if (!status.isHealthy && Date.now() - status.lastFailTime < 300000) {
+      attempts++;
+      continue;
+    }
+    
+    // Reset health after cooldown
+    if (!status.isHealthy && Date.now() - status.lastFailTime >= 300000) {
+      status.isHealthy = true;
+      status.failCount = 0;
+    }
+    
+    // Return FRESH provider instance (new connection, no stale state)
+    return new ethers.providers.JsonRpcProvider(url);
+  }
+  
+  // Fallback: create provider from random healthy URL
+  const fallbackUrl = rpcProviders[Math.floor(Math.random() * rpcProviders.length)];
+  return new ethers.providers.JsonRpcProvider(fallbackUrl);
+}
+
+// Mark provider as failed
+function markProviderFailed(url: string) {
+  const status = providerStatus.get(url);
+  if (status) {
+    status.failCount++;
+    status.lastFailTime = Date.now();
+    status.isHealthy = false;
+  }
 }
 
 type QueuedTransaction = {
@@ -251,6 +291,23 @@ type QueuedTransaction = {
   };
   attempts: number;
   sizeBytes: number;
+};
+
+// Metadata cache to avoid storing full strings in queue
+const metadataCache = new Map<string, string>();
+
+const getCachedMetadata = (key: string): string | undefined => {
+  return metadataCache.get(key);
+};
+
+const setCachedMetadata = (key: string, metadata: string): void => {
+  // Limit cache size to prevent unbounded growth
+  if (metadataCache.size > 10000) {
+    // Clear oldest entries (FIFO)
+    const firstKey = metadataCache.keys().next().value;
+    if (firstKey) metadataCache.delete(firstKey);
+  }
+  metadataCache.set(key, metadata);
 };
 
 let globalBatch: {
@@ -268,21 +325,30 @@ let totalRequestsReceived = 0;
 let totalTransactionsSent = 0;
 let totalTransactionsFailed = 0;
 
+// Batched logging system - reduce memory footprint
+let batchLogCounter = 0;
+const BATCH_LOG_INTERVAL = 10; // Log every 10 transactions
+
+const logTransactionBatch = () => {
+  batchLogCounter++;
+  if (batchLogCounter % BATCH_LOG_INTERVAL === 0) {
+    logger.info(`[PROGRESS] ${totalTransactionsSent} sent | ${totalTransactionsFailed} failed`);
+  }
+};
+
 const walletCooldowns = new Map<number, number>();
 
-// Periodic queue monitoring - log queue state every 5 seconds during active processing
+// Periodic queue monitoring - log progress every 60 seconds
+let lastQueueLog = Date.now();
 setInterval(() => {
-  if (globalBatch.transactions.length > 0 || isProcessingBatch) {
-    logger.info('Queue snapshot', {
-      queueDepth: globalBatch.transactions.length,
-      isProcessing: isProcessingBatch,
-      totalRequests: totalRequestsReceived,
-      totalSent: totalTransactionsSent,
-      totalFailed: totalTransactionsFailed,
-      uptime: Math.floor(process.uptime()),
-    });
+  const now = Date.now();
+  if (now - lastQueueLog > 60000) {
+    if (globalBatch.transactions.length > 0 || isProcessingBatch) {
+      logger.info(`[QUEUE] depth=${globalBatch.transactions.length} | sent=${totalTransactionsSent} | failed=${totalTransactionsFailed}`);
+      lastQueueLog = now;
+    }
   }
-}, 10000);
+}, 30000);
 
 const createUserSnapshot = (user: any): QueuedTransaction["userSnapshot"] => ({
   id: typeof user?.id === "number" ? user.id : null,
@@ -294,10 +360,16 @@ const estimateTransactionSize = (
   tx: Omit<QueuedTransaction, "sizeBytes" | "attempts">
 ): number => {
   try {
-    return Buffer.byteLength(JSON.stringify(tx), "utf8");
+    // Don't include metadata in size calculation (it's cached separately)
+    const txWithoutMetadata = {
+      userId: tx.userId,
+      gameId: tx.gameId,
+      eventId: tx.eventId,
+      userSnapshot: tx.userSnapshot,
+    };
+    return Buffer.byteLength(JSON.stringify(txWithoutMetadata), "utf8") + 64; // +64 for overhead
   } catch (error) {
-    logger.warn("Failed to estimate transaction size", { error });
-    return 1024; // fall back to 1KB
+    return 512; // Smaller fallback since metadata is cached
   }
 };
 
@@ -358,9 +430,9 @@ const enqueueTransactionsAtFront = (transactions: QueuedTransaction[]) => {
 
   const projectedCount = transactions.length + globalBatch.transactions.length;
   if (projectedCount > MAX_QUEUE_SIZE) {
-    logger.error("Queue length capacity hit while enqueueing", {
+    logger.warn("Queue capacity exceeded", {
       attempted: transactions.length,
-      allowed: Math.max(MAX_QUEUE_SIZE - globalBatch.transactions.length, 0),
+      available: Math.max(MAX_QUEUE_SIZE - globalBatch.transactions.length, 0),
     });
   }
 
@@ -372,10 +444,7 @@ const enqueueTransactionsAtFront = (transactions: QueuedTransaction[]) => {
   let allowedBytes = 0;
   const allowedTxs = transactions.slice(0, allowedCount).filter((tx) => {
     if (currentQueueBytes + allowedBytes + tx.sizeBytes > MAX_QUEUE_BYTES) {
-      logger.error("Queue byte capacity hit while enqueueing retries", {
-        attemptedBytes: tx.sizeBytes,
-        currentQueueBytes,
-      });
+      logger.warn("Queue byte capacity exceeded");
       return false;
     }
     allowedBytes += tx.sizeBytes;
@@ -405,17 +474,17 @@ async function sendSingleTransaction(
   contractInterface: ethers.Contract,
   tx: QueuedTransaction,
   nonce: number,
-  walletAddress: string
+  walletAddress: string,
+  walletIndex: number,
+  providerUrl: string = ""
 ): Promise<{ hash: string; tx: QueuedTransaction } | null> {
   try {
-    logger.debug(`[TX] Encoding ${tx.gameId}/${tx.userId} nonce=${nonce}`);
     const callData = contractInterface.interface.encodeFunctionData(
       "storeMetadata",
       [tx.userSnapshot.saAddress, tx.metadata, tx.gameId]
     );
 
     // Send transaction immediately without waiting for confirmation
-    logger.debug(`[TX] Sending nonce=${nonce}...`);
     const txResponse = await wallet.sendTransaction({
       to: contractAddress,
       data: callData,
@@ -424,17 +493,35 @@ async function sendSingleTransaction(
       gasLimit: 100000,
     });
 
-    // Increment sent counter and log immediately with hash
+    // Increment sent counter - use batched logging
     totalTransactionsSent++;
-    logger.info(`[TX] ✓ hash=${txResponse.hash.slice(0, 12)} nonce=${nonce} wallet=${walletAddress.slice(0, 8)}... total_sent=${totalTransactionsSent}`);
+    logTransactionBatch();
     return { hash: txResponse.hash, tx };
   } catch (error) {
-    // Log error but don't retry - fire and forget
+    // Handle replacement underpriced error by syncing nonce
+    if (isReplacementUnderpricedError(error)) {
+      logger.warn(`[NONCE] Replacement underpriced at wallet${walletIndex} nonce=${nonce}`);
+      try {
+        const blockchainNonce = await provider.getTransactionCount(walletAddress, "pending");
+        nonceByWallet.set(walletIndex, blockchainNonce);
+      } catch (syncError) {
+        logger.error(`[NONCE] Sync failed`);
+      }
+    }
+    
+    // Check if error is RPC-related and mark provider as failed
+    if (isRetryableNetworkError(error)) {
+      if (providerUrl) {
+        markProviderFailed(providerUrl);
+      }
+      logger.warn(`[RPC-ERROR] Network error: provider marked failed`);
+      // RPC errors are retryable in theory, but we don't retry here (fire-and-forget)
+    }
+
+    // Increment failed counter - only log errors
     totalTransactionsFailed++;
-    logger.warn(`[TX] ✗ nonce=${nonce}`, { 
-      error: error instanceof Error ? error.message.slice(0, 100) : "unknown",
-      total_failed: totalTransactionsFailed
-    });
+    const errorMsg = error instanceof Error ? error.message.slice(0, 60) : "unknown";
+    logger.error(`[TX-ERROR] gameId=${tx.gameId} nonce=${nonce} | ${errorMsg}`);
     return null;
   }
 }
@@ -449,16 +536,13 @@ async function processWalletBatch(
   successes: Array<{ hash: string; tx: QueuedTransaction }>;
   retry: QueuedTransaction[];
 }> {
-  logger.debug(`[WALLET${walletIndex}] Processing ${transactions.length} txs`);
-
   if (!transactions.length) {
-    logger.debug(`[WALLET${walletIndex}] Empty transaction list`);
     return { successes: [], retry: [] };
   }
 
   // Validate wallet index is within range
   if (walletIndex < 0 || walletIndex >= adminPrivateKeys.length) {
-    logger.error(`[WALLET${walletIndex}] Invalid wallet index (available: ${adminPrivateKeys.length})`);
+    logger.error(`[WALLET${walletIndex}] Invalid wallet index`);
     return { successes: [], retry: [] };
   }
 
@@ -466,14 +550,16 @@ async function processWalletBatch(
   
   // Validate private key exists and is valid before processing
   if (!privKey || privKey.length === 0) {
-    logger.error(`[WALLET${walletIndex}] Invalid/empty private key`);
+    logger.error(`[WALLET${walletIndex}] Invalid/empty key`);
     return { successes: [], retry: [] };
   }
 
+  // Get fresh provider with health check (new connection, avoids accumulation)
   const provider = getNextProvider();
+  const providerUrl = provider.connection.url;
+  
   let wallet = new ethers.Wallet(privKey, provider);
   const walletAddress = await wallet.getAddress();
-  logger.debug(`[WALLET${walletIndex}] Wallet address: ${walletAddress.slice(0, 12)}...`);
 
   const contractInterface = new ethers.Contract(
     contractAddress,
@@ -481,9 +567,12 @@ async function processWalletBatch(
     provider
   );
 
-  // Get current nonce for this wallet (local, no RPC call) - initialized at startup
-  let nonce = getNonceForWallet(walletIndex);
-  logger.info(`[WALLET${walletIndex}] Starting nonce: ${nonce}`);
+  // Get current nonce from blockchain before sending batch
+  const blockchainNonce = await provider.getTransactionCount(walletAddress, "pending");
+  let nonce = blockchainNonce;
+  
+  // Update local nonce tracker to blockchain value
+  nonceByWallet.set(walletIndex, blockchainNonce + transactions.length);
 
   const successes: Array<{ hash: string; tx: QueuedTransaction }> = [];
   const retry: QueuedTransaction[] = [];
@@ -493,8 +582,7 @@ async function processWalletBatch(
     transactions,
     MAX_WALLET_CONCURRENCY,
     async (tx, index) => {
-      const txNonce = nonce + index;
-      incrementNonce(walletIndex);  // Increment locally, no RPC call
+      const txNonce = blockchainNonce + index;
 
       const result = await sendSingleTransaction(
         wallet,
@@ -503,38 +591,32 @@ async function processWalletBatch(
         contractInterface,
         tx,
         txNonce,
-        walletAddress
+        walletAddress,
+        walletIndex,
+        providerUrl
       );
 
       if (result) {
         successes.push(result);
-      } else {
-        // Drop failed transactions in fire-and-forget mode
-        logger.debug(`[WALLET${walletIndex}] TX dropped: nonce=${txNonce}`);
       }
     }
   );
 
-  logger.info(`[WALLET${walletIndex}] Complete: ${successes.length}/${transactions.length} successful`);
   return { successes, retry };
 }
 
 async function processGlobalBatch() {
-  logger.debug(`[BATCH] Entry: isProcessing=${isProcessingBatch} queueSize=${globalBatch.transactions.length}`);
-
   if (isProcessingBatch) {
-    logger.debug(`[BATCH] Already processing, setting pendingRequest=true`);
     pendingProcessRequest = true;
     return;
   }
 
   if (globalBatch.transactions.length === 0) {
-    logger.debug(`[BATCH] Queue empty, returning`);
     return;
   }
 
   isProcessingBatch = true;
-  logger.info(`[BATCH] START: Processing ${Math.min(BATCH_SIZE, globalBatch.transactions.length)} transactions`);
+  logger.info(`[BATCH] Processing ${Math.min(BATCH_SIZE, globalBatch.transactions.length)} transactions`);
 
   const batchCount = Math.min(BATCH_SIZE, globalBatch.transactions.length);
   const transactionsToProcess = globalBatch.transactions.splice(0, batchCount);
@@ -547,8 +629,6 @@ async function processGlobalBatch() {
   if (!globalBatch.transactions.length) {
     currentQueueBytes = 0;
   }
-
-  logger.debug(`[BATCH] Extracted ${transactionsToProcess.length} txs, remaining queue=${globalBatch.transactions.length}`);
 
   // Update monitoring with current queue state
   Monitoring.setQueueSize(globalBatch.transactions.length);
@@ -573,9 +653,6 @@ async function processGlobalBatch() {
   };
 
   try {
-    logger.debug(`[BATCH] Starting wallet batch processing for ${transactionsToProcess.length} txs`);
-    logger.debug(`[BATCH] Starting wallet batch processing for ${transactionsToProcess.length} txs`);
-    
     const chainName = avalanche;
     const contractAddress = envConfigs.contract_address_avax;
     const abi = [
@@ -629,26 +706,17 @@ async function processGlobalBatch() {
       }
     ];
 
-    logger.debug(`[BATCH] Calling splitTransactionsByWallet...`);
     // Split transactions across wallets respecting pending limits
     const walletBatches = await splitTransactionsByWallet(transactionsToProcess);
-    logger.info(`[BATCH] Split into ${walletBatches.size} wallet batches: ${Array.from(walletBatches.entries()).map(([w, txs]) => `wallet${w}(${txs.length})`).join(', ')}`);
     
     // Process all wallets in parallel
-    logger.debug(`[BATCH] Starting Promise.all for ${walletBatches.size} wallets...`);
     const walletPromises = Array.from(walletBatches.entries()).map(
-      ([walletIndex, txs]) => {
-        logger.debug(`[BATCH] Creating promise for wallet ${walletIndex} with ${txs.length} txs`);
-        return processWalletBatch(walletIndex, txs, contractAddress, abi);
-      }
+      ([walletIndex, txs]) => processWalletBatch(walletIndex, txs, contractAddress, abi)
     );
 
-    logger.debug(`[BATCH] Awaiting Promise.all with ${walletPromises.length} promises...`);
     const allResults = await Promise.all(walletPromises);
-    logger.info(`[BATCH] Promise.all resolved, got ${allResults.length} results`);
     
     const successfulTxs = allResults.flatMap((result) => result.successes);
-    logger.info(`[BATCH] Total successful TXs: ${successfulTxs.length}`);
 
     const retryCandidates = allResults.flatMap((result) => result.retry);
     if (retryCandidates.length) {
@@ -656,8 +724,7 @@ async function processGlobalBatch() {
       enqueueTransactionsAtFront(trimmed);
     }
 
-    // Batch database saves - Don't await individual saves
-    logger.debug(`[BATCH] Starting ${successfulTxs.length} database saves...`);
+    // Batch database saves
     const dbPromises = successfulTxs.map(({ hash, tx }) =>
       dbservices.User.saveTransactionDetails_Avax(
         tx.gameId,
@@ -667,35 +734,16 @@ async function processGlobalBatch() {
         chainName.name,
         "0"
       ).catch((error) => {
-        logger.error("Database save failed", {
-          gameId: tx.gameId,
-          userId: tx.userSnapshot.id,
-          hash,
-          error,
-        });
+        logger.error("DB save failed");
       })
     );
 
-    // Fire and forget database saves, or await them all at once
-    logger.debug(`[BATCH] Awaiting ${dbPromises.length} database saves...`);
+    // Fire and forget database saves
     await Promise.allSettled(dbPromises);
-    logger.info(`[BATCH] Database saves completed`);
-
-    logger.info(
-      `Successfully processed ${successfulTxs.length}/${transactionsToProcess.length} transactions across ${walletBatches.size} wallets`,
-      {
-        queueDepth: globalBatch.transactions.length,
-        totalRequests: totalRequestsReceived,
-        totalSent: totalTransactionsSent,
-        totalFailed: totalTransactionsFailed,
-      }
-    );
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    const errorStack = error instanceof Error ? error.stack : '';
-    logger.error(`[BATCH] FAILED at try block`, { 
-      error: errorMsg.slice(0, 200),
-      stack: errorStack.split('\n').slice(1, 3).join(' | ')
+    logger.error(`[BATCH] FAILED`, { 
+      error: errorMsg.slice(0, 100)
     });
 
     const retryable = trimTransactionsForRequeue(transactionsToProcess);
@@ -708,11 +756,7 @@ async function processGlobalBatch() {
 
     const projectedSize = retryable.length + globalBatch.transactions.length;
     if (projectedSize > MAX_QUEUE_SIZE || currentQueueBytes > MAX_QUEUE_BYTES) {
-      logger.error("Queue at capacity while requeueing failed transactions", {
-        attempted: retryable.length,
-        queueSize: globalBatch.transactions.length,
-        queueBytes: currentQueueBytes,
-      });
+      logger.error("Queue at capacity while requeueing failed transactions");
     }
     enqueueTransactionsAtFront(retryable);
 
@@ -728,13 +772,10 @@ async function processGlobalBatch() {
       );
     }, BATCH_TIMEOUT_MS);
   } finally {
-    logger.debug(`[BATCH] Finally block: isProcessing=true->false`);
     isProcessingBatch = false;
 
     // If there are remaining transactions after processing, ensure batchStartTime is set
-    // This handles the case where transactions accumulated during processing
     if (globalBatch.transactions.length > 0 && !globalBatch.batchStartTime) {
-      logger.debug(`[BATCH] Scheduling next batch: ${globalBatch.transactions.length} remaining`);
       globalBatch.batchStartTime = Date.now();
       if (!globalBatch.timeout) {
         globalBatch.timeout = setTimeout(() => {
@@ -744,12 +785,9 @@ async function processGlobalBatch() {
     }
 
     if (pendingProcessRequest) {
-      logger.debug(`[BATCH] Pending request detected, scheduling next`);
       pendingProcessRequest = false;
       schedulePendingBatch();
     }
-
-    logger.debug(`[BATCH] EXIT: isProcessing=false queueSize=${globalBatch.transactions.length}`);
   }
 }
 
@@ -1234,13 +1272,10 @@ export default class User {
 
           // ============ DIRECT SEND - NO QUEUE ============
           try {
-            logger.info(`[SEND] START: eventId=${eventId} gameId=${gameId}`);
-            
             // Pick random wallet
             const walletIndex = Math.floor(Math.random() * adminPrivateKeys.length);
             const privKey = adminPrivateKeys[walletIndex];
             if (!privKey) {
-              logger.error(`[SEND] No key at index ${walletIndex}`);
               return;
             }
 
@@ -1251,10 +1286,8 @@ export default class User {
             // Check balance
             const balance = await provider.getBalance(walletAddress);
             const balanceInAvax = ethers.utils.formatEther(balance);
-            logger.info(`[SEND] Selected wallet ${walletIndex}: ${walletAddress.slice(0, 12)}... | balance=${balanceInAvax} AVAX`);
 
             if (parseFloat(balanceInAvax) === 0) {
-              logger.warn(`[SEND] Wallet ${walletIndex} has 0 balance, skipping`);
               totalTransactionsFailed++;
               return;
             }
@@ -1278,7 +1311,6 @@ export default class User {
 
             // Get nonce from blockchain
             const nonce = await provider.getTransactionCount(walletAddress, "pending");
-            logger.info(`[SEND] Got nonce=${nonce} from blockchain`);
 
             // Encode and send
             const callData = contractInterface.interface.encodeFunctionData("storeMetadata", [
@@ -1287,7 +1319,6 @@ export default class User {
               gameId
             ]);
 
-            logger.info(`[SEND] Encoding done, about to send transaction to ${contractAddress.slice(0, 12)}...`);
             const txResponse = await wallet.sendTransaction({
               to: contractAddress,
               data: callData,
@@ -1297,7 +1328,7 @@ export default class User {
             });
 
             totalTransactionsSent++;
-            logger.info(`[SEND] ✓ SUCCESS: hash=${txResponse.hash.slice(0, 16)} wallet=${walletIndex} nonce=${nonce} total_sent=${totalTransactionsSent}`);
+            logTransactionBatch();
 
             // Save to DB async
             dbservices.User.saveTransactionDetails_Avax(
@@ -1307,21 +1338,17 @@ export default class User {
               txResponse.hash,
               "Avalanche",
               "0"
-            ).catch(e => logger.error(`DB save failed`, { error: String(e).slice(0, 50) }));
+            ).catch(e => {});
 
           } catch (sendError) {
             totalTransactionsFailed++;
-            logger.error(`[SEND] ✗ FAILED`, {
-              error: sendError instanceof Error ? sendError.message : String(sendError),
-              total_failed: totalTransactionsFailed,
-            });
+            logger.error(`[TX-ERROR] fireEvent`);
           }
         } catch (bgError) {
-          logger.error(`[BG] Error`, { error: String(bgError).slice(0, 100) });
+          // Silent fail on background errors
         }
       })();
     } catch (error) {
-      logger.error("fireEvent error", { error: String(error).slice(0, 100) });
       return res.status(500).json({ status: false, message: "Error" });
     }
   };
