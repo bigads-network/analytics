@@ -203,12 +203,18 @@ async function processBatch(batchId: string, transactions: QueuedTransaction[]) 
 
     const newNonce = transactionQueue.incrementNonce();
     transactionStats.totalSubmitted += transactions.length;
-    transactionStats.activeBatches++;
     
     console.log(`[SUBMIT] Batch: ${batchId} | ${transactions.length} TXs | Nonce: ${newNonce - 1} -> ${newNonce}`);
     logTransactionStats();
 
-    // Wait for receipt asynchronously (non-blocking for queue)
+    // **CRITICAL FIX**: Mark batch as completed IMMEDIATELY (frees parallel slot)
+    // Receipt handling happens in background WITHOUT blocking queue
+    transactionQueue.completeBatch(batchId, {
+      userOperationHash: userOpHash,
+      success: true, // Mark as submitted/success (not confirmed yet)
+    });
+
+    // Handle receipt confirmation in background (doesn't block)
     processReceiptAsync(batchId, userOpHash, nexusClient, transactions, startTime);
 
   } catch (error) {
@@ -224,7 +230,8 @@ async function processBatch(batchId: string, transactions: QueuedTransaction[]) 
 }
 
 /**
- * Wait for receipt asynchronously without blocking
+ * Wait for receipt asynchronously without blocking queue
+ * Batch is already marked as completed/submitted
  */
 async function processReceiptAsync(
   batchId: string,
@@ -240,12 +247,11 @@ async function processReceiptAsync(
     const processingTime = Date.now() - startTime;
 
     transactionStats.totalConfirmed += transactions.length;
-    transactionStats.activeBatches--;
 
     console.log(`[CONFIRMED] ${transactions.length} TXs | Block: ${blockNumber} | Time: ${processingTime}ms`);
     logTransactionStats();
 
-    // Save all transaction records
+    // Save all transaction records to database
     for (const tx of transactions) {
       try {
         await dbservices.User.saveTransactionDetails(
@@ -261,27 +267,13 @@ async function processReceiptAsync(
       }
     }
 
-    // Mark batch as completed
-    transactionQueue.completeBatch(batchId, {
-      userOperationHash: userOpHash,
-      transactionHash: transactionHash,
-      blockNumber: blockNumber,
-      success: true,
-    });
-
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     transactionStats.totalFailed += transactions.length;
-    transactionStats.activeBatches--;
     
-    console.log(`[ERROR] Failed to get receipt: ${errorMsg}`);
+    console.log(`[ERROR] Receipt failed: ${errorMsg}`);
     logTransactionStats();
     logger.error(`Batch ${batchId}: Receipt waiting failed: ${errorMsg}`);
-    
-    transactionQueue.completeBatch(batchId, {
-      success: false,
-      error: `Receipt failed: ${errorMsg}`,
-    });
   }
 }
 
