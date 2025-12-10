@@ -136,16 +136,12 @@ async function processBatch(batchId: string, transactions: QueuedTransaction[]) 
   
   try {
     if (transactions.length === 0) {
-      console.log(`[ERROR] Batch ${batchId} empty`);
-      logger.warn(`Batch ${batchId} has no transactions`);
       transactionQueue.completeBatch(batchId, {
         success: false,
         error: 'Empty batch',
       });
       return;
     }
-
-    console.log(`[PROCESSING] Batch ${batchId} | TXs: ${transactions.length} | Starting submission...`);
 
     // Get the Nexus client (cached)
     const nexusClient = await getBiconomyNexusClient();
@@ -166,9 +162,8 @@ async function processBatch(batchId: string, transactions: QueuedTransaction[]) 
       calls: calls,
     });
 
-    const currentNonce = transactionQueue.getPendingNonce();
     const newNonce = transactionQueue.incrementNonce();
-    console.log(`[SUBMITTED] Batch ${batchId} | UO Hash: ${userOpHash.substring(0, 10)}... | Nonce: ${currentNonce} -> ${newNonce}`);
+    console.log(`[SUBMIT] ${transactions.length} TXs | Nonce: ${newNonce - 1} -> ${newNonce}`);
 
     // Wait for receipt asynchronously (non-blocking for queue)
     processReceiptAsync(batchId, userOpHash, nexusClient, transactions, startTime);
@@ -201,7 +196,7 @@ async function processReceiptAsync(
     const blockNumber = receipt.receipt.blockNumber;
     const processingTime = Date.now() - startTime;
 
-    console.log(`[CONFIRMED] Batch ${batchId} | ${transactions.length} TXs | Hash: ${transactionHash.substring(0, 10)}... | Block: ${blockNumber} | Time: ${processingTime}ms`);
+    console.log(`[CONFIRMED] ${transactions.length} TXs | Block: ${blockNumber} | Time: ${processingTime}ms`);
 
     // Save all transaction records
     for (const tx of transactions) {
@@ -212,10 +207,9 @@ async function processReceiptAsync(
           tx.eventId,
           transactionHash,
           polygon.name,
-          "0", // amount (not used for metadata storage)
+          "0",
         );
       } catch (dbError) {
-        console.log(`[DB ERROR] Failed to save TX ${tx.id}: ${dbError}`);
         logger.error(`Failed to save transaction ${tx.id}: ${dbError}`);
       }
     }
@@ -230,7 +224,7 @@ async function processReceiptAsync(
 
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    console.log(`[RECEIPT ERROR] Batch ${batchId}: ${errorMsg}`);
+    console.log(`[ERROR] Failed to get receipt: ${errorMsg}`);
     logger.error(`Batch ${batchId}: Receipt waiting failed: ${errorMsg}`);
     
     transactionQueue.completeBatch(batchId, {

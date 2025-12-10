@@ -89,9 +89,6 @@ export class TransactionQueue {
       processedAt: 0,
     });
 
-    const stats = this.getStats();
-    console.log(`[QUEUE] Added TX ${id} | Queue: ${stats.queueSize} | Pending: ${stats.pendingCount} | Processing: ${stats.processingCount}`);
-
     // Start processing if not already running
     if (!this.isProcessing) {
       this.startBatchProcessing();
@@ -170,9 +167,6 @@ export class TransactionQueue {
       tx.attempts += 1;
     });
 
-    const stats = this.getStats();
-    console.log(`[BATCH] Created Batch | Size: ${batch.length} | Remaining Queue: ${stats.pendingCount} | Processing: ${stats.processingCount} | Nonce: ${stats.currentNonce}`);
-    logger.info(`Batch created with ${batch.length} transactions`);
     return batch;
   }
 
@@ -224,16 +218,9 @@ export class TransactionQueue {
           tx.lastError = result.error;
           // Re-queue for retry
           this.queue.push(tx);
-          logger.warn(
-            `Transaction ${tx.id} queued for retry ` +
-            `(attempt ${tx.attempts + 1}/${this.maxRetries})`
-          );
         } else {
           tx.status = 'failed';
           tx.lastError = result.error;
-          logger.error(
-            `Transaction ${tx.id} failed after ${this.maxRetries} attempts: ${result.error}`
-          );
         }
       }
 
@@ -244,14 +231,9 @@ export class TransactionQueue {
     this.processingBatches.delete(batchId);
 
     if (result.success) {
-      console.log(`[SUCCESS] Batch ${batchId} | TXs: ${batch.length} | Hash: ${result.transactionHash} | Block: ${result.blockNumber}`);
-      logger.info(
-        `Batch ${batchId} completed successfully. ` +
-        `TxHash: ${result.transactionHash}, Block: ${result.blockNumber}`
-      );
+      console.log(`[CONFIRMED] ${batch.length} TXs | Block: ${result.blockNumber} | Hash: ${result.transactionHash?.substring(0, 10)}...`);
     } else {
-      console.log(`[FAILED] Batch ${batchId} | Error: ${result.error}`);
-      logger.error(`Batch ${batchId} failed: ${result.error}`);
+      console.log(`[BATCH_FAILED] ${batch.length} TXs | Error: ${result.error}`);
     }
   }
 
