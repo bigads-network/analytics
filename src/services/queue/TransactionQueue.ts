@@ -1,4 +1,5 @@
 import logger from '../../config/logger';
+import { envConfigs } from '../../config/envconfig';
 
 export interface QueuedTransaction {
   id: string; // Unique identifier for tracking
@@ -31,6 +32,7 @@ export class TransactionQueue {
   private nonce: number = 0;
   private nonceLastSync: number = 0;
   private isProcessing: boolean = false;
+  private lastBatchCreatedAt: number = 0; // Track when last batch was created
 
   // Configuration
   private batchSize: number;
@@ -40,9 +42,11 @@ export class TransactionQueue {
   private maxRetries: number;
   private retryDelayMs: number;
   private backoffMultiplier: number;
+  private minBatchSize: number = 40; // Minimum transactions before sending (or timeout)
 
   // Timers
   private batchTimers = new Map<string, NodeJS.Timeout>();
+  private mainProcessingTimer: NodeJS.Timeout | null = null;
 
   constructor(config: {
     batchSize?: number;
@@ -152,23 +156,33 @@ export class TransactionQueue {
   }
 
   /**
-   * Create a batch from queue (time-based: whatever is available)
-   * Instead of waiting for batchSize, take all available transactions
+   * Create a batch from queue (enforces minimum 40 transactions OR timeout after 30 seconds)
    */
   public createBatch(): QueuedTransaction[] | null {
     if (this.queue.length === 0) {
       return null;
     }
 
-    // Take all pending transactions available (not limited by batchSize)
-    // batchSize is now just a safety limit, but we send every 10 seconds
-    const batch = this.queue.splice(0, Math.min(this.batchSize, this.queue.length));
+    const now = Date.now();
+    const timeSinceLastBatch = now - this.lastBatchCreatedAt;
+    const hasReachedMinimum = this.queue.length >= this.minBatchSize;
+    const hasTimedOut = timeSinceLastBatch > this.batchTimeoutMs;
+
+    // Only create batch if: (1) we have 40+ txs OR (2) 30s has passed since last batch
+    if (!hasReachedMinimum && !hasTimedOut) {
+      return null;
+    }
+
+    // Take up to batchSize transactions (45)
+    const batchSize = Math.min(this.batchSize, this.queue.length);
+    const batch = this.queue.splice(0, batchSize);
 
     batch.forEach(tx => {
       tx.status = 'processing';
       tx.attempts += 1;
     });
 
+    this.lastBatchCreatedAt = now;
     return batch;
   }
 
@@ -253,22 +267,28 @@ export class TransactionQueue {
   }
 
   /**
-   * Process batches continuously
+   * Process batches continuously with 1-second checks
+   * Batches are created when: 40+ txs ready OR 30s timeout
    */
   private async processBatches(): Promise<void> {
-    // Use a fixed 10-second interval to create and submit batches
-    const batchInterval = setInterval(async () => {
+    // Check every 1 second if we should create a new batch
+    this.mainProcessingTimer = setInterval(async () => {
       if (!this.isProcessing) {
-        clearInterval(batchInterval);
+        if (this.mainProcessingTimer) {
+          clearInterval(this.mainProcessingTimer);
+          this.mainProcessingTimer = null;
+        }
         return;
       }
 
       // Check if we can submit more batches in parallel
-      if (this.processingBatches.size < this.parallelLimit && this.queue.length > 0) {
+      if (this.processingBatches.size < this.parallelLimit) {
         const batch = this.createBatch();
         if (batch && batch.length > 0) {
           const batchId = this.generateBatchId();
           this.registerBatch(batchId, batch);
+
+          console.log(`[BATCH_CREATED] ${batch.length} TXs | Queue depth: ${this.queue.length} | Processing: ${this.processingBatches.size}/${this.parallelLimit}`);
 
           // Process this batch asynchronously (fire and forget)
           this.processSingleBatch(batchId, batch).catch(error => {
@@ -280,10 +300,7 @@ export class TransactionQueue {
           });
         }
       }
-    }, this.batchTimeoutMs); // Fixed 10-second interval (from batchTimeoutMs)
-
-    // Keep a reference to clear on shutdown
-    this.batchTimers.set('main', batchInterval);
+    }, 1000); // Check every 1 second
   }
 
   /**
@@ -323,7 +340,13 @@ export class TransactionQueue {
   public async shutdown(): Promise<void> {
     this.isProcessing = false;
     
-    // Clear all timers
+    // Clear main processing timer
+    if (this.mainProcessingTimer) {
+      clearInterval(this.mainProcessingTimer);
+      this.mainProcessingTimer = null;
+    }
+
+    // Clear all other timers
     for (const [_, timer] of this.batchTimers.entries()) {
       clearTimeout(timer);
     }
@@ -349,5 +372,13 @@ export class TransactionQueue {
   }
 }
 
-// Export singleton instance
-export const transactionQueue = new TransactionQueue();
+// Export singleton instance with environment config
+export const transactionQueue = new TransactionQueue({
+  batchSize: envConfigs.batchSize,
+  batchTimeoutMs: envConfigs.batchTimeoutMs,
+  parallelLimit: envConfigs.parallelUoLimit,
+  nonceRefreshIntervalMs: envConfigs.nonceRefreshIntervalMs,
+  maxRetries: envConfigs.maxRetries,
+  retryDelayMs: envConfigs.retryDelayMs,
+  backoffMultiplier: envConfigs.backoffMultiplier,
+});

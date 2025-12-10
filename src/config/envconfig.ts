@@ -22,7 +22,7 @@ const envVarsSchema = z.object({
   DUNE_API_KEY:z.string(),
   // Queue configuration
   BATCH_SIZE: z.string().default("45").transform((str) => parseInt(str, 10)),
-  BATCH_TIMEOUT_MS: z.string().default("10000").transform((str) => parseInt(str, 10)),
+  BATCH_TIMEOUT_MS: z.string().default("30000").transform((str) => parseInt(str, 10)),
   PARALLEL_UO_LIMIT: z.string().default("3").transform((str) => parseInt(str, 10)),
   NONCE_REFRESH_INTERVAL_MS: z.string().default("30000").transform((str) => parseInt(str, 10)),
   MAX_RETRIES: z.string().default("3").transform((str) => parseInt(str, 10)),
