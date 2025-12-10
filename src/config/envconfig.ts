@@ -19,7 +19,15 @@ const envVarsSchema = z.object({
   BUNDLER_URL:z.string(),
   PAYMASTERAPI_KEY_URL:z.string(),
   ADMINID:z.string(),
-  DUNE_API_KEY:z.string()
+  DUNE_API_KEY:z.string(),
+  // Queue configuration
+  BATCH_SIZE: z.string().default("8").transform((str) => parseInt(str, 10)),
+  BATCH_TIMEOUT_MS: z.string().default("5000").transform((str) => parseInt(str, 10)),
+  PARALLEL_UO_LIMIT: z.string().default("5").transform((str) => parseInt(str, 10)),
+  NONCE_REFRESH_INTERVAL_MS: z.string().default("30000").transform((str) => parseInt(str, 10)),
+  MAX_RETRIES: z.string().default("3").transform((str) => parseInt(str, 10)),
+  RETRY_DELAY_MS: z.string().default("1000").transform((str) => parseInt(str, 10)),
+  BACKOFF_MULTIPLIER: z.string().default("2").transform((str) => parseInt(str, 10)),
 });
 
 const envVars = envVarsSchema.parse(process.env);
@@ -39,7 +47,15 @@ export const envConfigs = {
   bundlerUrl:envVars.BUNDLER_URL,
   paymaster_apikey_url : envVars.PAYMASTERAPI_KEY_URL,
   adminId:envVars.ADMINID,
-  duneApikey:envVars.DUNE_API_KEY
+  duneApikey:envVars.DUNE_API_KEY,
+  // Queue configuration
+  batchSize: envVars.BATCH_SIZE,
+  batchTimeoutMs: envVars.BATCH_TIMEOUT_MS,
+  parallelUoLimit: envVars.PARALLEL_UO_LIMIT,
+  nonceRefreshIntervalMs: envVars.NONCE_REFRESH_INTERVAL_MS,
+  maxRetries: envVars.MAX_RETRIES,
+  retryDelayMs: envVars.RETRY_DELAY_MS,
+  backoffMultiplier: envVars.BACKOFF_MULTIPLIER,
 };
 
 export const chainIdToChainName: any = {

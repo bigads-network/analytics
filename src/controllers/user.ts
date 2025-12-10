@@ -14,158 +14,232 @@ import { generateGameToken } from '../config/gameToken';
 import dbservices from '../services/dbservices';
 import { polygon, polygonAmoy } from 'viem/chains';
 import logger from '../config/logger';
+import { transactionQueue, type QueuedTransaction } from '../services/queue';
 
+/**
+ * CONTRACT ABI - Metadata Storage
+ * Contains event and function definitions for storeMetadata
+ */
+const METADATA_STORAGE_ABI = [
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "gameId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "metadata",
+        "type": "string"
+      }
+    ],
+    "name": "MetadataStored",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "internalType": "string",
+        "name": "metadata",
+        "type": "string"
+      },
+      {
+        "internalType": "uint256",
+        "name": "gameId",
+        "type": "uint256"
+      }
+    ],
+    "name": "storeMetadata",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+];
 
-const BATCH_SIZE = 50; // Process when a user has 4 transactions
-const BATCH_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
+// Cache for admin account to avoid repeated lookups
+let cachedAdminAccount: any = null;
+let cachedNexusClient: any = null;
+let adminAccountRefreshTime = 0;
+const ADMIN_CACHE_DURATION_MS = 60000; // 1 minute
 
-// Structure to track global batch
-
-let globalBatch: {
-  transactions: {
-      userId: string;
-      gameId: number;
-      eventId: number;
-      metadata: string;
-      userData: any;
-  }[];
-  timeout: NodeJS.Timeout | null;
-  batchStartTime: number | null;
-} = {
-  transactions: [],
-  timeout: null,
-  batchStartTime: null
-};
-
-// Helper function to process a single user's batch
-
-async function processGlobalBatch() {
-    if (globalBatch.transactions.length === 0) return;
-
-    // Take a copy of the transactions and reset global batch
-    const transactionsToProcess = [...globalBatch.transactions];
-    globalBatch.transactions = [];
-    if (globalBatch.timeout) {
-        clearTimeout(globalBatch.timeout);
-    }
-    globalBatch.timeout = null;
-    globalBatch.batchStartTime = null;
+/**
+ * Get or create Biconomy Nexus Client for admin account
+ * Reuses existing client to maintain nonce tracking
+ */
+async function getBiconomyNexusClient() {
+  const now = Date.now();
+  
+  // Return cached client if still valid
+  if (cachedNexusClient && cachedAdminAccount && (now - adminAccountRefreshTime) < ADMIN_CACHE_DURATION_MS) {
+    return cachedNexusClient;
+  }
 
   try {
-      const admin = envConfigs.adminId
-      const adminAccountDetails = await dbservices.Creator.getdetails(admin);
-      if (!adminAccountDetails) {
-          throw new Error("Admin account not found in database");
-      }
-      const privKey = sha512_256(adminAccountDetails.devicedata + adminAccountDetails.userId);
-      const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
-      const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
-      const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
-      const chainName = polygon;
-      
-      const bundlerUrl = envConfigs.bundlerUrl;
-      const paymasterUrl = envConfigs.paymaster_apikey_url;
-      
-      const nexusClient = createSmartAccountClient({
-          account: await toNexusAccount({
-              signer: account,
-              chain: chainName,
-              transport: http(),
-          }),
-          transport: http(bundlerUrl),
-          paymaster: createBicoPaymasterClient({paymasterUrl}),
-      });
+    const adminId = envConfigs.adminId;
+    const adminAccountDetails = await dbservices.Creator.getdetails(adminId);
+    if (!adminAccountDetails) {
+      throw new Error("Admin account not found in database");
+    }
 
-      // console.log(nexusClient.account.address , "Account")
-      const contractAddress = envConfigs.contractAddress;
-      const abi = [
-          {
-              "anonymous": false,
-              "inputs": [
-                  {
-                      "indexed": true,
-                      "internalType": "address",
-                      "name": "user",
-                      "type": "address"
-                  },
-                  {
-                      "indexed": true,
-                      "internalType": "uint256",
-                      "name": "gameId",
-                      "type": "uint256"
-                  },
-                  {
-                      "indexed": false,
-                      "internalType": "string",
-                      "name": "metadata",
-                      "type": "string"
-                  }
-              ],
-              "name": "MetadataStored",
-              "type": "event"
-          },
-          {
-              "inputs": [
-                  {
-                      "internalType": "address",
-                      "name": "user",
-                      "type": "address"
-                  },
-                  {
-                      "internalType": "string",
-                      "name": "metadata",
-                      "type": "string"
-                  },
-                  {
-                      "internalType": "uint256",
-                      "name": "gameId",
-                      "type": "uint256"
-                  }
-              ],
-              "name": "storeMetadata",
-              "outputs": [],
-              "stateMutability": "nonpayable",
-              "type": "function"
-          }
-      ]
+    const privKey = sha512_256(adminAccountDetails.devicedata + adminAccountDetails.userId);
+    const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
+    const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
+    const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
+    const chainName = polygon;
+    
+    const bundlerUrl = envConfigs.bundlerUrl;
+    const paymasterUrl = envConfigs.paymaster_apikey_url;
+    
+    const nexusClient = createSmartAccountClient({
+      account: await toNexusAccount({
+        signer: account,
+        chain: chainName,
+        transport: http(),
+      }),
+      transport: http(bundlerUrl),
+      paymaster: createBicoPaymasterClient({ paymasterUrl }),
+    });
 
-      // Prepare all calls for the batch
-      const calls = transactionsToProcess.map(tx => ({
-          to: contractAddress as `0x${string}`,
-          value: 0n,
-          abi: abi,
-          functionName: 'storeMetadata',
-          args: [tx.userData.saAddress ,tx.metadata, tx.gameId],
-      }));
+    cachedAdminAccount = adminAccountDetails;
+    cachedNexusClient = nexusClient;
+    adminAccountRefreshTime = now;
 
-      // console.log(calls ,"call")
-      
-      // @ts-ignore
-      const hash = await nexusClient.sendUserOperation({
-          calls: calls,
-      });
-
-      const receipt = await nexusClient.waitForUserOperationReceipt({hash});
-      const transactionHash = receipt.receipt.transactionHash;
-
-      // Save all transactions in the batch
-      for (const tx of transactionsToProcess) {
-          await dbservices.User.saveTransactionDetails(
-              tx.gameId,
-              tx.userData.id,
-              tx.eventId,
-              transactionHash,
-              chainName.name,
-              "0",
-          );
-      }
-  
-      logger.info(`Successfully processed ${transactionsToProcess.length} transactions in batch having ${transactionHash}`);
+    logger.info(`Biconomy client initialized/refreshed. Smart Account: ${nexusClient.account.address}`);
+    return nexusClient;
   } catch (error) {
-      console.error(`Error processing global batch:`, error);
-      // Optionally implement retry logic for failed transactions
+    logger.error(`Failed to initialize Biconomy client: ${error}`);
+    throw error;
   }
 }
+
+/**
+ * Process a batch of transactions using Biconomy
+ * This is called asynchronously by the transaction queue
+ */
+async function processBatch(batchId: string, transactions: QueuedTransaction[]) {
+  const startTime = Date.now();
+  
+  try {
+    if (transactions.length === 0) {
+      console.log(`[ERROR] Batch ${batchId} empty`);
+      logger.warn(`Batch ${batchId} has no transactions`);
+      transactionQueue.completeBatch(batchId, {
+        success: false,
+        error: 'Empty batch',
+      });
+      return;
+    }
+
+    console.log(`[PROCESSING] Batch ${batchId} | TXs: ${transactions.length} | Starting submission...`);
+
+    // Get the Nexus client (cached)
+    const nexusClient = await getBiconomyNexusClient();
+    const contractAddress = envConfigs.contractAddress;
+
+    // Prepare all calls for the batch
+    const calls = transactions.map(tx => ({
+      to: contractAddress as `0x${string}`,
+      value: 0n,
+      abi: METADATA_STORAGE_ABI,
+      functionName: 'storeMetadata',
+      args: [tx.userData.saAddress, tx.metadata, tx.gameId],
+    }));
+
+    // Send User Operation to Biconomy
+    // @ts-ignore - Biconomy sendUserOperation accepts calls array
+    const userOpHash = await nexusClient.sendUserOperation({
+      calls: calls,
+    });
+
+    const currentNonce = transactionQueue.getPendingNonce();
+    const newNonce = transactionQueue.incrementNonce();
+    console.log(`[SUBMITTED] Batch ${batchId} | UO Hash: ${userOpHash.substring(0, 10)}... | Nonce: ${currentNonce} -> ${newNonce}`);
+
+    // Wait for receipt asynchronously (non-blocking for queue)
+    processReceiptAsync(batchId, userOpHash, nexusClient, transactions, startTime);
+
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.log(`[ERROR] Batch ${batchId} failed: ${errorMsg}`);
+    logger.error(`Batch ${batchId} failed during submission: ${errorMsg}`);
+    
+    transactionQueue.completeBatch(batchId, {
+      success: false,
+      error: `Submission failed: ${errorMsg}`,
+    });
+  }
+}
+
+/**
+ * Wait for receipt asynchronously without blocking
+ */
+async function processReceiptAsync(
+  batchId: string,
+  userOpHash: string,
+  nexusClient: any,
+  transactions: QueuedTransaction[],
+  startTime: number
+) {
+  try {
+    const receipt = await nexusClient.waitForUserOperationReceipt({ hash: userOpHash });
+    const transactionHash = receipt.receipt.transactionHash;
+    const blockNumber = receipt.receipt.blockNumber;
+    const processingTime = Date.now() - startTime;
+
+    console.log(`[CONFIRMED] Batch ${batchId} | ${transactions.length} TXs | Hash: ${transactionHash.substring(0, 10)}... | Block: ${blockNumber} | Time: ${processingTime}ms`);
+
+    // Save all transaction records
+    for (const tx of transactions) {
+      try {
+        await dbservices.User.saveTransactionDetails(
+          tx.gameId,
+          tx.userData.id,
+          tx.eventId,
+          transactionHash,
+          polygon.name,
+          "0", // amount (not used for metadata storage)
+        );
+      } catch (dbError) {
+        console.log(`[DB ERROR] Failed to save TX ${tx.id}: ${dbError}`);
+        logger.error(`Failed to save transaction ${tx.id}: ${dbError}`);
+      }
+    }
+
+    // Mark batch as completed
+    transactionQueue.completeBatch(batchId, {
+      userOperationHash: userOpHash,
+      transactionHash: transactionHash,
+      blockNumber: blockNumber,
+      success: true,
+    });
+
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.log(`[RECEIPT ERROR] Batch ${batchId}: ${errorMsg}`);
+    logger.error(`Batch ${batchId}: Receipt waiting failed: ${errorMsg}`);
+    
+    transactionQueue.completeBatch(batchId, {
+      success: false,
+      error: `Receipt failed: ${errorMsg}`,
+    });
+  }
+}
+
 
 
 
@@ -542,121 +616,169 @@ export default class User{
 
 static fireEvent = async (req: Request, res: Response): Promise<any> => {
   try {
-      const eventId = req.params.eventId;
-      const {gameId, id} = await dbservices.User.getGameid(eventId);
+    const eventId = req.params.eventId;
+    const { gameId, id } = await dbservices.User.getGameid(eventId);
+    
+    if (!gameId || !id) {
+      return res.status(400).json({status: false, message: "Invalid Game or Event ID"});
+    }
+
+    const eventCheck = await dbservices.User.eventCheck(gameId, eventId);
+    if (!eventCheck) {
+      return res.status(400).json({status: false, message: "Event does not exist for this game"});
+    }
+
+    const {devicedata} = req.body;
+    if (!devicedata) {
+      return res.status(400).json({status: false, message: "Device data is required"});
+    }
+
+    let userExist = await dbservices.User.userExits(devicedata);
+    const gameDetails = await dbservices.User.getGameDetails(gameId, eventId);
+
+    if (userExist) {
+      if (gameDetails.creatorId === userExist.id) {
+        return res.status(500).send({status: false, message: "Cannot fire event for own game"});
+      }
+    }
+
+    const userId = userExist ? userExist.userId : `user_${this.generateId()}`;
+    const datetime = new Date().toISOString();
+
+    // If user doesn't exist, create them first
+    if (!userExist) {
+      const privKey = "0x" + sha512_256(userId);
+      const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
+      const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
+      const wallet_address = await wallet.getAddress();
+      const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
       
-      if (!gameId || !id) {
-          return res.status(400).json({status: false, message: "Invalid Game or Event ID"});
-      }
-
-      const eventCheck = await dbservices.User.eventCheck(gameId, eventId);
-      if (!eventCheck) {
-          return res.status(400).json({status: false, message: "Event does not exist for this game"});
-      }
-
-      const {devicedata} = req.body;
-      if (!devicedata) {
-          return res.status(400).json({status: false, message: "Device data is required"});
-      }
-
-      let userExist = await dbservices.User.userExits(devicedata);
-      const gameDetails = await dbservices.User.getGameDetails(gameId, eventId);
-
-      if (userExist) {
-          if (gameDetails.creatorId === userExist.id) {
-              return res.status(500).send({status: false, message: "Cannot fire event for own game"});
-          }
-      }
-
-      const userId = userExist ? userExist.userId : `user_${this.generateId()}`;
-      const datetime = new Date().toISOString();
-
-
-      // If user doesn't exist, create them first
-      if (!userExist) {
-          const privKey = "0x" + sha512_256(userId);
-          const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.providerUrl);
-          const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
-          const wallet_address = await wallet.getAddress();
-          const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
-          
-          const chainName = polygon;
-          const bundlerUrl = envConfigs.bundlerUrl;
-          const paymasterUrl = envConfigs.paymaster_apikey_url;
-          
-          const nexusClient = createSmartAccountClient({
-              account: await toNexusAccount({
-                  signer: account,
-                  chain: chainName,
-                  transport: http(),
-              }),
-              transport: http(bundlerUrl),
-              paymaster: createBicoPaymasterClient({paymasterUrl}),
-          });
-
-          const saAddress = await nexusClient.account.address;
-          userExist = await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
-      }
-     
-      const metadata = JSON.stringify({
-          role: userExist?.role,
-          // smartAccountAddress: userExist?.saAddress,
-          gameId: gameDetails.id,
-          eventId: gameDetails.events[0].id,
+      const chainName = polygon;
+      const bundlerUrl = envConfigs.bundlerUrl;
+      const paymasterUrl = envConfigs.paymaster_apikey_url;
+      
+      const nexusClient = createSmartAccountClient({
+        account: await toNexusAccount({
+          signer: account,
+          chain: chainName,
+          transport: http(),
+        }),
+        transport: http(bundlerUrl),
+        paymaster: createBicoPaymasterClient({paymasterUrl}),
       });
 
-      // Add transaction to global batch
-      globalBatch.transactions.push({
-          userId,
-          gameId,
-          eventId: id,
-          metadata,
-          userData: userExist
-      });
+      const saAddress = await nexusClient.account.address;
+      userExist = await dbservices.User.saveUser(userId, devicedata, saAddress, wallet_address);
+    }
+   
+    const metadata = JSON.stringify({
+      role: userExist?.role,
+      gameId: gameDetails.id,
+      eventId: gameDetails.events[0].id,
+    });
 
-// Start timer if this is the first transaction in batch
-      if (globalBatch.transactions.length === 1) {
-        globalBatch.batchStartTime = Date.now();
-        globalBatch.timeout = setTimeout(() => {
-            processGlobalBatch();
-        }, BATCH_TIMEOUT_MS);
+    // **NEW: Add transaction to queue instead of global batch**
+    const transactionId = transactionQueue.enqueue({
+      userId,
+      gameId,
+      eventId: id,
+      metadata,
+      userData: userExist,
+    });
+
+    // Set up batch processing handler if not already set
+    if (!transactionQueue['batchProcessorSet']) {
+      transactionQueue['processSingleBatch'] = processBatch;
+      transactionQueue['batchProcessorSet'] = true;
+    }
+
+    const stats = transactionQueue.getStats();
+    console.log(`[ENQUEUED] TX: ${transactionId} | Event: ${eventId} | Game: ${gameId} | User: ${userId} | Total Queue: ${stats.queueSize}`);
+
+    // **IMPROVED: Return 202 with transaction ID for status tracking**
+    return res.status(202).json({
+      status: true,
+      message: "Event received and queued for processing",
+      transactionId: transactionId,
+      eventId: eventId,
+      gameId: gameId,
+      userId: userId,
+      timestamp: datetime,
+      queueStats: {
+        positionInQueue: stats.pendingCount,
+        totalPending: stats.pendingCount,
+        activeProcessing: stats.processingCount,
       }
-
-      // Process immediately if batch size reached
-      if (globalBatch.transactions.length >= BATCH_SIZE) {
-        clearTimeout(globalBatch.timeout!);
-        await processGlobalBatch();
-      }
-
-      // Calculate remaining time for response
-      const remainingTime = globalBatch.batchStartTime 
-        ? BATCH_TIMEOUT_MS - (Date.now() - globalBatch.batchStartTime)
-        : 0;
-
-      logger.info(` cuurrent batch size:${globalBatch.transactions.length} with remaining time: ${remainingTime}`)
-      // Immediate response with tracking information
-      return res.status(202).json({
-          status: true,
-          message: "Event received and being processed",
-          eventId: eventId,
-          gameId: gameId,
-          userId: userId,
-          timestamp: datetime,
-        //   batchInfo: {
-        //     currentBatchSize: globalBatch.transactions.length,
-        //     batchStartedAt: new Date(globalBatch.batchStartTime!).toISOString(),
-        //     willProcessIn: globalBatch.transactions.length >= BATCH_SIZE 
-        //         ? "Immediately (batch size reached)"
-        //         : `${Math.ceil(remainingTime/1000)} seconds`
-        // }
-      });
+    });
 
   } catch (error) {
-      console.error('Error in fireEvent:', error);
-      res.status(500).json({
-          status: false,
-          message: error.message || "Unexpected error occurred",
+    console.log(`[ERROR] fireEvent failed: ${error}`);
+    logger.error('Error in fireEvent:', error);
+    res.status(500).json({
+      status: false,
+      message: error.message || "Unexpected error occurred",
+    });
+  }
+};
+
+/**
+ * Get transaction status endpoint
+ * Allows clients to poll for transaction completion status
+ */
+static getTransactionStatus = async (req: Request, res: Response): Promise<any> => {
+  try {
+    const transactionId = req.params.transactionId;
+    
+    if (!transactionId) {
+      return res.status(400).json({
+        status: false,
+        message: "Transaction ID is required",
       });
+    }
+
+    const status = transactionQueue.getStatus(transactionId);
+    
+    if (!status) {
+      return res.status(404).json({
+        status: false,
+        message: "Transaction not found",
+      });
+    }
+
+    return res.json({
+      status: true,
+      transactionId,
+      ...status,
+    });
+
+  } catch (error) {
+    logger.error('Error in getTransactionStatus:', error);
+    res.status(500).json({
+      status: false,
+      message: error.message || "Unexpected error occurred",
+    });
+  }
+};
+
+/**
+ * Get queue statistics endpoint
+ */
+static getQueueStats = async (req: Request, res: Response): Promise<any> => {
+  try {
+    const stats = transactionQueue.getStats();
+    console.log(`[STATS] Queue: ${stats.queueSize} | Pending: ${stats.pendingCount} | Processing: ${stats.processingCount} | Active: ${stats.activeParallel} | Nonce: ${stats.currentNonce}`);
+    
+    return res.json({
+      status: true,
+      stats,
+    });
+
+  } catch (error) {
+    logger.error('Error in getQueueStats:', error);
+    res.status(500).json({
+      status: false,
+      message: error.message || "Unexpected error occurred",
+    });
   }
 }
 
