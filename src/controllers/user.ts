@@ -25,11 +25,6 @@ const adminPrivateKeys = [
   envConfigs.adminPrivatKey_Xdc2,
   envConfigs.adminPrivatKey_Xdc3,
   envConfigs.adminPrivatKey_Xdc4,
-  envConfigs.adminPrivatKey_Xdc5,
-  envConfigs.adminPrivatKey_Xdc6,
-  envConfigs.adminPrivatKey_Xdc7,
-  envConfigs.adminPrivatKey_Xdc8,
-  envConfigs.adminPrivatKey_Xdc9,
 ];
 
 const rpcProviders = envConfigs.xdcProviders;
