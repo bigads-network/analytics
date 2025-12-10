@@ -128,6 +128,45 @@ async function getBiconomyNexusClient() {
 }
 
 /**
+ * Transaction flow tracking for monitoring
+ */
+let transactionStats = {
+  totalEnqueued: 0,
+  totalSubmitted: 0,
+  totalConfirmed: 0,
+  totalFailed: 0,
+  activeBatches: 0,
+  lastStatsLogTime: Date.now(),
+};
+
+/**
+ * Log transaction flow statistics
+ */
+function logTransactionStats() {
+  const now = Date.now();
+  const timeSinceLastLog = (now - transactionStats.lastStatsLogTime) / 1000;
+  
+  if (timeSinceLastLog >= 10) { // Log every 10 seconds
+    const queueStats = transactionQueue.getStats();
+    const throughput = transactionStats.totalConfirmed > 0 
+      ? ((transactionStats.totalConfirmed / (timeSinceLastLog)) * 60).toFixed(1) 
+      : 0;
+    
+    console.log(
+      `[FLOW_STATS] Enqueued: ${transactionStats.totalEnqueued} | ` +
+      `Submitted: ${transactionStats.totalSubmitted} | ` +
+      `Confirmed: ${transactionStats.totalConfirmed} | ` +
+      `Failed: ${transactionStats.totalFailed} | ` +
+      `Queue Depth: ${queueStats.queueSize} | ` +
+      `Processing: ${queueStats.processingCount} | ` +
+      `Throughput: ${throughput} tx/min`
+    );
+    
+    transactionStats.lastStatsLogTime = now;
+  }
+}
+
+/**
  * Process a batch of transactions using Biconomy
  * This is called asynchronously by the transaction queue
  */
@@ -163,7 +202,11 @@ async function processBatch(batchId: string, transactions: QueuedTransaction[]) 
     });
 
     const newNonce = transactionQueue.incrementNonce();
+    transactionStats.totalSubmitted += transactions.length;
+    transactionStats.activeBatches++;
+    
     console.log(`[SUBMIT] Batch: ${batchId} | ${transactions.length} TXs | Nonce: ${newNonce - 1} -> ${newNonce}`);
+    logTransactionStats();
 
     // Wait for receipt asynchronously (non-blocking for queue)
     processReceiptAsync(batchId, userOpHash, nexusClient, transactions, startTime);
@@ -196,7 +239,11 @@ async function processReceiptAsync(
     const blockNumber = receipt.receipt.blockNumber;
     const processingTime = Date.now() - startTime;
 
+    transactionStats.totalConfirmed += transactions.length;
+    transactionStats.activeBatches--;
+
     console.log(`[CONFIRMED] ${transactions.length} TXs | Block: ${blockNumber} | Time: ${processingTime}ms`);
+    logTransactionStats();
 
     // Save all transaction records
     for (const tx of transactions) {
@@ -224,7 +271,11 @@ async function processReceiptAsync(
 
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
+    transactionStats.totalFailed += transactions.length;
+    transactionStats.activeBatches--;
+    
     console.log(`[ERROR] Failed to get receipt: ${errorMsg}`);
+    logTransactionStats();
     logger.error(`Batch ${batchId}: Receipt waiting failed: ${errorMsg}`);
     
     transactionQueue.completeBatch(batchId, {
@@ -686,10 +737,11 @@ static fireEvent = async (req: Request, res: Response): Promise<any> => {
       transactionQueue['batchProcessorSet'] = true;
     }
 
-    const stats = transactionQueue.getStats();
-    console.log(`[ENQUEUED] TX: ${transactionId} | Event: ${eventId} | Game: ${gameId} | User: ${userId} | Total Queue: ${stats.queueSize}`);
+    transactionStats.totalEnqueued++;
+    // Queue processing will log blocking issues automatically via [QUEUE_BLOCKED]
+    // Only track for stats aggregation
 
-    // **IMPROVED: Return 202 with transaction ID for status tracking**
+    const stats = transactionQueue.getStats();
     return res.status(202).json({
       status: true,
       message: "Event received and queued for processing",

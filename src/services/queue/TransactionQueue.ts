@@ -271,6 +271,8 @@ export class TransactionQueue {
    * Batches are created when: 40+ txs ready OR 30s timeout
    */
   private async processBatches(): Promise<void> {
+    let lastDebugLog = Date.now();
+    
     // Check every 1 second if we should create a new batch
     this.mainProcessingTimer = setInterval(async () => {
       if (!this.isProcessing) {
@@ -281,8 +283,14 @@ export class TransactionQueue {
         return;
       }
 
+      const now = Date.now();
+      const canSubmitMore = this.processingBatches.size < this.parallelLimit;
+      const timeSinceLastBatch = now - this.lastBatchCreatedAt;
+      const hasMinimum = this.queue.length >= this.minBatchSize;
+      const hasTimedOut = timeSinceLastBatch > this.batchTimeoutMs;
+
       // Check if we can submit more batches in parallel
-      if (this.processingBatches.size < this.parallelLimit) {
+      if (canSubmitMore) {
         const batch = this.createBatch();
         if (batch && batch.length > 0) {
           const batchId = this.generateBatchId();
@@ -298,7 +306,26 @@ export class TransactionQueue {
               error: error.message || 'Unknown error',
             });
           });
+        } else if (this.queue.length > 0 && (now - lastDebugLog) > 5000) {
+          // Log debug info every 5 seconds if queue has items but batch not created
+          console.log(
+            `[QUEUE_BLOCKED] Queue: ${this.queue.length} TXs | ` +
+            `CanSubmit: ${canSubmitMore} | ` +
+            `HasMin(40): ${hasMinimum} | ` +
+            `TimedOut(30s): ${hasTimedOut} (${(timeSinceLastBatch/1000).toFixed(1)}s) | ` +
+            `Processing: ${this.processingBatches.size}/${this.parallelLimit}`
+          );
+          lastDebugLog = now;
         }
+      } else if (this.queue.length > 0 && (now - lastDebugLog) > 5000) {
+        // Cannot submit more - log why
+        console.log(
+          `[QUEUE_BLOCKED] Queue: ${this.queue.length} TXs | ` +
+          `CANNOT_SUBMIT (at parallel limit) | ` +
+          `Processing: ${this.processingBatches.size}/${this.parallelLimit} | ` +
+          `Min check: ${hasMinimum} | Timeout check: ${hasTimedOut} (${(timeSinceLastBatch/1000).toFixed(1)}s)`
+        );
+        lastDebugLog = now;
       }
     }, 1000); // Check every 1 second
   }
