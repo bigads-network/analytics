@@ -51,11 +51,6 @@ export const envConfigs = {
   adminPrivatKey_Xdc2:envVars.ADMIN_PRIVATEKEY_XDC2,
   adminPrivatKey_Xdc3:envVars.ADMIN_PRIVATEKEY_XDC3,
   adminPrivatKey_Xdc4:envVars.ADMIN_PRIVATEKEY_XDC4,
-  adminPrivatKey_Xdc5:envVars.ADMIN_PRIVATEKEY_XDC5,
-  adminPrivatKey_Xdc6:envVars.ADMIN_PRIVATEKEY_XDC6,
-  adminPrivatKey_Xdc7:envVars.ADMIN_PRIVATEKEY_XDC7,
-  adminPrivatKey_Xdc8:envVars.ADMIN_PRIVATEKEY_XDC8,
-  adminPrivatKey_Xdc9:envVars.ADMIN_PRIVATEKEY_XDC9,
   contract_address_xdc : envVars.CONTRACT_ADDRESS_XDC,
   etherspot_api_Key:envVars.ETHERSPOTAPIKEY,
   // RPC Configuration
