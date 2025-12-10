@@ -12,6 +12,7 @@ import dbservices from "../services/dbservices";
 import { polygon, polygonAmoy, xdc } from "viem/chains";
 import logger from "../config/logger";
 import { dashboardCache } from "../config/cache";
+import nonceManager from "../config/nonceManager";
 
 const BATCH_SIZE = 1; // Process when a user has 4 transactions
 const BATCH_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
@@ -176,10 +177,17 @@ async function processGlobalBatch() {
   // const provider = new ethers.providers.JsonRpcProvider("https://rpc.xdc.org");
   const contractInterface = new ethers.Contract(contractAddress,abi,rpcHttpProvider)
 
-  let nonce = await rpcHttpProvider.getTransactionCount(wallet.address);
-  // let nonce ;
+  // Initialize nonce manager for this admin wallet if not already done
+  try {
+    const currentNonce = nonceManager.getCurrentNonce(wallet.address);
+    if (currentNonce === null) {
+      await nonceManager.initializeNonce(wallet.address);
+    }
+  } catch (error) {
+    logger.warn(`Failed to initialize nonce for ${wallet.address}: ${error}`);
+  }
+
   let lastTransactionHash: string;
-  // console.log(nonce ,"nnceeee")
   for (const tx of transactionsToProcess) {
       const callData = contractInterface.interface.encodeFunctionData("storeMetadata", [
         tx.userData.saAddress,
@@ -187,22 +195,28 @@ async function processGlobalBatch() {
         tx.gameId,
       ]);
 
-    
-      // await modularSdk.addUserOpsToBatch({
-      //   to: contractAddress,
-      //   data: callData,
-      // });
-      const transaction = await wallet.sendTransaction({
+      // Get next nonce from manager (auto-increments)
+      let nonce: number;
+      try {
+        nonce = nonceManager.getNextNonce(wallet.address);
+      } catch (error) {
+        logger.error(`Nonce error for ${wallet.address}: ${error}`);
+        continue;
+      }
+
+      // Send transaction without waiting for confirmation
+      wallet.sendTransaction({
         to: contractAddress,
         data: callData,
         value: 0n,
-        nonce: nonce, // manually manage nonce
+        nonce: nonce,
+      }).then((txResponse) => {
+        lastTransactionHash = txResponse.hash;
+        logger.info(`Tx sent for ${tx.userId} with nonce ${nonce}: ${txResponse.hash}`);
+      }).catch((error) => {
+        logger.error(`Tx failed for nonce ${nonce}: ${error.message}`);
       });
-
-      // console.log("Transaction hash:", transaction.hash);
-        lastTransactionHash = transaction.hash;
-        nonce += 1;
-        }
+  }
 
 
         console.log("Last transaction hash:", lastTransactionHash);
