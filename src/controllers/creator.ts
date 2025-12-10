@@ -171,7 +171,7 @@ export default class Creator{
 
             const gameId = `game_${this.generateId()}`;
             const privKey ="0x"+sha512_256(gameName+gameType +description);
-            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_xdc);
+            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.xdcProviders[0]);
             const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
             const wallet_address = await wallet.getAddress();
             if (!rpcHttpProvider) {

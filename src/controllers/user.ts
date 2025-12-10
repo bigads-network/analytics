@@ -31,9 +31,7 @@ const adminPrivateKeys = [
   envConfigs.adminPrivatKey_Xdc9,
 ];
 
-const rpcProviders = [
- envConfigs.provider_url_xdc,
-];
+const rpcProviders = envConfigs.xdcProviders;
 
 // Function to get random element from array
 function getRandomElement<T>(array: T[]): T {
