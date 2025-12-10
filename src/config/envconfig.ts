@@ -33,21 +33,14 @@ const envVarsSchema = z.object({
   ADMIN_PRIVATEKEY_XDC7:z.string(),
   ADMIN_PRIVATEKEY_XDC8:z.string(),
   ADMIN_PRIVATEKEY_XDC9:z.string(),
-  PROVIDER_URL_XDC2:z.string(),
-  PROVIDER_URL_XDC3:z.string(),
-  PROVIDER_URL_XDC4:z.string(),
-  PROVIDER_URL_XDC1:z.string(),
-  PROVIDER_URL_XDC5:z.string(),
-  PROVIDER_URL_XDC6:z.string(),
-  PROVIDER_URL_XDC7:z.string(),
-  PROVIDER_URL_XDC8:z.string(),
-  PROVIDER_URL_XDC9:z.string(),
-  PROVIDER_URL_XDC10:z.string(),
-  PROVIDER_URL_XDC11:z.string(),
-  PROVIDER_URL_XDC12:z.string(),
-  PROVIDER_URL_XDC13:z.string(),
-  PROVIDER_URL_XDC14:z.string(),
-  PROVIDER_URL_XDC15:z.string()
+  XDC_PROVIDERS: z.string().default(""),
+  MAX_CONCURRENT_RPC_CALLS: z.string().default("5").transform((str) => parseInt(str, 10)),
+  RPC_RETRY_ATTEMPTS: z.string().default("3").transform((str) => parseInt(str, 10)),
+  RPC_TIMEOUT_MS: z.string().default("30000").transform((str) => parseInt(str, 10)),
+  BATCH_SIZE: z.string().default("10").transform((str) => parseInt(str, 10)),
+  BATCH_TIMEOUT_MS: z.string().default("5000").transform((str) => parseInt(str, 10)),
+  MAX_QUEUE_SIZE_PER_USER: z.string().default("100").transform((str) => parseInt(str, 10)),
+  GLOBAL_MAX_QUEUE_SIZE: z.string().default("1000").transform((str) => parseInt(str, 10))
 });
 
 const envVars = envVarsSchema.parse(process.env);
@@ -79,24 +72,18 @@ export const envConfigs = {
   adminPrivatKey_Xdc8:envVars.ADMIN_PRIVATEKEY_XDC8,
   adminPrivatKey_Xdc9:envVars.ADMIN_PRIVATEKEY_XDC9,
   provider_url_xdc :envVars.PROVIDER_URL_XDC,
-  provider_url_xdc1 :envVars.PROVIDER_URL_XDC1,
-  provider_url_xdc2:envVars.PROVIDER_URL_XDC2,
-  provider_url_xdc3 :envVars.PROVIDER_URL_XDC3,
-  provider_url_xdc4 :envVars.PROVIDER_URL_XDC4,
-  provider_url_xdc5 :envVars.PROVIDER_URL_XDC5,
-  provider_url_xdc6 :envVars.PROVIDER_URL_XDC6,
-  provider_url_xdc7 :envVars.PROVIDER_URL_XDC7,
-  provider_url_xdc8 :envVars.PROVIDER_URL_XDC8,
-  provider_url_xdc9 :envVars.PROVIDER_URL_XDC9,
-  provider_url_xdc10 :envVars.PROVIDER_URL_XDC10,
-  provider_url_xdc11 :envVars.PROVIDER_URL_XDC11,
-  provider_url_xdc12:envVars.PROVIDER_URL_XDC12,
-  provider_url_xdc13:envVars.PROVIDER_URL_XDC13,
-  provider_url_xdc14:envVars.PROVIDER_URL_XDC14,
-  provider_url_xdc15:envVars.PROVIDER_URL_XDC15,
   contract_address_xdc : envVars.CONTRACT_ADDRESS_XDC,
-  etherspot_api_Key:envVars.ETHERSPOTAPIKEY
-
+  etherspot_api_Key:envVars.ETHERSPOTAPIKEY,
+  
+  // RPC Configuration
+  xdcProviders: envVars.XDC_PROVIDERS.split(",").filter(url => url.trim()).map(url => url.trim()),
+  maxConcurrentRpcCalls: envVars.MAX_CONCURRENT_RPC_CALLS,
+  rpcRetryAttempts: envVars.RPC_RETRY_ATTEMPTS,
+  rpcTimeoutMs: envVars.RPC_TIMEOUT_MS,
+  batchSize: envVars.BATCH_SIZE,
+  batchTimeoutMs: envVars.BATCH_TIMEOUT_MS,
+  maxQueueSizePerUser: envVars.MAX_QUEUE_SIZE_PER_USER,
+  globalMaxQueueSize: envVars.GLOBAL_MAX_QUEUE_SIZE
 };
 
 export const chainIdToChainName: any = {

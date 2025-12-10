@@ -6,6 +6,7 @@ import { sha512_256 } from 'js-sha512';
 import { ethers } from 'ethers';
 import { ModularSdk, EtherspotBundler, sleep } from "@etherspot/modular-sdk";
 import { chainIdToBundlerUrl, chainIdToChainName, envConfigs } from '../config/envconfig';
+import rpcManager from '../config/rpcManager';
 import { generateGameToken } from '../config/gameToken';
 import { polygon, xdc } from 'viem/chains';
 
@@ -26,10 +27,10 @@ export default class Creator{
         let userId, saAddress, token;
 
         if (!userExist) {
-            userId = `creator_${this.generateId()}`; // Assuming `generateId` is defined elsewhere
+            userId = `creator_${this.generateId()}`;
             const privKey = "0x"+sha512_256(devicedata + userId);
-            // console.log(privKey)
-            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_xdc);
+            const providerUrl = rpcManager.getNextProvider();
+            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(providerUrl);
             const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
             const wallet_address = await wallet.getAddress();
             if (!rpcHttpProvider) {
@@ -38,8 +39,6 @@ export default class Creator{
             if (!wallet) {
                 return res.status(500).json({ status: false, message: "Error creating wallet" });
             }
-
-            // console.log(wallet_address, "wallet_address");
 
             const chainName = xdc;
 
@@ -52,7 +51,6 @@ export default class Creator{
               });
 
             const saAddress = await modularSdk.getCounterFactualAddress();
-              //   console.log(saAddress ,"Account................................");
             const saveResult = await dbservices.Creator.saveCreator(userId, devicedata, saAddress, wallet_address);
 
             if (!saveResult) {
@@ -98,10 +96,10 @@ export default class Creator{
         let userId, saAddress, token;
 
         if (!userExist) {
-            userId = `admin_${this.generateId()}`; // Assuming `generateId` is defined elsewhere
-            // const privKey ="0x63a2075b2432ec19652761fa4d3c585bf5ccb6360c5a5666ebb2e2b63929cc41";
-            const privKey = "0x"+sha512_256(userId)
-            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_xdc);
+            userId = `admin_${this.generateId()}`;
+            const privKey = "0x"+sha512_256(userId);
+            const providerUrl = rpcManager.getNextProvider();
+            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(providerUrl);
             const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
             const wallet_address = await wallet.getAddress();
             if (!rpcHttpProvider) {
@@ -110,8 +108,6 @@ export default class Creator{
             if (!wallet) {
                 return res.status(500).json({ status: false, message: "Error creating wallet" });
             }
-
-            // console.log(wallet_address, "wallet_address");
 
             const chainName = xdc;
 
@@ -124,7 +120,6 @@ export default class Creator{
               });
 
             const saAddress = await modularSdk.getCounterFactualAddress();
-              //   console.log(saAddress ,"Account................................");
             const saveResult = await dbservices.Creator.saveAdmin(userId, devicedata, saAddress, wallet_address);
 
             if (!saveResult) {

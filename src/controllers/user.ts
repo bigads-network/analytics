@@ -33,21 +33,6 @@ const adminPrivateKeys = [
 
 const rpcProviders = [
  envConfigs.provider_url_xdc,
- envConfigs.provider_url_xdc1,
- envConfigs.provider_url_xdc2,
- envConfigs.provider_url_xdc3,
- envConfigs.provider_url_xdc4,
- envConfigs.provider_url_xdc5,
- envConfigs.provider_url_xdc6,
- envConfigs.provider_url_xdc7,
- envConfigs.provider_url_xdc8,
- envConfigs.provider_url_xdc9,
- envConfigs.provider_url_xdc10,
- envConfigs.provider_url_xdc11,
- envConfigs.provider_url_xdc12,
- envConfigs.provider_url_xdc13,
- envConfigs.provider_url_xdc14,
- envConfigs.provider_url_xdc15,
 ];
 
 // Function to get random element from array
