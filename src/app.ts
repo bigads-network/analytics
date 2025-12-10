@@ -9,9 +9,9 @@ import logger from "./config/logger";
 import path from "path";
 import swagger from "swagger-ui-express"
 import apiDocs from "./config/swagger";
-import './cronDashboardCacheWorker'; // Start dashboard cache cron worker automatically
-import './cronGamesCacheWorker'; // Start games cache cron worker automatically
-import './cronAvax'; // Start avax cron worker automatically
+// import './cronDashboardCacheWorker'; // Start dashboard cache cron worker automatically
+// import './cronGamesCacheWorker'; // Start games cache cron worker automatically
+// import './cronAvax'; // Start avax cron worker automatically
 // import "./services/bot"; // Import bot instance
 
 const app = express();
