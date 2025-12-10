@@ -4,8 +4,8 @@ import dbservices from '../services/dbservices';
 import { generateAuthTokens } from '../config/token';
 import { sha512_256 } from 'js-sha512';
 import { ethers } from 'ethers';
-import { ModularSdk, EtherspotBundler, sleep } from "@etherspot/modular-sdk";
-import { chainIdToBundlerUrl, chainIdToChainName, envConfigs } from '../config/envconfig';
+import { ModularSdk, sleep } from "@etherspot/modular-sdk";
+import { chainIdToChainName, envConfigs } from '../config/envconfig';
 import rpcManager from '../config/rpcManager';
 import { generateGameToken } from '../config/gameToken';
 import { polygon, xdc } from 'viem/chains';
@@ -42,13 +42,9 @@ export default class Creator{
 
             const chainName = xdc;
 
-            const modularSdk = new ModularSdk(privKey, {
-                chainId: 50, // XDC Mainnet
-                bundlerProvider: new EtherspotBundler(
-                  50,
-                  envConfigs.etherspot_api_Key
-                ),
-              });
+                        const modularSdk = new ModularSdk(privKey, {
+                                chainId: 50 // XDC Mainnet
+                        });
 
             const saAddress = await modularSdk.getCounterFactualAddress();
             const saveResult = await dbservices.Creator.saveCreator(userId, devicedata, saAddress, wallet_address);
@@ -111,13 +107,9 @@ export default class Creator{
 
             const chainName = xdc;
 
-            const modularSdk = new ModularSdk(privKey, {
-                chainId: 50, // XDC Mainnet
-                bundlerProvider: new EtherspotBundler(
-                  50,
-                  envConfigs.etherspot_api_Key
-                ),
-              });
+                        const modularSdk = new ModularSdk(privKey, {
+                                chainId: 50 // XDC Mainnet
+                        });
 
             const saAddress = await modularSdk.getCounterFactualAddress();
             const saveResult = await dbservices.Creator.saveAdmin(userId, devicedata, saAddress, wallet_address);
@@ -193,13 +185,9 @@ export default class Creator{
 
             const chainName = xdc;
 
-            const modularSdk = new ModularSdk(privKey, {
-                chainId: 50, // XDC Mainnet
-                bundlerProvider: new EtherspotBundler(
-                  50,
-                  envConfigs.etherspot_api_Key
-                ),
-              });
+                        const modularSdk = new ModularSdk(privKey, {
+                                chainId: 50 // XDC Mainnet
+                        });
 
             const saAddress = await modularSdk.getCounterFactualAddress();
             //   console.log(saAddress ,"saAddress................................................................");
