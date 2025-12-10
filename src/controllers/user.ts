@@ -163,7 +163,7 @@ async function processBatch(batchId: string, transactions: QueuedTransaction[]) 
     });
 
     const newNonce = transactionQueue.incrementNonce();
-    console.log(`[SUBMIT] ${transactions.length} TXs | Nonce: ${newNonce - 1} -> ${newNonce}`);
+    console.log(`[SUBMIT] Batch: ${batchId} | ${transactions.length} TXs | Nonce: ${newNonce - 1} -> ${newNonce}`);
 
     // Wait for receipt asynchronously (non-blocking for queue)
     processReceiptAsync(batchId, userOpHash, nexusClient, transactions, startTime);

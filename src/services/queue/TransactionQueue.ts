@@ -152,15 +152,17 @@ export class TransactionQueue {
   }
 
   /**
-   * Create a batch from queue
+   * Create a batch from queue (time-based: whatever is available)
+   * Instead of waiting for batchSize, take all available transactions
    */
   public createBatch(): QueuedTransaction[] | null {
     if (this.queue.length === 0) {
       return null;
     }
 
-    const batchSize = Math.min(this.batchSize, this.queue.length);
-    const batch = this.queue.splice(0, batchSize);
+    // Take all pending transactions available (not limited by batchSize)
+    // batchSize is now just a safety limit, but we send every 10 seconds
+    const batch = this.queue.splice(0, Math.min(this.batchSize, this.queue.length));
 
     batch.forEach(tx => {
       tx.status = 'processing';
@@ -238,24 +240,33 @@ export class TransactionQueue {
   }
 
   /**
-   * Start batch processing loop
+   * Start batch processing loop (time-based: every 10 seconds)
    */
   private startBatchProcessing(): void {
     if (this.isProcessing) return;
     this.isProcessing = true;
 
+    // Start the 10-second batch processing timer
     this.processBatches();
+    
+    logger.info(`Batch processing started with ${this.batchTimeoutMs}ms interval`);
   }
 
   /**
    * Process batches continuously
    */
   private async processBatches(): Promise<void> {
-    while (this.isProcessing && (this.queue.length > 0 || this.processingBatches.size > 0)) {
+    // Use a fixed 10-second interval to create and submit batches
+    const batchInterval = setInterval(async () => {
+      if (!this.isProcessing) {
+        clearInterval(batchInterval);
+        return;
+      }
+
       // Check if we can submit more batches in parallel
       if (this.processingBatches.size < this.parallelLimit && this.queue.length > 0) {
         const batch = this.createBatch();
-        if (batch) {
+        if (batch && batch.length > 0) {
           const batchId = this.generateBatchId();
           this.registerBatch(batchId, batch);
 
@@ -269,13 +280,10 @@ export class TransactionQueue {
           });
         }
       }
+    }, this.batchTimeoutMs); // Fixed 10-second interval (from batchTimeoutMs)
 
-      // Wait a bit before checking again
-      await this.sleep(100);
-    }
-
-    this.isProcessing = false;
-    logger.debug('Batch processing loop ended');
+    // Keep a reference to clear on shutdown
+    this.batchTimers.set('main', batchInterval);
   }
 
   /**
