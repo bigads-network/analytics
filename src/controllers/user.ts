@@ -230,8 +230,8 @@ async function processBatch(batchId: string, transactions: QueuedTransaction[]) 
 }
 
 /**
- * Wait for receipt asynchronously without blocking queue
- * Batch is already marked as completed/submitted
+ * Process receipt asynchronously - fire and forget, no blocking
+ * Batch already submitted, just save to DB without waiting for confirmation
  */
 async function processReceiptAsync(
   batchId: string,
@@ -241,24 +241,19 @@ async function processReceiptAsync(
   startTime: number
 ) {
   try {
-    const receipt = await nexusClient.waitForUserOperationReceipt({ hash: userOpHash });
-    const transactionHash = receipt.receipt.transactionHash;
-    const blockNumber = receipt.receipt.blockNumber;
-    const processingTime = Date.now() - startTime;
-
     transactionStats.totalConfirmed += transactions.length;
 
-    console.log(`[CONFIRMED] ${transactions.length} TXs | Block: ${blockNumber} | Time: ${processingTime}ms`);
+    console.log(`[SUBMITTED] ${transactions.length} TXs | UserOp: ${userOpHash?.substring(0, 10)}...`);
     logTransactionStats();
 
-    // Save all transaction records to database
+    // Save all transaction records to database without waiting for receipt
     for (const tx of transactions) {
       try {
         await dbservices.User.saveTransactionDetails(
           tx.gameId,
           tx.userData.id,
           tx.eventId,
-          transactionHash,
+          userOpHash, // Use UO hash as transaction hash (already submitted to Biconomy)
           polygon.name,
           "0",
         );
@@ -271,9 +266,9 @@ async function processReceiptAsync(
     const errorMsg = error instanceof Error ? error.message : String(error);
     transactionStats.totalFailed += transactions.length;
     
-    console.log(`[ERROR] Receipt failed: ${errorMsg}`);
+    console.log(`[ERROR] DB save failed: ${errorMsg}`);
     logTransactionStats();
-    logger.error(`Batch ${batchId}: Receipt waiting failed: ${errorMsg}`);
+    logger.error(`Batch ${batchId}: DB save failed: ${errorMsg}`);
   }
 }
 
