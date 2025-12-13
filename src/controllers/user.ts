@@ -71,6 +71,67 @@ const delay = (ms: number) =>
     setTimeout(resolve, ms);
   });
 
+// Telegram notification helper
+async function sendTelegramNotification(message: string): Promise<void> {
+  try {
+    const botToken = "7926207851:AAEAS2VyNenFlpaXQh5vy1nCBzoyw3nBhSk";
+    const chatId = "-5054690109";
+    
+    if (!botToken || !chatId) {
+      logger.warn('[TELEGRAM] Missing bot token or chat ID');
+      return;
+    }
+
+    const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: message,
+        parse_mode: 'HTML'
+      })
+    });
+
+    if (!response.ok) {
+      logger.warn(`[TELEGRAM] Failed to send: ${response.statusText}`);
+    }
+  } catch (error) {
+    logger.error('[TELEGRAM] Error sending notification', {
+      error: error instanceof Error ? error.message.slice(0, 80) : 'unknown',
+    });
+  }
+}
+
+// Get gas prices with priority fee = 2x base fee
+async function getOptimizedGasPrices(provider: ethers.providers.JsonRpcProvider): Promise<{ maxFeePerGas: ethers.BigNumber; maxPriorityFeePerGas: ethers.BigNumber }> {
+  try {
+    const feeData = await provider.getFeeData();
+    if (!feeData.maxFeePerGas || !feeData.gasPrice) {
+      // Fallback if can't get fee data
+      return {
+        maxFeePerGas: ethers.utils.parseUnits('2', 'gwei'),
+        maxPriorityFeePerGas: ethers.utils.parseUnits('1', 'gwei')
+      };
+    }
+    
+    // Priority fee = 2x base fee (instead of high priority)
+    const baseGasPrice = feeData.gasPrice;
+    const priorityFee = baseGasPrice.mul(2);
+    
+    return {
+      maxFeePerGas: baseGasPrice.add(priorityFee),
+      maxPriorityFeePerGas: priorityFee
+    };
+  } catch (error) {
+    logger.warn('[GAS] Failed to get fee data, using defaults');
+    return {
+      maxFeePerGas: ethers.utils.parseUnits('2', 'gwei'),
+      maxPriorityFeePerGas: ethers.utils.parseUnits('1', 'gwei')
+    };
+  }
+}
+
 // Initialize nonces once at server startup
 async function initializeNonces() {
   if (noncesInitialized) {
@@ -142,6 +203,10 @@ const incrementNonce = (walletIndex: number) => {
 // Sync nonces back to blockchain every 5 minutes
 async function syncNoncesWithBlockchain() {
   try {
+    const MIN_BALANCE_AVAX = 0.01;
+    const lowBalanceWallets: Array<{ address: string; balance: number; index: number }> = [];
+    const validWalletIndices: number[] = [];
+    
     for (let walletIndex = 0; walletIndex < adminPrivateKeys.length; walletIndex++) {
       const privKey = adminPrivateKeys[walletIndex];
       if (!privKey) continue;
@@ -161,7 +226,59 @@ async function syncNoncesWithBlockchain() {
       if (syncedNonce !== localNonce) {
         logger.info(`[NONCE] Wallet${walletIndex}: synced local=${localNonce} -> blockchain=${pendingNonce}`);
       }
+      
+      // Check balance
+      const balance = await provider.getBalance(walletAddress);
+      const balanceInAvax = parseFloat(ethers.utils.formatEther(balance));
+      
+      if (balanceInAvax >= MIN_BALANCE_AVAX) {
+        validWalletIndices.push(walletIndex);
+      } else {
+        lowBalanceWallets.push({ address: walletAddress, balance: balanceInAvax, index: walletIndex });
+      }
     }
+    
+    // Update validAdminIndices if balance status changed
+    const oldValidCount = validAdminIndices.length;
+    validAdminIndices = validWalletIndices;
+    PARALLEL_WALLETS = Math.max(1, validAdminIndices.length);
+    
+    // Build well-structured Telegram message (only sent transactions)
+    const txCount = totalTransactionsSent;
+    let telegramMsg = `═══════════════════════════════\n`;
+    telegramMsg += `📊 <b>BIGADS NETWORK REPORT</b>\n`;
+    telegramMsg += `═══════════════════════════════\n\n`;
+    
+    telegramMsg += `<b>📤 TRANSACTION VOLUME</b>\n`;
+    telegramMsg += `✅ Sent: <code>${txCount}</code>\n\n`;
+    
+    telegramMsg += `<b>💼 WALLET STATUS</b>\n`;
+    telegramMsg += `🟢 Active: <code>${validWalletIndices.length}/${adminPrivateKeys.length}</code>\n`;
+    
+    if (lowBalanceWallets.length > 0) {
+      telegramMsg += `\n<b>⚠️ LOW BALANCE ALERT (${lowBalanceWallets.length})</b>\n`;
+      telegramMsg += `───────────────────────────\n`;
+      for (const wallet of lowBalanceWallets) {
+        telegramMsg += `Wallet${wallet.index}: <code>${wallet.balance.toFixed(6)}</code> AVAX\n`;
+        telegramMsg += `<code>${wallet.address}</code>\n\n`;
+      }
+    } else {
+      telegramMsg += `✅ All wallets have sufficient balance\n\n`;
+    }
+    
+    if (oldValidCount !== validWalletIndices.length) {
+      telegramMsg += `<b>🔄 STATUS CHANGE:</b>\n`;
+      telegramMsg += `${oldValidCount} → ${validWalletIndices.length} active wallets\n\n`;
+    }
+    
+    telegramMsg += `───────────────────────────\n`;
+    telegramMsg += `<i>⏰ ${new Date().toLocaleString()}</i>`;
+    
+    // Send Telegram notification
+    await sendTelegramNotification(telegramMsg);
+    
+    logger.info(`[SYNC-REPORT] Sent=${txCount} Active=${validWalletIndices.length} LowBalance=${lowBalanceWallets.length}`);
+    
   } catch (error) {
     logger.error('Nonce sync error', {
       error: error instanceof Error ? error.message.slice(0, 80) : 'unknown',
@@ -169,7 +286,7 @@ async function syncNoncesWithBlockchain() {
   }
 }
 
-// Start nonce sync every 5 minutes (300000 ms)
+// Start nonce sync every 5 minutes (300000 ms = 5 * 60 * 1000)
 setInterval(() => {
   syncNoncesWithBlockchain().catch((error) =>
     logger.error('Scheduled nonce sync failed', { error })
@@ -551,6 +668,9 @@ async function sendSingleTransaction(
     logTransactionBatch();
     logger.debug(`[TX-FIRED] wallet${walletIndex} nonce=${nonce}`);
     
+    // Get optimized gas prices (priority fee = 2x base fee)
+    const gasPrices = await getOptimizedGasPrices(provider);
+    
     // Send in background - don't wait for response
     wallet.sendTransaction({
       to: contractAddress,
@@ -558,6 +678,8 @@ async function sendSingleTransaction(
       value: 0n,
       nonce: nonce,
       gasLimit: 100000,
+      maxFeePerGas: gasPrices.maxFeePerGas,
+      maxPriorityFeePerGas: gasPrices.maxPriorityFeePerGas,
     }).then((txResponse) => {
       // Just log when we get hash back
       const hash = txResponse.hash;
@@ -1371,6 +1493,9 @@ export default class User {
             logTransactionBatch();
             // Transaction fired - silent
             
+            // Get optimized gas prices (priority fee = 2x base fee)
+            const gasPrices = await getOptimizedGasPrices(provider);
+            
             // Send in background - don't wait
             wallet.sendTransaction({
               to: contractAddress,
@@ -1378,6 +1503,8 @@ export default class User {
               value: 0n,
               nonce: localNonce,
               gasLimit: 100000,
+              maxFeePerGas: gasPrices.maxFeePerGas,
+              maxPriorityFeePerGas: gasPrices.maxPriorityFeePerGas,
             }).then((txResponse) => {
               // Hash received - silent
               recentTxHashes.push({ hash: txResponse.hash, timestamp: Date.now(), walletIndex });
