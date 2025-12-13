@@ -32,8 +32,17 @@ const ADMIN_KEYS_CONFIG = [
   envConfigs.adminPrivatKey_avax5,
   envConfigs.adminPrivatKey_avax6,
   envConfigs.adminPrivatKey_avax7,
+  envConfigs.adminPrivatKey_avax8,
+  envConfigs.adminPrivatKey_avax9,
+  envConfigs.adminPrivatKey_avax10,
+  envConfigs.adminPrivatKey_avax11,
+  envConfigs.adminPrivatKey_avax12,
+  envConfigs.adminPrivatKey_avax13,
+  envConfigs.adminPrivatKey_avax14,
+  envConfigs.adminPrivatKey_avax15,
+  envConfigs.adminPrivatKey_avax16,
 ].filter(key => key && key.length > 0).length;
-const PARALLEL_WALLETS = Math.max(1, ADMIN_KEYS_CONFIG); // Use available keys, min 1
+let PARALLEL_WALLETS = Math.max(1, ADMIN_KEYS_CONFIG); // Use available keys, min 1
 const MAX_WALLET_CONCURRENCY = 4; // Send up to 4 txs per wallet concurrently
 const MAX_QUEUE_SIZE = 500; // Reduced from 1000 to control memory
 const MAX_QUEUE_BYTES = 16 * 1024 * 1024; // Reduced from 32MB to 16MB
@@ -43,6 +52,7 @@ const WALLET_COOLDOWN_MS = 5_000; // Shorter cooldown
 
 const nonceByWallet = new Map<number, number>();
 let noncesInitialized = false;
+let roundRobinIndex = 0; // For round-robin wallet selection among valid wallets
 
 let isProcessingBatch = false;
 let pendingProcessRequest = false;
@@ -67,7 +77,10 @@ async function initializeNonces() {
     return;
   }
   
-  logger.info(`[NONCE] Initializing ${adminPrivateKeys.length} wallets...`);
+  const MIN_BALANCE_AVAX = 0.01;
+  validAdminIndices = [];
+  
+  logger.info(`[NONCE] Initializing ${adminPrivateKeys.length} wallets (min balance: ${MIN_BALANCE_AVAX} AVAX)...`);
   
   try {
     for (let walletIndex = 0; walletIndex < adminPrivateKeys.length; walletIndex++) {
@@ -86,13 +99,21 @@ async function initializeNonces() {
       
       // Get balance
       const balance = await provider.getBalance(walletAddress);
-      const balanceInAvax = ethers.utils.formatEther(balance);
+      const balanceInAvax = parseFloat(ethers.utils.formatEther(balance));
       
-      logger.info(`[WALLET${walletIndex}] nonce=${pendingNonce} balance=${balanceInAvax} AVAX`);
+      // Check if balance is sufficient
+      const isValid = balanceInAvax >= MIN_BALANCE_AVAX;
+      if (isValid) {
+        validAdminIndices.push(walletIndex);
+      }
+      
+      const status = isValid ? '✅ VALID' : '❌ LOW';
+      logger.info(`[WALLET${walletIndex}] ${status} nonce=${pendingNonce} balance=${balanceInAvax.toFixed(6)} AVAX address=${walletAddress}`);
     }
     
     noncesInitialized = true;
-    logger.info(`[NONCE] Ready: ${adminPrivateKeys.length} wallets`);
+    PARALLEL_WALLETS = Math.max(1, validAdminIndices.length);
+    logger.info(`[NONCE] Ready: ${validAdminIndices.length}/${adminPrivateKeys.length} wallets have sufficient balance. Will use round-robin on [${validAdminIndices.join(', ')}]`);
   } catch (error) {
     logger.error('[NONCE] Initialization failed', {
       error: error instanceof Error ? error.message.slice(0, 80) : 'unknown',
@@ -201,7 +222,7 @@ const isRetryableNetworkError = (error: any) => {
   );
 };
 
-const adminPrivateKeys = [
+let adminPrivateKeys = [
   envConfigs.adminPrivatKey_avax,
   envConfigs.adminPrivatKey_avax1,
   envConfigs.adminPrivatKey_avax2,
@@ -210,7 +231,19 @@ const adminPrivateKeys = [
   envConfigs.adminPrivatKey_avax5,
   envConfigs.adminPrivatKey_avax6,
   envConfigs.adminPrivatKey_avax7,
+  envConfigs.adminPrivatKey_avax8,
+  envConfigs.adminPrivatKey_avax9,
+  envConfigs.adminPrivatKey_avax10,
+  envConfigs.adminPrivatKey_avax11,
+  envConfigs.adminPrivatKey_avax12,
+  envConfigs.adminPrivatKey_avax13,
+  envConfigs.adminPrivatKey_avax14,
+  envConfigs.adminPrivatKey_avax15,
+  envConfigs.adminPrivatKey_avax16,
 ].filter(key => key && key.length > 0); // Filter out empty keys
+
+// Will be populated during initialization - only keys with balance > 0.01 AVAX
+let validAdminIndices: number[] = [];
 
 const rpcProviders = [
   envConfigs.provider_url_AVAX,
@@ -1277,8 +1310,18 @@ export default class User {
 
           // ============ DIRECT SEND - NO QUEUE ============
           try {
-            // Pick random wallet
-            const walletIndex = Math.floor(Math.random() * adminPrivateKeys.length);
+            // Pick only from valid wallets with sufficient balance (round-robin)
+            if (validAdminIndices.length === 0) {
+              totalTransactionsRejected++;
+              perSecondStats.rejected++;
+              logger.warn(`[REQ-REJECTED] No wallets with sufficient balance`);
+              return;
+            }
+            
+            // Round-robin through valid wallets
+            const selectedIndex = roundRobinIndex % validAdminIndices.length;
+            roundRobinIndex++;
+            const walletIndex = validAdminIndices[selectedIndex];
             const privKey = adminPrivateKeys[walletIndex];
             if (!privKey) {
               totalTransactionsRejected++;
