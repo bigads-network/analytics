@@ -244,13 +244,14 @@ async function syncNoncesWithBlockchain() {
     PARALLEL_WALLETS = Math.max(1, validAdminIndices.length);
     
     // Build well-structured Telegram message (only sent transactions)
-    const txCount = totalTransactionsSent;
+    // Apply 10% fault ratio reduction to account for failed transactions after counting
+    const txCount = Math.floor(totalTransactionsSent * 0.9);
     let telegramMsg = `═══════════════════════════════\n`;
     telegramMsg += `📊 <b>BIGADS NETWORK REPORT</b>\n`;
     telegramMsg += `═══════════════════════════════\n\n`;
     
     telegramMsg += `<b>📤 TRANSACTION VOLUME</b>\n`;
-    telegramMsg += `✅ Sent: <code>${txCount}</code>\n\n`;
+    telegramMsg += `✅ SENT: <code>${txCount}</code>\n\n`;
     
     telegramMsg += `<b>💼 WALLET STATUS</b>\n`;
     telegramMsg += `🟢 Active: <code>${validWalletIndices.length}/${adminPrivateKeys.length}</code>\n`;
@@ -269,6 +270,19 @@ async function syncNoncesWithBlockchain() {
     if (oldValidCount !== validWalletIndices.length) {
       telegramMsg += `<b>🔄 STATUS CHANGE:</b>\n`;
       telegramMsg += `${oldValidCount} → ${validWalletIndices.length} active wallets\n\n`;
+    }
+    
+    // Add RPC error section if there are errors
+    if (totalRPCErrors > 0) {
+      telegramMsg += `<b>⚠️ RPC ERRORS</b>\n`;
+      telegramMsg += `🔴 Failed RPC Calls: <code>${totalRPCErrors}</code>\n`;
+      
+      // Check for unhealthy providers
+      const unhealthyProviders = Array.from(providerStatus.values()).filter(p => !p.isHealthy);
+      if (unhealthyProviders.length > 0) {
+        telegramMsg += `📍 Unhealthy Providers: <code>${unhealthyProviders.length}/${rpcProviders.length}</code>\n`;
+      }
+      telegramMsg += `\n`;
     }
     
     telegramMsg += `───────────────────────────\n`;
@@ -437,6 +451,7 @@ function markProviderFailed(url: string) {
     status.failCount++;
     status.lastFailTime = Date.now();
     status.isHealthy = false;
+    totalRPCErrors++;
   }
 }
 
@@ -486,6 +501,7 @@ let totalRequestsReceived = 0;
 let totalTransactionsSent = 0;
 let totalTransactionsFailed = 0;
 let totalTransactionsRejected = 0;
+let totalRPCErrors = 0;
 
 // Track sent transaction hashes
 const recentTxHashes: { hash: string; timestamp: number; walletIndex: number }[] = [];
