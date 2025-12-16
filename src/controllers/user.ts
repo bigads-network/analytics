@@ -141,7 +141,9 @@ async function initializeNonces() {
   const MIN_BALANCE_AVAX = 0.01;
   validAdminIndices = [];
   
-  logger.info(`[NONCE] Initializing ${adminPrivateKeys.length} wallets (min balance: ${MIN_BALANCE_AVAX} AVAX)...`);
+  // Count actual keys vs empty
+  const keysWithValues = adminPrivateKeys.filter(k => k && k.length > 0).length;
+  logger.info(`[NONCE] Initializing wallets: ${keysWithValues} configured out of ${adminPrivateKeys.length} total (min balance: ${MIN_BALANCE_AVAX} AVAX)...`);
   
   try {
     for (let walletIndex = 0; walletIndex < adminPrivateKeys.length; walletIndex++) {
@@ -240,7 +242,8 @@ async function syncNoncesWithBlockchain() {
     
     // Update validAdminIndices if balance status changed
     const oldValidCount = validAdminIndices.length;
-    validAdminIndices = validWalletIndices;
+    validAdminIndices = validWalletIndices.sort((a, b) => a - b); // Keep sorted for consistent round-robin
+    roundRobinIndex = 0; // Reset round-robin on sync to ensure even distribution
     PARALLEL_WALLETS = Math.max(1, validAdminIndices.length);
     
     // Build well-structured Telegram message (only sent transactions)
@@ -1553,7 +1556,8 @@ export default class User {
                 totalTransactionsFailed++;
                 // Remove this wallet from valid indices - it's out of funds
                 validAdminIndices = validAdminIndices.filter(idx => idx !== walletIndex);
-                logger.warn(`[WALLET-REMOVED] Wallet${walletIndex} out of funds, removed from rotation`);
+                roundRobinIndex = 0; // Reset round-robin when wallet removed
+                logger.warn(`[WALLET-REMOVED] Wallet${walletIndex} out of funds, removed from rotation. Active: ${validAdminIndices.length}`);
               }
               // Other errors - just silently fail
             });
