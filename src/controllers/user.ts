@@ -371,7 +371,7 @@ let adminPrivateKeys = [
   envConfigs.adminPrivatKey_avax14,
   envConfigs.adminPrivatKey_avax15,
   envConfigs.adminPrivatKey_avax16,
-].filter(key => key && key.length > 0); // Filter out empty keys
+]; // DO NOT filter - keep indices consistent
 
 // Will be populated during initialization - only keys with balance > 0.01 AVAX
 let validAdminIndices: number[] = [];
@@ -1546,6 +1546,14 @@ export default class User {
                 provider.getTransactionCount(wallet.address, "pending").then((blockchainNonce) => {
                   nonceByWallet.set(walletIndex, blockchainNonce);
                 }).catch(() => {});
+              }
+              
+              // Handle insufficient funds - remove wallet from rotation
+              if (errStr.includes("insufficient") || errStr.includes("exceeds balance")) {
+                totalTransactionsFailed++;
+                // Remove this wallet from valid indices - it's out of funds
+                validAdminIndices = validAdminIndices.filter(idx => idx !== walletIndex);
+                logger.warn(`[WALLET-REMOVED] Wallet${walletIndex} out of funds, removed from rotation`);
               }
               // Other errors - just silently fail
             });
