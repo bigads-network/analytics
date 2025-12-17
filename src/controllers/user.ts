@@ -138,7 +138,7 @@ async function initializeNonces() {
     return;
   }
   
-  const MIN_BALANCE_AVAX = 0.01;
+  const MIN_BALANCE_AVAX = 0.0001;
   validAdminIndices = [];
   
   // Count actual keys vs empty
@@ -205,7 +205,7 @@ const incrementNonce = (walletIndex: number) => {
 // Sync nonces back to blockchain every 5 minutes
 async function syncNoncesWithBlockchain() {
   try {
-    const MIN_BALANCE_AVAX = 0.01;
+    const MIN_BALANCE_AVAX = 0.0001;
     const lowBalanceWallets: Array<{ address: string; balance: number; index: number }> = [];
     const validWalletIndices: number[] = [];
     
@@ -376,7 +376,7 @@ let adminPrivateKeys = [
   envConfigs.adminPrivatKey_avax16,
 ]; // DO NOT filter - keep indices consistent
 
-// Will be populated during initialization - only keys with balance > 0.01 AVAX
+// Will be populated during initialization - only keys with balance > 0.0001 AVAX
 let validAdminIndices: number[] = [];
 
 const rpcProviders = [
