@@ -1,8 +1,3 @@
-User Events API
-
-This API allows you to manage user details and events, providing endpoints to save user data and event information.
-
-
 ## API Reference
 
 #### 1. User Registration
