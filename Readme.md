@@ -97,11 +97,4 @@ Inserts the eventId, userId, name, type, and eventDetails into the eventData tab
 
 ## step 8 - To check your DB Table You can run "npx drizzle-kit studio"
 
-## step 9 - Done............       
-
-
-
-
-
-
-
+## step 9 - Done.
