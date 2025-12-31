@@ -96,5 +96,3 @@ Inserts the eventId, userId, name, type, and eventDetails into the eventData tab
 ## step 7 - After the step 6. In the terminal you can see "server is running" and "DB connected"
 
 ## step 8 - To check your DB Table You can run "npx drizzle-kit studio"
-
-## step 9 - Done.
