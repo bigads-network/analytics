@@ -359,6 +359,49 @@ setInterval(async () => {
   }
 }, 120000); // Check every 2 minutes
 
+// ========== CRITICAL FIX 12: AGGRESSIVE RECOVERY WHEN ALL WALLETS DOWN ==========
+// If all wallets are down, check more frequently (every 10 seconds) to recover ASAP
+setInterval(async () => {
+  // Only run if we're in critical state
+  if (validAdminIndices.length > 0) return;
+  
+  try {
+    const MIN_BALANCE_AVAX = 0.00005; // Even lower threshold for recovery check
+    
+    for (let walletIndex = 0; walletIndex < adminPrivateKeys.length; walletIndex++) {
+      const privKey = adminPrivateKeys[walletIndex];
+      if (!privKey) continue;
+      
+      try {
+        const provider = getNextProvider();
+        const wallet = new ethers.Wallet(privKey, provider);
+        const balance = await provider.getBalance(wallet.address);
+        const balanceInAvax = parseFloat(ethers.utils.formatEther(balance));
+        
+        if (balanceInAvax >= MIN_BALANCE_AVAX) {
+          // Wallet has funds - re-enable it
+          validAdminIndices.push(walletIndex);
+          validAdminIndices.sort((a, b) => a - b);
+          PARALLEL_WALLETS = Math.max(1, validAdminIndices.length);
+          roundRobinIndex = 0;
+          
+          logger.warn(`[CRITICAL-RECOVERY] Wallet${walletIndex} recovered with ${balanceInAvax.toFixed(6)} AVAX during emergency check`);
+          
+          // Send urgent recovery alert
+          const msg = `🟢 <b>SYSTEM RECOVERED</b>\n\nWallet${walletIndex} is back online\n\n${balanceInAvax.toFixed(6)} AVAX available\n\nProcessing resumed!`;
+          sendTelegramNotification(msg).catch(() => {});
+          
+          break; // Re-enable one wallet and return, next iteration will find more
+        }
+      } catch (err) {
+        // Silently skip
+      }
+    }
+  } catch (error) {
+    // Silently fail
+  }
+}, 10000); // Check every 10 seconds when critical
+
 // Start nonce sync every 5 minutes (300000 ms = 5 * 60 * 1000)
 setInterval(() => {
   syncNoncesWithBlockchain().catch((error) =>
@@ -560,6 +603,38 @@ let globalBatch: {
 const walletFailureTracker = new Map<number, { count: number; lastFailTime: number; disabled: boolean }>();
 const WALLET_FAILURE_THRESHOLD = 10; // Disable wallet after 10 consecutive failures
 const WALLET_RECOVERY_TIME_MS = 90000; // Try to recover after 1.5 minutes
+
+// ========== CRITICAL FIX 10: DEDUPLICATE ALERT MESSAGES ==========
+// Prevent sending the same alert multiple times in rapid succession
+const alertDebounce = new Map<string, { lastSent: number; count: number }>();
+const ALERT_DEBOUNCE_MS = 5000; // Don't send same alert more than once per 5 seconds
+const ALERT_DEBOUNCE_MAX_BURSTS = 3; // Allow up to 3 bursts before throttling
+
+const canSendAlert = (alertKey: string): boolean => {
+  const now = Date.now();
+  const existing = alertDebounce.get(alertKey);
+  
+  if (!existing) {
+    alertDebounce.set(alertKey, { lastSent: now, count: 1 });
+    return true;
+  }
+  
+  const timeSinceLastAlert = now - existing.lastSent;
+  
+  // If enough time has passed, reset and allow
+  if (timeSinceLastAlert > ALERT_DEBOUNCE_MS) {
+    alertDebounce.set(alertKey, { lastSent: now, count: 1 });
+    return true;
+  }
+  
+  // If still within debounce window, allow if under burst limit
+  if (existing.count < ALERT_DEBOUNCE_MAX_BURSTS) {
+    existing.count++;
+    return true;
+  }
+  
+  return false;
+};
 
 const recordWalletFailure = (walletIndex: number) => {
   const tracker = walletFailureTracker.get(walletIndex) || { count: 0, lastFailTime: Date.now(), disabled: false };
@@ -1609,13 +1684,16 @@ export default class User {
               perSecondStats.rejected++;
               logger.error(`[CRITICAL-REJECTED] ALL WALLETS OUT OF FUNDS - No wallets with sufficient balance. Available: ${validAdminIndices.length}/${adminPrivateKeys.length}`);
               
-              // Send alert to Telegram
-              const msg = `🔴 <b>CRITICAL ALERT</b>\n\n` +
-                `All wallets are out of funds!\n\n` +
-                `Active: ${validAdminIndices.length}/${adminPrivateKeys.length}\n\n` +
-                `📍 Transactions are being REJECTED\n\n` +
-                `Action: Refund wallets immediately`;
-              await sendTelegramNotification(msg);
+              // ========== CRITICAL FIX 10: DEDUPLICATE ALERTS ==========
+              // Only send alert if not already sent recently
+              if (canSendAlert('CRITICAL_ALL_WALLETS_OUT')) {
+                const msg = `🔴 <b>CRITICAL ALERT</b>\n\n` +
+                  `All wallets are out of funds!\n\n` +
+                  `Active: ${validAdminIndices.length}/${adminPrivateKeys.length}\n\n` +
+                  `📍 Transactions are being REJECTED\n\n` +
+                  `Action: Refund wallets immediately`;
+                sendTelegramNotification(msg).catch(() => {});
+              }
               return;
             }
             
@@ -1719,23 +1797,43 @@ export default class User {
                 }).catch(() => {});
               }
               
-              // Handle insufficient funds - remove wallet from rotation
+              // ========== CRITICAL FIX 11: VERIFY INSUFFICIENT BALANCE BEFORE REMOVING ==========
+              // Handle insufficient funds - BUT verify first before removing wallet
               if (errStr.includes("insufficient") || errStr.includes("exceeds balance")) {
                 totalTransactionsFailed++;
-                // Remove this wallet from valid indices - it's out of funds
-                const wasValid = validAdminIndices.includes(walletIndex);
-                validAdminIndices = validAdminIndices.filter(idx => idx !== walletIndex);
-                roundRobinIndex = 0; // Reset round-robin when wallet removed
+                logger.error(`[POTENTIAL-OOF] Wallet${walletIndex}: ${errStr.slice(0, 100)}`);
                 
-                logger.error(`[WALLET-OUT-OF-FUNDS] Wallet${walletIndex} removed from rotation. Active: ${validAdminIndices.length}/${adminPrivateKeys.length}`);
-                
-                // Send Telegram alert for single wallet failure
-                if (wasValid) {
-                  const msg = `🔴 <b>WALLET OUT OF FUNDS</b>\n\nWallet${walletIndex} was deactivated\n\n` +
-                    `Active wallets: ${validAdminIndices.length}/${adminPrivateKeys.length}\n\n` +
-                    `Error: ${errStr.slice(0, 100)}`;
-                  sendTelegramNotification(msg).catch(() => {});
-                }
+                // Check balance immediately before removing wallet
+                (async () => {
+                  try {
+                    const checkProvider = getNextProvider();
+                    const checkBalance = await checkProvider.getBalance(wallet.address);
+                    const balanceAvax = parseFloat(ethers.utils.formatEther(checkBalance));
+                    
+                    // Only remove if balance is actually below minimum
+                    const MIN_BALANCE_AVAX = 0.00005; // Very low threshold
+                    if (balanceAvax < MIN_BALANCE_AVAX) {
+                      const wasValid = validAdminIndices.includes(walletIndex);
+                      validAdminIndices = validAdminIndices.filter(idx => idx !== walletIndex);
+                      roundRobinIndex = 0;
+                      
+                      logger.error(`[WALLET-OUT-OF-FUNDS-VERIFIED] Wallet${walletIndex} confirmed out of funds (${balanceAvax.toFixed(6)} AVAX). Active: ${validAdminIndices.length}/${adminPrivateKeys.length}`);
+                      
+                      // Send alert only if this was a valid wallet
+                      if (wasValid && canSendAlert(`WALLET_${walletIndex}_OOF`)) {
+                        const msg = `🔴 <b>WALLET OUT OF FUNDS</b>\n\nWallet${walletIndex} was deactivated\n\n` +
+                          `Balance: ${balanceAvax.toFixed(6)} AVAX\n` +
+                          `Active wallets: ${validAdminIndices.length}/${adminPrivateKeys.length}`;
+                        sendTelegramNotification(msg).catch(() => {});
+                      }
+                    } else {
+                      // Wallet has balance - error was likely transient (gas estimation, RPC issue, etc)
+                      logger.warn(`[TRANSIENT-ERROR] Wallet${walletIndex} has ${balanceAvax.toFixed(6)} AVAX (sufficient). Error was transient, not removing. Error: ${errStr.slice(0, 80)}`);
+                    }
+                  } catch (balanceCheckErr) {
+                    logger.error(`[BALANCE-CHECK-FAILED] Could not verify balance for Wallet${walletIndex}: ${balanceCheckErr}`);
+                  }
+                })().catch(() => {});
               }
               // Other errors - just silently fail
             });
