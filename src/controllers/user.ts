@@ -103,6 +103,54 @@ async function sendTelegramNotification(message: string): Promise<void> {
   }
 }
 
+// ========== CRITICAL FIX 16: CACHE WALLET BALANCES ==========
+// Instead of checking balance every request (slow), maintain a cached balance
+// Updated periodically in background
+const walletBalanceCache = new Map<number, { balance: number; lastChecked: number }>();
+const BALANCE_CACHE_TTL_MS = 5000; // Refresh every 5 seconds
+
+const getCachedBalance = (walletIndex: number): number | null => {
+  const cached = walletBalanceCache.get(walletIndex);
+  if (!cached) return null;
+  
+  const age = Date.now() - cached.lastChecked;
+  if (age > BALANCE_CACHE_TTL_MS) return null; // Cache expired
+  
+  return cached.balance;
+};
+
+const updateBalanceCache = async (walletIndex: number, provider: ethers.providers.JsonRpcProvider): Promise<number> => {
+  try {
+    const privKey = adminPrivateKeys[walletIndex];
+    if (!privKey) return 0;
+    
+    const wallet = new ethers.Wallet(privKey, provider);
+    const balance = await provider.getBalance(wallet.address);
+    const balanceAvax = parseFloat(ethers.utils.formatEther(balance));
+    
+    walletBalanceCache.set(walletIndex, { balance: balanceAvax, lastChecked: Date.now() });
+    return balanceAvax;
+  } catch (err) {
+    logger.warn(`[BALANCE-CACHE] Failed to update for Wallet${walletIndex}: ${err}`);
+    return 0;
+  }
+};
+
+// Update all wallet balances every 3 seconds in background
+setInterval(async () => {
+  for (let i = 0; i < adminPrivateKeys.length; i++) {
+    if (!adminPrivateKeys[i]) continue;
+    if (!validAdminIndices.includes(i)) continue; // Only check active wallets
+    
+    try {
+      const provider = getNextProvider();
+      await updateBalanceCache(i, provider);
+    } catch (err) {
+      // Silently skip
+    }
+  }
+}, 3000);
+
 // Get gas prices with priority fee = 2x base fee
 async function getOptimizedGasPrices(provider: ethers.providers.JsonRpcProvider): Promise<{ maxFeePerGas: ethers.BigNumber; maxPriorityFeePerGas: ethers.BigNumber }> {
   try {
@@ -1764,22 +1812,46 @@ export default class User {
             // ========== CRITICAL FIX 14: CHECK BALANCE BEFORE ATTEMPTING SEND ==========
             // Don't waste a transaction attempt on a wallet with no balance
             const MIN_GAS_BALANCE_AVAX = 0.00008; // Minimum needed for gas
-            const preCheckBalance = await provider.getBalance(walletAddress);
-            const preCheckBalanceAvax = parseFloat(ethers.utils.formatEther(preCheckBalance));
+            let preCheckBalanceAvax = 0;
+            
+            // ========== CRITICAL FIX 16b: USE CACHED BALANCE FIRST (INSTANT) ==========
+            // Try to use cached balance first (updated every 3 seconds in background)
+            const cachedBalance = getCachedBalance(walletIndex);
+            
+            if (cachedBalance !== null) {
+              preCheckBalanceAvax = cachedBalance;
+              logger.debug(`[PRE-CHECK-CACHED] Wallet${walletIndex}: ${preCheckBalanceAvax.toFixed(8)} AVAX (from cache)`);
+            } else {
+              // Cache miss - check live (but this blocks the request)
+              try {
+                const preCheckBalance = await provider.getBalance(walletAddress);
+                preCheckBalanceAvax = parseFloat(ethers.utils.formatEther(preCheckBalance));
+                logger.debug(`[PRE-CHECK-LIVE] Wallet${walletIndex}: ${preCheckBalanceAvax.toFixed(8)} AVAX (live)`);
+              } catch (balanceErr) {
+                // RPC failed - log but continue
+                logger.warn(`[PRE-CHECK-RPC-ERROR] Wallet${walletIndex} balance check failed: ${balanceErr}`);
+                preCheckBalanceAvax = 0; // Assume zero if we can't check
+              }
+            }
             
             if (preCheckBalanceAvax < MIN_GAS_BALANCE_AVAX) {
               totalTransactionsRejected++;
               perSecondStats.rejected++;
               
-              // Remove this wallet from active rotation - it's confirmed out of funds
+              // ========== CRITICAL FIX 15: IMMEDIATELY REMOVE WALLET ==========
+              // Don't try this wallet again - it's out of funds
+              const wasInValid = validAdminIndices.includes(walletIndex);
               validAdminIndices = validAdminIndices.filter(idx => idx !== walletIndex);
-              roundRobinIndex = 0;
               
-              logger.error(`[PRE-CHECK-FAIL] Wallet${walletIndex} has only ${preCheckBalanceAvax.toFixed(8)} AVAX (needs ${MIN_GAS_BALANCE_AVAX}). REMOVED from rotation. Active: ${validAdminIndices.length}`);
+              if (validAdminIndices.length !== validAdminIndices.length) {
+                roundRobinIndex = 0; // Reset if we removed a wallet
+              }
               
-              // Send alert
-              if (canSendAlert(`PRE_CHECK_${walletIndex}`)) {
-                const msg = `🔴 <b>WALLET INSUFFICIENT BALANCE</b>\n\nWallet${walletIndex}: ${preCheckBalanceAvax.toFixed(8)} AVAX\n\nRemoved from rotation\n\nActive: ${validAdminIndices.length}/17`;
+              logger.error(`🔴 [BLOCKED-NO-BALANCE] Wallet${walletIndex} has ${preCheckBalanceAvax.toFixed(8)} AVAX (needs ${MIN_GAS_BALANCE_AVAX}). PERMANENTLY REMOVED. Active: ${validAdminIndices.length}/17`);
+              
+              // Send alert only if this was active before
+              if (wasInValid && canSendAlert(`PRE_CHECK_${walletIndex}`)) {
+                const msg = `🔴 <b>WALLET OUT OF FUNDS - BLOCKED</b>\n\nWallet${walletIndex}: ${preCheckBalanceAvax.toFixed(8)} AVAX\n\nPermanently removed from rotation\n\nActive: ${validAdminIndices.length}/17`;
                 sendTelegramNotification(msg).catch(() => {});
               }
               return;
