@@ -661,7 +661,7 @@ const WALLET_RECOVERY_TIME_MS = 90000; // Try to recover after 1.5 minutes
 // Prevent sending the same alert multiple times in rapid succession
 const alertDebounce = new Map<string, { lastSent: number; count: number }>();
 const ALERT_DEBOUNCE_MS = 5000; // Don't send same alert more than once per 5 seconds
-const ALERT_DEBOUNCE_MAX_BURSTS = 3; // Allow up to 3 bursts before throttling
+const ALERT_DEBOUNCE_MAX_BURSTS = 1; // Only 1 burst per debounce window to prevent spam
 
 const canSendAlert = (alertKey: string): boolean => {
   const now = Date.now();
