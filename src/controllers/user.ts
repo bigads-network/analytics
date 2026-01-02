@@ -246,28 +246,31 @@ async function syncNoncesWithBlockchain() {
     roundRobinIndex = 0; // Reset round-robin on sync to ensure even distribution
     PARALLEL_WALLETS = Math.max(1, validAdminIndices.length);
     
-    // Build well-structured Telegram message (only sent transactions)
-    // Apply 10% fault ratio reduction to account for failed transactions after counting
-    const txCount = Math.floor(totalTransactionsSent * 0.9);
+    // Build well-structured Telegram message
+    // ========== CRITICAL FIX 6: REPORT ACTUAL SENT TRANSACTIONS ==========
+    // Show both attempted and actual confirmed for accuracy
     let telegramMsg = `═══════════════════════════════\n`;
     telegramMsg += `📊 <b>BIGADS NETWORK REPORT</b>\n`;
     telegramMsg += `═══════════════════════════════\n\n`;
     
-    telegramMsg += `<b>📤 TRANSACTION VOLUME</b>\n`;
-    telegramMsg += `✅ SENT: <code>${txCount}</code>\n\n`;
+    telegramMsg += `<b>📤 TRANSACTION STATUS</b>\n`;
+    telegramMsg += `✅ Confirmed Sent: <code>${totalTransactionsSent}</code>\n`;
+    telegramMsg += `⏳ Queued: <code>${globalBatch.transactions.length}</code>\n`;
+    telegramMsg += `❌ Failed: <code>${totalTransactionsFailed}</code>\n`;
+    telegramMsg += `🟡 Pending Hashes: <code>${recentTxHashes.length}</code>\n\n`;
     
     telegramMsg += `<b>💼 WALLET STATUS</b>\n`;
     telegramMsg += `🟢 Active: <code>${validWalletIndices.length}/${adminPrivateKeys.length}</code>\n`;
     
     if (lowBalanceWallets.length > 0) {
-      telegramMsg += `\n<b>⚠️ LOW BALANCE ALERT (${lowBalanceWallets.length})</b>\n`;
+      telegramMsg += `\n<b>🔴 LOW BALANCE ALERT (${lowBalanceWallets.length})</b>\n`;
       telegramMsg += `───────────────────────────\n`;
       for (const wallet of lowBalanceWallets) {
         telegramMsg += `Wallet${wallet.index}: <code>${wallet.balance.toFixed(6)}</code> AVAX\n`;
         telegramMsg += `<code>${wallet.address}</code>\n\n`;
       }
     } else {
-      telegramMsg += `✅ All wallets have sufficient balance\n\n`;
+      telegramMsg += `✅ All active wallets have sufficient balance\n\n`;
     }
     
     if (oldValidCount !== validWalletIndices.length) {
@@ -288,13 +291,20 @@ async function syncNoncesWithBlockchain() {
       telegramMsg += `\n`;
     }
     
+    // Show circuit breaker status
+    const disabledWallets = Array.from(walletFailureTracker.values()).filter(t => t.disabled);
+    if (disabledWallets.length > 0) {
+      telegramMsg += `<b>🔌 CIRCUIT BREAKER</b>\n`;
+      telegramMsg += `${disabledWallets.length} wallet(s) disabled due to repeated failures\n\n`;
+    }
+    
     telegramMsg += `───────────────────────────\n`;
     telegramMsg += `<i>⏰ ${new Date().toLocaleString()}</i>`;
     
     // Send Telegram notification
     await sendTelegramNotification(telegramMsg);
     
-    logger.info(`[SYNC-REPORT] Sent=${txCount} Active=${validWalletIndices.length} LowBalance=${lowBalanceWallets.length}`);
+    logger.info(`[SYNC-REPORT] Confirmed=${totalTransactionsSent} Failed=${totalTransactionsFailed} Queued=${globalBatch.transactions.length} Active=${validWalletIndices.length} LowBalance=${lowBalanceWallets.length}`);
     
   } catch (error) {
     logger.error('Nonce sync error', {
@@ -499,6 +509,57 @@ let globalBatch: {
   batchStartTime: null,
 };
 
+// ========== CRITICAL FIX 4: CIRCUIT BREAKER FOR FAILING WALLETS ==========
+// Track consecutive failures per wallet to implement circuit breaker
+const walletFailureTracker = new Map<number, { count: number; lastFailTime: number; disabled: boolean }>();
+const WALLET_FAILURE_THRESHOLD = 10; // Disable wallet after 10 consecutive failures
+const WALLET_RECOVERY_TIME_MS = 90000; // Try to recover after 1.5 minutes
+
+const recordWalletFailure = (walletIndex: number) => {
+  const tracker = walletFailureTracker.get(walletIndex) || { count: 0, lastFailTime: Date.now(), disabled: false };
+  tracker.count++;
+  tracker.lastFailTime = Date.now();
+  
+  if (tracker.count >= WALLET_FAILURE_THRESHOLD && !tracker.disabled) {
+    tracker.disabled = true;
+    // Remove from valid wallets
+    validAdminIndices = validAdminIndices.filter(i => i !== walletIndex);
+    
+    logger.error(`[CIRCUIT-BREAKER] Wallet${walletIndex} DISABLED after ${tracker.count} failures`);
+    
+    // Send urgent Telegram alert
+    const msg = `🔴 <b>WALLET CIRCUIT BREAKER</b>\n\n` +
+      `Wallet${walletIndex} has failed ${tracker.count} times in a row and has been disabled.\n\n` +
+      `⚠️ Remaining wallets: ${validAdminIndices.length}/${adminPrivateKeys.length}`;
+    sendTelegramNotification(msg).catch(err => logger.error('Telegram alert failed', { err }));
+  }
+  
+  walletFailureTracker.set(walletIndex, tracker);
+};
+
+const resetWalletFailureCount = (walletIndex: number) => {
+  const tracker = walletFailureTracker.get(walletIndex);
+  if (tracker) {
+    tracker.count = 0;
+    tracker.lastFailTime = Date.now();
+  }
+};
+
+const canWalletRecover = (walletIndex: number): boolean => {
+  const tracker = walletFailureTracker.get(walletIndex);
+  if (!tracker || !tracker.disabled) return true;
+  
+  // Allow recovery after cooldown period
+  if (Date.now() - tracker.lastFailTime >= WALLET_RECOVERY_TIME_MS) {
+    tracker.disabled = false;
+    tracker.count = 0;
+    logger.info(`[CIRCUIT-BREAKER] Wallet${walletIndex} recovery attempt`);
+    return true;
+  }
+  
+  return false;
+};
+
 // Track request metrics for visibility
 let totalRequestsReceived = 0;
 let totalTransactionsSent = 0;
@@ -583,24 +644,33 @@ async function splitTransactionsByWallet(
 ): Promise<Map<number, QueuedTransaction[]>> {
   const walletBatches = new Map<number, QueuedTransaction[]>();
   
-  // Simple round-robin distribution without RPC calls - DON'T BLOCK on capacity checks
-  // Fire-and-forget: if wallet is at capacity, send will fail and be retried
-  let walletIndex = 0;
+  // ========== CRITICAL FIX 2: USE VALID WALLETS ONLY ==========
+  // Only assign transactions to wallets that have sufficient balance
+  if (validAdminIndices.length === 0) {
+    logger.error('[WALLET] NO VALID WALLETS AVAILABLE - All wallets are out of fees!');
+    
+    // Send urgent Telegram alert
+    const msg = `🔴 <b>CRITICAL: NO WALLETS AVAILABLE</b>\n\n` +
+      `All ${adminPrivateKeys.length} wallets are out of fees!\n\n` +
+      `❌ ${transactions.length} transactions BLOCKED\n\n` +
+      `Action Required: Refund wallets immediately`;
+    await sendTelegramNotification(msg);
+    
+    return walletBatches; // Return empty - can't process
+  }
+  
+  // Fire-and-forget: distribute transactions across valid wallets using round-robin
+  let validWalletIndex = 0;
   for (const tx of transactions) {
-    // Skip invalid wallet indices
-    if (walletIndex >= PARALLEL_WALLETS || !adminPrivateKeys[walletIndex]) {
-      walletIndex = (walletIndex + 1) % PARALLEL_WALLETS;
-      if (!adminPrivateKeys[walletIndex]) {
-        walletIndex = 0; // Fall back to first wallet
-      }
-    }
+    // Round-robin through VALID wallets only
+    const walletIndex = validAdminIndices[validWalletIndex % validAdminIndices.length];
+    validWalletIndex++;
 
     if (!walletBatches.has(walletIndex)) {
       walletBatches.set(walletIndex, []);
     }
     
     walletBatches.get(walletIndex)!.push(tx);
-    walletIndex = (walletIndex + 1) % PARALLEL_WALLETS;
   }
 
   return walletBatches;
@@ -680,16 +750,12 @@ async function sendSingleTransaction(
       [tx.userSnapshot.saAddress, tx.metadata, tx.gameId]
     );
 
-    // FIRE AND FORGET - No await, truly don't wait
-    // Count as sent immediately, let RPC work in background
-    totalTransactionsSent++;
-    perSecondStats.sent++;
-    logTransactionBatch();
-    logger.debug(`[TX-FIRED] wallet${walletIndex} nonce=${nonce}`);
+    logger.debug(`[TX-SUBMIT] wallet${walletIndex} nonce=${nonce}`);
     
     // Get optimized gas prices (priority fee = 2x base fee)
     const gasPrices = await getOptimizedGasPrices(provider);
     
+    // ========== CRITICAL FIX 5: ONLY COUNT AFTER CONFIRMATION ==========
     // Send in background - don't wait for response
     wallet.sendTransaction({
       to: contractAddress,
@@ -700,24 +766,40 @@ async function sendSingleTransaction(
       maxFeePerGas: gasPrices.maxFeePerGas,
       maxPriorityFeePerGas: gasPrices.maxPriorityFeePerGas,
     }).then((txResponse) => {
-      // Just log when we get hash back
+      // Only count as SENT when we get hash back
+      totalTransactionsSent++;
+      perSecondStats.sent++;
+      logTransactionBatch();
+      
       const hash = txResponse.hash;
       recentTxHashes.push({ hash, timestamp: Date.now(), walletIndex });
       if (recentTxHashes.length > 100) {
         recentTxHashes.shift();
       }
-      logger.debug(`[TX-HASH] wallet${walletIndex} hash=${hash.slice(0, 18)}... nonce=${nonce}`);
+      logger.info(`[TX-SENT] wallet${walletIndex} hash=${hash.slice(0, 18)}... nonce=${nonce}`);
+      
+      // Reset failure counter on success
+      resetWalletFailureCount(walletIndex);
+      
     }).catch((error) => {
-      // Handle replacement underpriced error by syncing nonce
-      if (isReplacementUnderpricedError(error)) {
-        logger.warn(`[NONCE-ERROR] Underpriced wallet${walletIndex}`);
-        // Async sync in background - don't block
-        provider.getTransactionCount(walletAddress, "pending").then((blockchainNonce) => {
-          nonceByWallet.set(walletIndex, blockchainNonce);
-          logger.info(`[NONCE-SYNC] wallet${walletIndex} synced to ${blockchainNonce}`);
-        }).catch(() => {
-          // Silently fail nonce sync
-        });
+      totalTransactionsFailed++;
+      perSecondStats.failed++;
+      recordWalletFailure(walletIndex);
+      
+      // ========== CRITICAL FIX: IMMEDIATE NONCE SYNC ON ERROR ==========
+      if (isReplacementUnderpricedError(error) || isNonceError(error)) {
+        logger.warn(`[NONCE-ERROR] wallet${walletIndex}: ${error.message?.slice(0, 50)}`);
+        
+        // Sync nonce IMMEDIATELY from blockchain (don't wait for 5-min cycle)
+        provider.getTransactionCount(walletAddress, "pending")
+          .then((blockchainNonce) => {
+            const localNonce = getNonceForWallet(walletIndex);
+            nonceByWallet.set(walletIndex, blockchainNonce);
+            logger.error(`[NONCE-SYNC-IMMEDIATE] wallet${walletIndex} corrected: local=${localNonce} -> blockchain=${blockchainNonce}`);
+          })
+          .catch((syncErr) => {
+            logger.error(`[NONCE-SYNC-FAILED] wallet${walletIndex} couldn't sync nonce`, { error: syncErr.message?.slice(0, 50) });
+          });
       }
       
       // Check if error is RPC-related
@@ -728,7 +810,7 @@ async function sendSingleTransaction(
       }
 
       const errorMsg = error instanceof Error ? error.message.slice(0, 50) : "unknown";
-      logger.warn(`[TX-FAILED] wallet${walletIndex} nonce=${nonce} error=${errorMsg}`);
+      logger.error(`[TX-FAILED] wallet${walletIndex} nonce=${nonce} error=${errorMsg}`);
     });
     
     // Return immediately - this function returns instantly
@@ -736,6 +818,8 @@ async function sendSingleTransaction(
   } catch (error) {
     totalTransactionsFailed++;
     perSecondStats.failed++;
+    recordWalletFailure(walletIndex);
+    
     const errorMsg = error instanceof Error ? error.message.slice(0, 50) : "unknown";
     logger.error(`[TX-EXCEPTION] wallet${walletIndex} error=${errorMsg}`);
     return null;
@@ -783,6 +867,27 @@ async function processWalletBatch(
       abi,
       provider
     );
+
+    // ========== CRITICAL FIX 1: CHECK WALLET BALANCE BEFORE SENDING ==========
+    // Get wallet balance to ensure it can pay for gas
+    const MIN_GAS_REQUIRED = ethers.utils.parseUnits('2', 'gwei').mul(100000); // ~0.0002 AVAX
+    const balance = await provider.getBalance(walletAddress);
+    
+    if (balance.lt(MIN_GAS_REQUIRED)) {
+      const balanceAvax = parseFloat(ethers.utils.formatEther(balance));
+      const requiredAvax = parseFloat(ethers.utils.formatEther(MIN_GAS_REQUIRED));
+      
+      logger.error(`[WALLET${walletIndex}] INSUFFICIENT BALANCE for ${transactions.length} txs: have ${balanceAvax.toFixed(6)} AVAX, need ${requiredAvax.toFixed(6)} AVAX`);
+      totalTransactionsFailed += transactions.length;
+      perSecondStats.failed += transactions.length;
+      
+      // Alert to Telegram immediately
+      const msg = `🔴 <b>WALLET OUT OF FUNDS</b>\n\nWallet${walletIndex}: ${balanceAvax.toFixed(6)} AVAX\n\n❌ ${transactions.length} transactions BLOCKED`;
+      await sendTelegramNotification(msg);
+      
+      // All transactions fail - can't retry this wallet
+      return { successes: [], retry: [] };
+    }
 
     // USE LOCAL NONCE - NO RPC BLOCKING
     // This is the cached value from initialization or last sync

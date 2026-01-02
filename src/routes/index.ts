@@ -26,6 +26,7 @@ defaultRoutes.forEach((route) => {
 
 // Monitoring endpoints
 router.get('/health/queue', controllers.Monitoring.getQueueStatus);
+router.get('/health', controllers.Monitoring.getHealthStatus);
 router.post('/health/reset', controllers.Monitoring.resetStats);
 
 router.get("/", async (req:Request, res: Response): Promise<any> => {
