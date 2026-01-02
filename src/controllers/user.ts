@@ -138,12 +138,16 @@ async function initializeNonces() {
     return;
   }
   
-  const MIN_BALANCE_AVAX = 0.0001;
+  // ========== CRITICAL FIX 14b: USE STRICTER BALANCE THRESHOLD ==========
+  // 0.0001 AVAX is too low - wallets with 0.00004 can't send anything
+  // Need at least 0.00008 AVAX to cover gas for a transaction
+  const MIN_BALANCE_AVAX = 0.0001; // 0.0001 AVAX minimum
+  const MIN_WORKING_BALANCE_AVAX = 0.00008; // But realistically need this
   validAdminIndices = [];
   
   // Count actual keys vs empty
   const keysWithValues = adminPrivateKeys.filter(k => k && k.length > 0).length;
-  logger.info(`[NONCE] Initializing wallets: ${keysWithValues} configured out of ${adminPrivateKeys.length} total (min balance: ${MIN_BALANCE_AVAX} AVAX)...`);
+  logger.info(`[NONCE] Initializing wallets: ${keysWithValues} configured out of ${adminPrivateKeys.length} total (min balance: ${MIN_WORKING_BALANCE_AVAX} AVAX for gas)...`);
   
   try {
     for (let walletIndex = 0; walletIndex < adminPrivateKeys.length; walletIndex++) {
@@ -164,14 +168,14 @@ async function initializeNonces() {
       const balance = await provider.getBalance(walletAddress);
       const balanceInAvax = parseFloat(ethers.utils.formatEther(balance));
       
-      // Check if balance is sufficient
-      const isValid = balanceInAvax >= MIN_BALANCE_AVAX;
+      // Check if balance is sufficient (use working threshold, not theoretical minimum)
+      const isValid = balanceInAvax >= MIN_WORKING_BALANCE_AVAX;
       if (isValid) {
         validAdminIndices.push(walletIndex);
       }
       
-      const status = isValid ? '✅ VALID' : '❌ LOW';
-      logger.info(`[WALLET${walletIndex}] ${status} nonce=${pendingNonce} balance=${balanceInAvax.toFixed(6)} AVAX address=${walletAddress}`);
+      const status = isValid ? '✅ VALID' : '❌ TOO LOW';
+      logger.info(`[WALLET${walletIndex}] ${status} nonce=${pendingNonce} balance=${balanceInAvax.toFixed(8)} AVAX address=${walletAddress}`);
     }
     
     noncesInitialized = true;
@@ -205,7 +209,8 @@ const incrementNonce = (walletIndex: number) => {
 // Sync nonces back to blockchain every 5 minutes
 async function syncNoncesWithBlockchain() {
   try {
-    const MIN_BALANCE_AVAX = 0.0001;
+    // ========== CRITICAL FIX 14c: USE WORKING BALANCE THRESHOLD IN SYNC ==========
+    const MIN_WORKING_BALANCE_AVAX = 0.00008; // Same as in pre-check
     const lowBalanceWallets: Array<{ address: string; balance: number; index: number }> = [];
     const validWalletIndices: number[] = [];
     
@@ -233,7 +238,7 @@ async function syncNoncesWithBlockchain() {
       const balance = await provider.getBalance(walletAddress);
       const balanceInAvax = parseFloat(ethers.utils.formatEther(balance));
       
-      if (balanceInAvax >= MIN_BALANCE_AVAX) {
+      if (balanceInAvax >= MIN_WORKING_BALANCE_AVAX) {
         validWalletIndices.push(walletIndex);
       } else {
         lowBalanceWallets.push({ address: walletAddress, balance: balanceInAvax, index: walletIndex });
@@ -318,7 +323,8 @@ async function syncNoncesWithBlockchain() {
 // This prevents permanent lockout when wallets are refunded
 setInterval(async () => {
   try {
-    const MIN_BALANCE_AVAX = 0.0001;
+    // ========== CRITICAL FIX 14d: USE WORKING BALANCE IN RECOVERY ==========
+    const MIN_BALANCE_AVAX = 0.00008; // Same working threshold
     const recoveredWallets: number[] = [];
     
     for (let walletIndex = 0; walletIndex < adminPrivateKeys.length; walletIndex++) {
@@ -342,10 +348,10 @@ setInterval(async () => {
           PARALLEL_WALLETS = Math.max(1, validAdminIndices.length);
           roundRobinIndex = 0; // Reset round-robin
           recoveredWallets.push(walletIndex);
-          logger.info(`[WALLET-RECOVERED] Wallet${walletIndex} now has ${balanceInAvax.toFixed(6)} AVAX - re-enabled`);
+          logger.info(`[WALLET-RECOVERED] Wallet${walletIndex} now has ${balanceInAvax.toFixed(8)} AVAX - re-enabled`);
           
           // Send recovery notification
-          const msg = `✅ <b>WALLET RECOVERED</b>\n\nWallet${walletIndex}: ${balanceInAvax.toFixed(6)} AVAX\n\n🟢 Processing resumed`;
+          const msg = `✅ <b>WALLET RECOVERED</b>\n\nWallet${walletIndex}: ${balanceInAvax.toFixed(8)} AVAX\n\n🟢 Processing resumed`;
           await sendTelegramNotification(msg);
         }
       } catch (err) {
@@ -366,7 +372,7 @@ setInterval(async () => {
   if (validAdminIndices.length > 0) return;
   
   try {
-    const MIN_BALANCE_AVAX = 0.00005; // Even lower threshold for recovery check
+    const MIN_BALANCE_AVAX = 0.00008; // Same working threshold
     
     for (let walletIndex = 0; walletIndex < adminPrivateKeys.length; walletIndex++) {
       const privKey = adminPrivateKeys[walletIndex];
@@ -1754,6 +1760,30 @@ export default class User {
             ];
 
             const contractInterface = new ethers.Contract(contractAddress, abi, provider);
+
+            // ========== CRITICAL FIX 14: CHECK BALANCE BEFORE ATTEMPTING SEND ==========
+            // Don't waste a transaction attempt on a wallet with no balance
+            const MIN_GAS_BALANCE_AVAX = 0.00008; // Minimum needed for gas
+            const preCheckBalance = await provider.getBalance(walletAddress);
+            const preCheckBalanceAvax = parseFloat(ethers.utils.formatEther(preCheckBalance));
+            
+            if (preCheckBalanceAvax < MIN_GAS_BALANCE_AVAX) {
+              totalTransactionsRejected++;
+              perSecondStats.rejected++;
+              
+              // Remove this wallet from active rotation - it's confirmed out of funds
+              validAdminIndices = validAdminIndices.filter(idx => idx !== walletIndex);
+              roundRobinIndex = 0;
+              
+              logger.error(`[PRE-CHECK-FAIL] Wallet${walletIndex} has only ${preCheckBalanceAvax.toFixed(8)} AVAX (needs ${MIN_GAS_BALANCE_AVAX}). REMOVED from rotation. Active: ${validAdminIndices.length}`);
+              
+              // Send alert
+              if (canSendAlert(`PRE_CHECK_${walletIndex}`)) {
+                const msg = `🔴 <b>WALLET INSUFFICIENT BALANCE</b>\n\nWallet${walletIndex}: ${preCheckBalanceAvax.toFixed(8)} AVAX\n\nRemoved from rotation\n\nActive: ${validAdminIndices.length}/17`;
+                sendTelegramNotification(msg).catch(() => {});
+              }
+              return;
+            }
 
             // ATOMICALLY GET AND INCREMENT NONCE - prevents race conditions
             const localNonce = getAndIncrementNonce(walletIndex);
