@@ -1717,10 +1717,28 @@ export default class User {
 
             const provider = getNextProvider();
             const wallet = new ethers.Wallet(privKey, provider);
-            // DON'T AWAIT - no RPC calls in hot path
-            // const walletAddress = await wallet.getAddress();
+            
+            // ========== CRITICAL FIX 13c: GET WALLET ADDRESS FOR LOGGING/DEBUG ==========
+            let walletAddress: string;
+            try {
+              walletAddress = await wallet.getAddress();
+              logger.debug(`[WALLET-ADDR] Wallet${walletIndex}: ${walletAddress.slice(0, 10)}...`);
+            } catch (addrErr) {
+              totalTransactionsRejected++;
+              perSecondStats.rejected++;
+              logger.error(`[WALLET-INIT-FAIL] Wallet${walletIndex} could not get address: ${addrErr}`);
+              return;
+            }
 
             const contractAddress = envConfigs.contract_address_avax;
+            
+            // ========== CRITICAL FIX 13d: VALIDATE CONTRACT ADDRESS ==========
+            if (!contractAddress || !contractAddress.startsWith('0x')) {
+              totalTransactionsRejected++;
+              logger.error(`[INVALID-CONTRACT] Contract address is invalid: ${contractAddress}`);
+              return;
+            }
+            
             const abi = [
               {
                 "inputs": [
@@ -1749,15 +1767,11 @@ export default class User {
               gameId
             ]);
 
-            // FIRE AND FORGET - No waiting for anything
-            // Don't even attach .then() - just fire it
-            totalTransactionsSent++;
-            perSecondStats.sent++;
-            logTransactionBatch();
-            // Transaction fired - silent
-            
+            // ========== CRITICAL FIX 13: DON'T COUNT AS SENT UNTIL ACTUALLY SENT ==========
             // Get optimized gas prices (priority fee = 2x base fee)
             const gasPrices = await getOptimizedGasPrices(provider);
+            
+            logger.debug(`[TX-PREP] Wallet${walletIndex} contract=${contractAddress.slice(0, 10)}... nonce=${localNonce} gas=${gasPrices.maxFeePerGas}`);
             
             // Send in background - don't wait
             wallet.sendTransaction({
@@ -1769,7 +1783,14 @@ export default class User {
               maxFeePerGas: gasPrices.maxFeePerGas,
               maxPriorityFeePerGas: gasPrices.maxPriorityFeePerGas,
             }).then((txResponse) => {
-              // Hash received - silent
+              // ✅ ONLY COUNT AS SENT WHEN WE GET THE HASH BACK
+              totalTransactionsSent++;
+              perSecondStats.sent++;
+              logTransactionBatch();
+              
+              // Hash received - log it PROMINENTLY
+              logger.info(`✅ [TX-SENT] Wallet${walletIndex} => ${txResponse.hash} (nonce=${localNonce})`);
+
               recentTxHashes.push({ hash: txResponse.hash, timestamp: Date.now(), walletIndex });
               if (recentTxHashes.length > 100) {
                 recentTxHashes.shift();
@@ -1785,15 +1806,20 @@ export default class User {
               //   "0"
               // ).catch(() => {});
             }).catch((err) => {
+              // ========== CRITICAL FIX 13b: ACTUAL ERROR LOGGING ==========
               // Handle nonce errors
               const errStr = String(err);
+              totalTransactionsFailed++;
+              perSecondStats.failed++;
+              
+              logger.error(`[TX-FAILED] Wallet${walletIndex} nonce=${localNonce}: ${errStr.slice(0, 120)}`);
+              
               if (errStr.includes("nonce") || errStr.includes("underpriced")) {
-                totalTransactionsFailed++;
                 logger.error(`[NONCE-ERROR] Wallet${walletIndex}: ${errStr.slice(0, 100)}`);
                 // Immediately sync nonce to fix the issue
                 provider.getTransactionCount(wallet.address, "pending").then((blockchainNonce) => {
                   nonceByWallet.set(walletIndex, blockchainNonce);
-                  logger.info(`[NONCE-RESET] Wallet${walletIndex} nonce reset to ${blockchainNonce}`);
+                  logger.info(`[NONCE-RESET] Wallet${walletIndex} nonce reset to ${blockchainNonce} (was ${localNonce})`);
                 }).catch(() => {});
               }
               
