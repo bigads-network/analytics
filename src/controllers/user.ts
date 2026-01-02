@@ -187,10 +187,9 @@ async function initializeNonces() {
   }
   
   // ========== CRITICAL FIX 14b: USE STRICTER BALANCE THRESHOLD ==========
-  // 0.0001 AVAX is too low - wallets with 0.00004 can't send anything
-  // Need at least 0.00008 AVAX to cover gas for a transaction
+  // Need sufficient balance to cover gas - be conservative
   const MIN_BALANCE_AVAX = 0.0001; // 0.0001 AVAX minimum
-  const MIN_WORKING_BALANCE_AVAX = 0.00008; // But realistically need this
+  const MIN_WORKING_BALANCE_AVAX = 0.001; // Require 0.001 AVAX minimum (conservative)
   validAdminIndices = [];
   
   // Count actual keys vs empty
@@ -258,7 +257,7 @@ const incrementNonce = (walletIndex: number) => {
 async function syncNoncesWithBlockchain() {
   try {
     // ========== CRITICAL FIX 14c: USE WORKING BALANCE THRESHOLD IN SYNC ==========
-    const MIN_WORKING_BALANCE_AVAX = 0.00008; // Same as in pre-check
+    const MIN_WORKING_BALANCE_AVAX = 0.001; // Same as in pre-check (conservative)
     const lowBalanceWallets: Array<{ address: string; balance: number; index: number }> = [];
     const validWalletIndices: number[] = [];
     
@@ -372,7 +371,7 @@ async function syncNoncesWithBlockchain() {
 setInterval(async () => {
   try {
     // ========== CRITICAL FIX 14d: USE WORKING BALANCE IN RECOVERY ==========
-    const MIN_BALANCE_AVAX = 0.00008; // Same working threshold
+    const MIN_BALANCE_AVAX = 0.001; // Same working threshold (conservative)
     const recoveredWallets: number[] = [];
     
     for (let walletIndex = 0; walletIndex < adminPrivateKeys.length; walletIndex++) {
@@ -420,7 +419,7 @@ setInterval(async () => {
   if (validAdminIndices.length > 0) return;
   
   try {
-    const MIN_BALANCE_AVAX = 0.00008; // Same working threshold
+    const MIN_BALANCE_AVAX = 0.001; // Same working threshold (conservative)
     
     for (let walletIndex = 0; walletIndex < adminPrivateKeys.length; walletIndex++) {
       const privKey = adminPrivateKeys[walletIndex];
@@ -1808,10 +1807,9 @@ export default class User {
             ];
 
             const contractInterface = new ethers.Contract(contractAddress, abi, provider);
-
             // ========== CRITICAL FIX 14: CHECK BALANCE BEFORE ATTEMPTING SEND ==========
             // Don't waste a transaction attempt on a wallet with no balance
-            const MIN_GAS_BALANCE_AVAX = 0.00008; // Minimum needed for gas
+            const MIN_GAS_BALANCE_AVAX = 0.001; // Minimum needed for gas (conservative threshold)
             let preCheckBalanceAvax = 0;
             
             // ========== CRITICAL FIX 16b: USE CACHED BALANCE FIRST (INSTANT) ==========
@@ -1939,7 +1937,7 @@ export default class User {
                     const balanceAvax = parseFloat(ethers.utils.formatEther(checkBalance));
                     
                     // Only remove if balance is actually below minimum
-                    const MIN_BALANCE_AVAX = 0.00005; // Very low threshold
+                    const MIN_BALANCE_AVAX = 0.001; // Same conservative threshold
                     if (balanceAvax < MIN_BALANCE_AVAX) {
                       const wasValid = validAdminIndices.includes(walletIndex);
                       validAdminIndices = validAdminIndices.filter(idx => idx !== walletIndex);
