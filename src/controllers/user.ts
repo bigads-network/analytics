@@ -313,6 +313,52 @@ async function syncNoncesWithBlockchain() {
   }
 }
 
+// ========== CRITICAL FIX 7: RE-CHECK WALLET BALANCES PERIODICALLY ==========
+// Every 2 minutes, re-check wallet balances to detect refunds
+// This prevents permanent lockout when wallets are refunded
+setInterval(async () => {
+  try {
+    const MIN_BALANCE_AVAX = 0.0001;
+    const recoveredWallets: number[] = [];
+    
+    for (let walletIndex = 0; walletIndex < adminPrivateKeys.length; walletIndex++) {
+      const privKey = adminPrivateKeys[walletIndex];
+      if (!privKey) continue;
+      
+      // Skip if already valid
+      if (validAdminIndices.includes(walletIndex)) continue;
+      
+      try {
+        const provider = getNextProvider();
+        const wallet = new ethers.Wallet(privKey, provider);
+        const walletAddress = await wallet.getAddress();
+        const balance = await provider.getBalance(walletAddress);
+        const balanceInAvax = parseFloat(ethers.utils.formatEther(balance));
+        
+        if (balanceInAvax >= MIN_BALANCE_AVAX) {
+          // Wallet recovered! Add it back
+          validAdminIndices.push(walletIndex);
+          validAdminIndices.sort((a, b) => a - b); // Keep sorted
+          PARALLEL_WALLETS = Math.max(1, validAdminIndices.length);
+          roundRobinIndex = 0; // Reset round-robin
+          recoveredWallets.push(walletIndex);
+          logger.info(`[WALLET-RECOVERED] Wallet${walletIndex} now has ${balanceInAvax.toFixed(6)} AVAX - re-enabled`);
+          
+          // Send recovery notification
+          const msg = `✅ <b>WALLET RECOVERED</b>\n\nWallet${walletIndex}: ${balanceInAvax.toFixed(6)} AVAX\n\n🟢 Processing resumed`;
+          await sendTelegramNotification(msg);
+        }
+      } catch (err) {
+        // Silently skip this wallet
+      }
+    }
+  } catch (error) {
+    logger.error('[WALLET-RECHECK] Periodic balance check failed', {
+      error: error instanceof Error ? error.message.slice(0, 80) : 'unknown',
+    });
+  }
+}, 120000); // Check every 2 minutes
+
 // Start nonce sync every 5 minutes (300000 ms = 5 * 60 * 1000)
 setInterval(() => {
   syncNoncesWithBlockchain().catch((error) =>
@@ -1556,17 +1602,32 @@ export default class User {
 
           // ============ DIRECT SEND - NO QUEUE ============
           try {
+            // ========== CRITICAL FIX 8: PREVENT WALLET SELECTION FAILURE ==========
             // Pick only from valid wallets with sufficient balance (round-robin)
             if (validAdminIndices.length === 0) {
               totalTransactionsRejected++;
               perSecondStats.rejected++;
-              logger.warn(`[REQ-REJECTED] No wallets with sufficient balance`);
+              logger.error(`[CRITICAL-REJECTED] ALL WALLETS OUT OF FUNDS - No wallets with sufficient balance. Available: ${validAdminIndices.length}/${adminPrivateKeys.length}`);
+              
+              // Send alert to Telegram
+              const msg = `🔴 <b>CRITICAL ALERT</b>\n\n` +
+                `All wallets are out of funds!\n\n` +
+                `Active: ${validAdminIndices.length}/${adminPrivateKeys.length}\n\n` +
+                `📍 Transactions are being REJECTED\n\n` +
+                `Action: Refund wallets immediately`;
+              await sendTelegramNotification(msg);
               return;
             }
             
-            // Round-robin through valid wallets
+            // ========== CRITICAL FIX 9: PREVENT ROUND-ROBIN INDEX OVERFLOW ==========
+            // Ensure roundRobinIndex never exceeds array bounds
+            if (roundRobinIndex >= validAdminIndices.length) {
+              roundRobinIndex = 0; // Reset if it somehow got too high
+            }
+            
+            // Round-robin through valid wallets with bounds checking
             const selectedIndex = roundRobinIndex % validAdminIndices.length;
-            roundRobinIndex++;
+            roundRobinIndex = (roundRobinIndex + 1) % validAdminIndices.length; // Wrap around safely
             const walletIndex = validAdminIndices[selectedIndex];
             const privKey = adminPrivateKeys[walletIndex];
             if (!privKey) {
@@ -1650,9 +1711,11 @@ export default class User {
               const errStr = String(err);
               if (errStr.includes("nonce") || errStr.includes("underpriced")) {
                 totalTransactionsFailed++;
+                logger.error(`[NONCE-ERROR] Wallet${walletIndex}: ${errStr.slice(0, 100)}`);
                 // Immediately sync nonce to fix the issue
                 provider.getTransactionCount(wallet.address, "pending").then((blockchainNonce) => {
                   nonceByWallet.set(walletIndex, blockchainNonce);
+                  logger.info(`[NONCE-RESET] Wallet${walletIndex} nonce reset to ${blockchainNonce}`);
                 }).catch(() => {});
               }
               
@@ -1660,9 +1723,19 @@ export default class User {
               if (errStr.includes("insufficient") || errStr.includes("exceeds balance")) {
                 totalTransactionsFailed++;
                 // Remove this wallet from valid indices - it's out of funds
+                const wasValid = validAdminIndices.includes(walletIndex);
                 validAdminIndices = validAdminIndices.filter(idx => idx !== walletIndex);
                 roundRobinIndex = 0; // Reset round-robin when wallet removed
-                logger.warn(`[WALLET-REMOVED] Wallet${walletIndex} out of funds, removed from rotation. Active: ${validAdminIndices.length}`);
+                
+                logger.error(`[WALLET-OUT-OF-FUNDS] Wallet${walletIndex} removed from rotation. Active: ${validAdminIndices.length}/${adminPrivateKeys.length}`);
+                
+                // Send Telegram alert for single wallet failure
+                if (wasValid) {
+                  const msg = `🔴 <b>WALLET OUT OF FUNDS</b>\n\nWallet${walletIndex} was deactivated\n\n` +
+                    `Active wallets: ${validAdminIndices.length}/${adminPrivateKeys.length}\n\n` +
+                    `Error: ${errStr.slice(0, 100)}`;
+                  sendTelegramNotification(msg).catch(() => {});
+                }
               }
               // Other errors - just silently fail
             });
