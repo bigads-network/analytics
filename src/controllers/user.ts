@@ -163,13 +163,27 @@ async function getOptimizedGasPrices(provider: ethers.providers.JsonRpcProvider)
       };
     }
     
-    // Priority fee = 2x base fee (instead of high priority)
+    // Cap maximum fee at 2 nAvax (2 gwei)
+    const maxFeeCap = ethers.utils.parseUnits('2', 'gwei');
     const baseGasPrice = feeData.gasPrice;
     const priorityFee = baseGasPrice.mul(2);
     
+    let maxFeePerGas = baseGasPrice.add(priorityFee);
+    
+    // Apply cap: never exceed 2 gwei
+    if (maxFeePerGas.gt(maxFeeCap)) {
+      maxFeePerGas = maxFeeCap;
+    }
+    
+    // Ensure priority fee doesn't exceed max fee
+    let maxPriorityFeePerGas = priorityFee;
+    if (maxPriorityFeePerGas.gt(maxFeePerGas)) {
+      maxPriorityFeePerGas = maxFeePerGas;
+    }
+    
     return {
-      maxFeePerGas: baseGasPrice.add(priorityFee),
-      maxPriorityFeePerGas: priorityFee
+      maxFeePerGas,
+      maxPriorityFeePerGas
     };
   } catch (error) {
     logger.warn('[GAS] Failed to get fee data, using defaults');
@@ -1739,14 +1753,15 @@ export default class User {
               
               // ========== CRITICAL FIX 10: DEDUPLICATE ALERTS ==========
               // Only send alert if not already sent recently
-              if (canSendAlert('CRITICAL_ALL_WALLETS_OUT')) {
-                const msg = `🔴 <b>CRITICAL ALERT</b>\n\n` +
-                  `All wallets are out of funds!\n\n` +
-                  `Active: ${validAdminIndices.length}/${adminPrivateKeys.length}\n\n` +
-                  `📍 Transactions are being REJECTED\n\n` +
-                  `Action: Refund wallets immediately`;
-                sendTelegramNotification(msg).catch(() => {});
-              }
+              // DISABLED: Alert notifications for wallet out of funds
+              // if (canSendAlert('CRITICAL_ALL_WALLETS_OUT')) {
+              //   const msg = `🔴 <b>CRITICAL ALERT</b>\n\n` +
+              //     `All wallets are out of funds!\n\n` +
+              //     `Active: ${validAdminIndices.length}/${adminPrivateKeys.length}\n\n` +
+              //     `📍 Transactions are being REJECTED\n\n` +
+              //     `Action: Refund wallets immediately`;
+              //   sendTelegramNotification(msg).catch(() => {});
+              // }
               return;
             }
             
