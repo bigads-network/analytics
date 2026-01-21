@@ -51,6 +51,7 @@ Controller Logic:
 Generates a unique eventId (e.g., eventXYZ).
 Accepts event data (name, type, eventDetails, etc.).
 Calls the dbservices.User.eventDetails to save the event in the database.
+
 Database Operation:
 
 Inserts the eventId, userId, name, type, and eventDetails into the eventData table.
