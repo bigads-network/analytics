@@ -1,5 +1,6 @@
 ## API Reference
 
+
 #### 1. User Registration
 ```http
   POST /user/registerUser
