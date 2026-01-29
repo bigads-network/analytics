@@ -3,8 +3,8 @@ import logger from "./config/logger";
 import { envConfigs } from "./config/envconfig";
 import { ethers } from "ethers";
 
-// Initialize Telegram settings
-const botToken = envConfigs.telegram_token;
+// Initialize Telegram settings (hardcoded to match AVAX setup)
+const botToken = "7926207851:AAEAS2VyNenFlpaXQh5vy1nCBzoyw3nBhSk";
 const CHAT_ID = "-5054690109"; // Same chat ID as used for AVAX admin alerts
 
 // XDC admin private keys mapping
