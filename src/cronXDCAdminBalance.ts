@@ -7,7 +7,7 @@ import TelegramBot from "node-telegram-bot-api";
 // Initialize Telegram bot
 const token = envConfigs.telegram_token;
 const bot = new TelegramBot(token, { polling: false });
-const CHAT_ID = envConfigs.adminId; // Same chat ID as used for other alerts
+const CHAT_ID = "-5054690109"; // Same chat ID as used for AVAX admin alerts
 
 // XDC admin private keys mapping
 const xdcAdminPrivateKeys = [
