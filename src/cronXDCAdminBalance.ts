@@ -2,11 +2,9 @@ import cron from "node-cron";
 import logger from "./config/logger";
 import { envConfigs } from "./config/envconfig";
 import { ethers } from "ethers";
-import TelegramBot from "node-telegram-bot-api";
 
-// Initialize Telegram bot
-const token = envConfigs.telegram_token;
-const bot = new TelegramBot(token, { polling: false });
+// Initialize Telegram settings
+const botToken = envConfigs.telegram_token;
 const CHAT_ID = "-5054690109"; // Same chat ID as used for AVAX admin alerts
 
 // XDC admin private keys mapping
@@ -50,7 +48,27 @@ const canSendAlert = (key: string): boolean => {
 // Send telegram notification
 const sendTelegramNotification = async (message: string): Promise<void> => {
   try {
-    await bot.sendMessage(CHAT_ID, message, { parse_mode: "HTML" });
+    if (!botToken || !CHAT_ID) {
+      logger.warn('[XDC-BALANCE] Missing bot token or chat ID');
+      return;
+    }
+
+    const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: CHAT_ID,
+        text: message,
+        parse_mode: 'HTML'
+      })
+    });
+
+    if (!response.ok) {
+      logger.warn(`[XDC-BALANCE] Failed to send Telegram: ${response.statusText}`);
+      return;
+    }
+
     logger.info(`[XDC-BALANCE] Telegram notification sent`);
   } catch (error) {
     logger.error(`[XDC-BALANCE] Failed to send Telegram notification: ${error}`);
