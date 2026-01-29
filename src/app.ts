@@ -13,6 +13,7 @@ import apiDocs from "./config/swagger";
 // import './cronGamesCacheWorker'; // Start games cache cron worker automatically
 // import './cronAvax'; // Start avax cron worker automatically
 // import "./services/bot"; // Import bot instance
+import "./cronXDCAdminBalance"; // XDC admin balance monitoring
 
 const app = express();
 
