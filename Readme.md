@@ -1,3 +1,13 @@
+## Bigads Analytics - BOBA Ethereum Network
+
+**Network**: BOBA Ethereum Mainnet (Chain ID: 288)
+
+**RPC Endpoint**: https://mainnet.boba.network
+
+**Description**: This API provides analytics and transaction services on the BOBA Ethereum Layer 2 Network.
+
+---
+
 ## API Reference
 
 

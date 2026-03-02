@@ -2,6 +2,7 @@ import * as dotenv from "dotenv";
 import { baseSepolia, polygon, polygonAmoy } from "viem/chains";
 dotenv.config();
 import { z } from "zod";
+// BOBA Network is an EVM-compatible L2 on Ethereum
 
 const envVarsSchema = z.object({
   PORT: z.string().default("80").transform((str) => parseInt(str, 10)),  
@@ -56,6 +57,40 @@ const envVarsSchema = z.object({
   ADMIN_PRIVATEKEY_AVAX15:z.string(),
   ADMIN_PRIVATEKEY_AVAX16:z.string(),
   CONTRACT_ADDRESS_AVAX:z.string(),
+  // BOBA Network Configuration
+  CHAINID_BOBA:z.string(),
+  PROVIDER_URL_BOBA:z.string(),
+  PROVIDER_URL_BOBA_2:z.string(),
+  PROVIDER_URL_BOBA_3:z.string(),
+  PROVIDER_URL_BOBA_4:z.string(),
+  PROVIDER_URL_BOBA_5:z.string(),
+  PROVIDER_URL_BOBA_6:z.string(),
+  PROVIDER_URL_BOBA_7:z.string(),
+  PROVIDER_URL_BOBA_8:z.string(),
+  PROVIDER_URL_BOBA_9:z.string(),
+  PROVIDER_URL_BOBA_10:z.string(),
+  PROVIDER_URL_BOBA_11:z.string(),
+  PROVIDER_URL_BOBA_12:z.string(),
+  PROVIDER_URL_BOBA_13:z.string(),
+  PROVIDER_URL_BOBA_14:z.string(),
+  PROVIDER_URL_BOBA_15:z.string(),
+  ADMIN_PRIVATEKEY_BOBA:z.string(),
+  ADMIN_PRIVATEKEY_BOBA1:z.string(),
+  ADMIN_PRIVATEKEY_BOBA2:z.string(),
+  ADMIN_PRIVATEKEY_BOBA3:z.string(),
+  ADMIN_PRIVATEKEY_BOBA4:z.string(),
+  ADMIN_PRIVATEKEY_BOBA5:z.string(),
+  ADMIN_PRIVATEKEY_BOBA6:z.string(),
+  ADMIN_PRIVATEKEY_BOBA7:z.string(),
+  ADMIN_PRIVATEKEY_BOBA8:z.string(),
+  ADMIN_PRIVATEKEY_BOBA9:z.string(),
+  ADMIN_PRIVATEKEY_BOBA10:z.string(),
+  ADMIN_PRIVATEKEY_BOBA11:z.string(),
+  ADMIN_PRIVATEKEY_BOBA12:z.string(),
+  ADMIN_PRIVATEKEY_BOBA13:z.string(),
+  ADMIN_PRIVATEKEY_BOBA14:z.string(),
+  ADMIN_PRIVATEKEY_BOBA15:z.string(),
+  ADMIN_PRIVATEKEY_BOBA16:z.string(),
 });
 
 const envVars = envVarsSchema.parse(process.env);
@@ -111,6 +146,41 @@ export const envConfigs = {
   provider_url_AVAX15:envVars.PROVIDER_URL_AVAX15,
   contract_address_avax :envVars.CONTRACT_ADDRESS_AVAX,
   etherspot_api_Key:envVars.ETHERSPOTAPIKEY,
+  
+  // BOBA Network Configuration
+  chainId_boba: envVars.CHAINID_BOBA,
+  provider_url_BOBA: envVars.PROVIDER_URL_BOBA,
+  provider_url_BOBA1: envVars.PROVIDER_URL_BOBA_2,
+  provider_url_BOBA2: envVars.PROVIDER_URL_BOBA_3,
+  provider_url_BOBA3: envVars.PROVIDER_URL_BOBA_4,
+  provider_url_BOBA4: envVars.PROVIDER_URL_BOBA_5,
+  provider_url_BOBA5: envVars.PROVIDER_URL_BOBA_6,
+  provider_url_BOBA6: envVars.PROVIDER_URL_BOBA_7,
+  provider_url_BOBA7: envVars.PROVIDER_URL_BOBA_8,
+  provider_url_BOBA8: envVars.PROVIDER_URL_BOBA_9,
+  provider_url_BOBA9: envVars.PROVIDER_URL_BOBA_10,
+  provider_url_BOBA10: envVars.PROVIDER_URL_BOBA_11,
+  provider_url_BOBA11: envVars.PROVIDER_URL_BOBA_12,
+  provider_url_BOBA12: envVars.PROVIDER_URL_BOBA_13,
+  provider_url_BOBA13: envVars.PROVIDER_URL_BOBA_14,
+  provider_url_BOBA14: envVars.PROVIDER_URL_BOBA_15,
+  adminPrivatKey_boba: envVars.ADMIN_PRIVATEKEY_BOBA,
+  adminPrivatKey_boba1: envVars.ADMIN_PRIVATEKEY_BOBA1,
+  adminPrivatKey_boba2: envVars.ADMIN_PRIVATEKEY_BOBA2,
+  adminPrivatKey_boba3: envVars.ADMIN_PRIVATEKEY_BOBA3,
+  adminPrivatKey_boba4: envVars.ADMIN_PRIVATEKEY_BOBA4,
+  adminPrivatKey_boba5: envVars.ADMIN_PRIVATEKEY_BOBA5,
+  adminPrivatKey_boba6: envVars.ADMIN_PRIVATEKEY_BOBA6,
+  adminPrivatKey_boba7: envVars.ADMIN_PRIVATEKEY_BOBA7,
+  adminPrivatKey_boba8: envVars.ADMIN_PRIVATEKEY_BOBA8,
+  adminPrivatKey_boba9: envVars.ADMIN_PRIVATEKEY_BOBA9,
+  adminPrivatKey_boba10: envVars.ADMIN_PRIVATEKEY_BOBA10,
+  adminPrivatKey_boba11: envVars.ADMIN_PRIVATEKEY_BOBA11,
+  adminPrivatKey_boba12: envVars.ADMIN_PRIVATEKEY_BOBA12,
+  adminPrivatKey_boba13: envVars.ADMIN_PRIVATEKEY_BOBA13,
+  adminPrivatKey_boba14: envVars.ADMIN_PRIVATEKEY_BOBA14,
+  adminPrivatKey_boba15: envVars.ADMIN_PRIVATEKEY_BOBA15,
+  adminPrivatKey_boba16: envVars.ADMIN_PRIVATEKEY_BOBA16,
 
 };
 

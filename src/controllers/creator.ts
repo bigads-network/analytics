@@ -7,7 +7,9 @@ import { ethers } from 'ethers';
 import { ModularSdk, EtherspotBundler, sleep } from "@etherspot/modular-sdk";
 import { chainIdToBundlerUrl, chainIdToChainName, envConfigs } from '../config/envconfig';
 import { generateGameToken } from '../config/gameToken';
-import { polygon, xdc } from 'viem/chains';
+import { polygon } from 'viem/chains';
+// BOBA Ethereum Network configuration
+const BOBA_CHAIN_ID = 288; // BOBA Ethereum Mainnet
 
 export default class Creator{
    
@@ -41,12 +43,11 @@ export default class Creator{
 
             // console.log(wallet_address, "wallet_address");
 
-            const chainName = xdc;
-
+            // BOBA Ethereum Network (Chain ID: 288)
             const modularSdk = new ModularSdk(privKey, {
-                chainId: 50, // XDC Mainnet
+                chainId: BOBA_CHAIN_ID, // BOBA Ethereum Mainnet
                 bundlerProvider: new EtherspotBundler(
-                  50,
+                  BOBA_CHAIN_ID,
                   envConfigs.etherspot_api_Key
                 ),
               });
@@ -100,7 +101,7 @@ export default class Creator{
         if (!userExist) {
             userId = `admin_${this.generateId()}`; // Assuming `generateId` is defined elsewhere
             const privKey = "0x"+sha512_256(userId)
-            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_AVAX);  
+            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_BOBA);  
             const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
             const wallet_address = await wallet.getAddress();
             console.log(wallet.privateKey ,"wallet_address...........private...............")
@@ -114,12 +115,11 @@ export default class Creator{
 
             // console.log(wallet_address, "wallet_address");
 
-            const chainName = xdc;
-
+            // BOBA Ethereum Network (Chain ID: 288)
             const modularSdk = new ModularSdk(privKey, {
-                chainId: 43114, //  Mainnet
+                chainId: BOBA_CHAIN_ID, // BOBA Ethereum Mainnet
                 bundlerProvider: new EtherspotBundler(
-                  43114,
+                  BOBA_CHAIN_ID,
                   envConfigs.etherspot_api_Key
                 ),
               });
@@ -177,7 +177,7 @@ export default class Creator{
         let message = "Game Already exists";
         let saAddress;
         if (!gameExist) {
-            // const chainId = parseInt(envConfigs.chainId || "80002");
+            // const chainId = parseInt(envConfigs.chainId || "288");
             // if (!chainId) {
             //     throw new Error("Missing or invalid chainId in environment variables");
             // }
@@ -185,7 +185,7 @@ export default class Creator{
 
             const gameId = `game_${this.generateId()}`;
             const privKey ="0x"+sha512_256(gameName+gameType +description);
-            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_AVAX);
+            const rpcHttpProvider = new ethers.providers.JsonRpcProvider(envConfigs.provider_url_BOBA);
             const wallet = new ethers.Wallet(privKey, rpcHttpProvider);
             const wallet_address = await wallet.getAddress();
             if (!rpcHttpProvider) {
@@ -197,12 +197,11 @@ export default class Creator{
 
             // console.log(wallet_address, "wallet_address");
 
-            const chainName = xdc;
-
+            // BOBA Ethereum Network (Chain ID: 288)
             const modularSdk = new ModularSdk(privKey, {
-                chainId: 50, // XDC Mainnet
+                chainId: BOBA_CHAIN_ID, // BOBA Ethereum Mainnet
                 bundlerProvider: new EtherspotBundler(
-                  50,
+                  BOBA_CHAIN_ID,
                   envConfigs.etherspot_api_Key
                 ),
               });

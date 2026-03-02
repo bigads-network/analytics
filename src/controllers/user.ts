@@ -126,10 +126,10 @@ const updateBalanceCache = async (walletIndex: number, provider: ethers.provider
     
     const wallet = new ethers.Wallet(privKey, provider);
     const balance = await provider.getBalance(wallet.address);
-    const balanceAvax = parseFloat(ethers.utils.formatEther(balance));
+    const balanceEth = parseFloat(ethers.utils.formatEther(balance));
     
-    walletBalanceCache.set(walletIndex, { balance: balanceAvax, lastChecked: Date.now() });
-    return balanceAvax;
+    walletBalanceCache.set(walletIndex, { balance: balanceEth, lastChecked: Date.now() });
+    return balanceEth;
   } catch (err) {
     logger.warn(`[BALANCE-CACHE] Failed to update for Wallet${walletIndex}: ${err}`);
     return 0;
@@ -163,7 +163,7 @@ async function getOptimizedGasPrices(provider: ethers.providers.JsonRpcProvider)
       };
     }
     
-    // Cap maximum fee at 2 nAvax (2 gwei)
+    // Cap maximum fee at 2 gwei (suitable for BOBA which has lower fees than mainnet)
     const maxFeeCap = ethers.utils.parseUnits('2', 'gwei');
     const baseGasPrice = feeData.gasPrice;
     const priorityFee = baseGasPrice.mul(2);
@@ -186,7 +186,7 @@ async function getOptimizedGasPrices(provider: ethers.providers.JsonRpcProvider)
       maxPriorityFeePerGas
     };
   } catch (error) {
-    logger.warn('[GAS] Failed to get fee data, using defaults');
+    logger.warn('[GAS] Failed to get fee data on BOBA, using defaults');
     return {
       maxFeePerGas: ethers.utils.parseUnits('2', 'gwei'),
       maxPriorityFeePerGas: ethers.utils.parseUnits('1', 'gwei')
@@ -202,13 +202,13 @@ async function initializeNonces() {
   
   // ========== CRITICAL FIX 14b: USE STRICTER BALANCE THRESHOLD ==========
   // Need sufficient balance to cover gas - be conservative
-  const MIN_BALANCE_AVAX = 0.0001; // 0.0001 AVAX minimum
-  const MIN_WORKING_BALANCE_AVAX = 0.001; // Require 0.001 AVAX minimum (conservative)
+  const MIN_BALANCE_ETH = 0.0001; // 0.0001 ETH minimum
+  const MIN_WORKING_BALANCE_ETH = 0.001; // Require 0.001 ETH minimum (conservative) for BOBA
   validAdminIndices = [];
   
   // Count actual keys vs empty
   const keysWithValues = adminPrivateKeys.filter(k => k && k.length > 0).length;
-  logger.info(`[NONCE] Initializing wallets: ${keysWithValues} configured out of ${adminPrivateKeys.length} total (min balance: ${MIN_WORKING_BALANCE_AVAX} AVAX for gas)...`);
+  logger.info(`[NONCE] Initializing wallets: ${keysWithValues} configured out of ${adminPrivateKeys.length} total (min balance: ${MIN_WORKING_BALANCE_ETH} ETH for gas on BOBA)...`);
   
   try {
     for (let walletIndex = 0; walletIndex < adminPrivateKeys.length; walletIndex++) {
@@ -227,16 +227,16 @@ async function initializeNonces() {
       
       // Get balance
       const balance = await provider.getBalance(walletAddress);
-      const balanceInAvax = parseFloat(ethers.utils.formatEther(balance));
+      const balanceInEth = parseFloat(ethers.utils.formatEther(balance));
       
       // Check if balance is sufficient (use working threshold, not theoretical minimum)
-      const isValid = balanceInAvax >= MIN_WORKING_BALANCE_AVAX;
+      const isValid = balanceInEth >= MIN_WORKING_BALANCE_ETH;
       if (isValid) {
         validAdminIndices.push(walletIndex);
       }
       
       const status = isValid ? '✅ VALID' : '❌ TOO LOW';
-      logger.info(`[WALLET${walletIndex}] ${status} nonce=${pendingNonce} balance=${balanceInAvax.toFixed(8)} AVAX address=${walletAddress}`);
+      logger.info(`[WALLET${walletIndex}] ${status} nonce=${pendingNonce} balance=${balanceInEth.toFixed(8)} ETH address=${walletAddress}`);
     }
     
     noncesInitialized = true;
@@ -271,7 +271,7 @@ const incrementNonce = (walletIndex: number) => {
 async function syncNoncesWithBlockchain() {
   try {
     // ========== CRITICAL FIX 14c: USE WORKING BALANCE THRESHOLD IN SYNC ==========
-    const MIN_WORKING_BALANCE_AVAX = 0.001; // Same as in pre-check (conservative)
+    const MIN_WORKING_BALANCE_ETH = 0.001; // Same as in pre-check (conservative) for BOBA
     const lowBalanceWallets: Array<{ address: string; balance: number; index: number }> = [];
     const validWalletIndices: number[] = [];
     
@@ -297,12 +297,12 @@ async function syncNoncesWithBlockchain() {
       
       // Check balance
       const balance = await provider.getBalance(walletAddress);
-      const balanceInAvax = parseFloat(ethers.utils.formatEther(balance));
+      const balanceInEth = parseFloat(ethers.utils.formatEther(balance));
       
-      if (balanceInAvax >= MIN_WORKING_BALANCE_AVAX) {
+      if (balanceInEth >= MIN_WORKING_BALANCE_ETH) {
         validWalletIndices.push(walletIndex);
       } else {
-        lowBalanceWallets.push({ address: walletAddress, balance: balanceInAvax, index: walletIndex });
+        lowBalanceWallets.push({ address: walletAddress, balance: balanceInEth, index: walletIndex });
       }
     }
     
@@ -332,7 +332,7 @@ async function syncNoncesWithBlockchain() {
       telegramMsg += `\n<b>🔴 LOW BALANCE ALERT (${lowBalanceWallets.length})</b>\n`;
       telegramMsg += `───────────────────────────\n`;
       for (const wallet of lowBalanceWallets) {
-        telegramMsg += `Wallet${wallet.index}: <code>${wallet.balance.toFixed(6)}</code> AVAX\n`;
+        telegramMsg += `Wallet${wallet.index}: <code>${wallet.balance.toFixed(6)}</code> ETH\n`;
         telegramMsg += `<code>${wallet.address}</code>\n\n`;
       }
     } else {
@@ -385,7 +385,7 @@ async function syncNoncesWithBlockchain() {
 setInterval(async () => {
   try {
     // ========== CRITICAL FIX 14d: USE WORKING BALANCE IN RECOVERY ==========
-    const MIN_BALANCE_AVAX = 0.001; // Same working threshold (conservative)
+    const MIN_BALANCE_ETH = 0.001; // Same working threshold (conservative) for BOBA
     const recoveredWallets: number[] = [];
     
     for (let walletIndex = 0; walletIndex < adminPrivateKeys.length; walletIndex++) {
@@ -400,19 +400,19 @@ setInterval(async () => {
         const wallet = new ethers.Wallet(privKey, provider);
         const walletAddress = await wallet.getAddress();
         const balance = await provider.getBalance(walletAddress);
-        const balanceInAvax = parseFloat(ethers.utils.formatEther(balance));
+        const balanceInEth = parseFloat(ethers.utils.formatEther(balance));
         
-        if (balanceInAvax >= MIN_BALANCE_AVAX) {
+        if (balanceInEth >= MIN_BALANCE_ETH) {
           // Wallet recovered! Add it back
           validAdminIndices.push(walletIndex);
           validAdminIndices.sort((a, b) => a - b); // Keep sorted
           PARALLEL_WALLETS = Math.max(1, validAdminIndices.length);
           roundRobinIndex = 0; // Reset round-robin
           recoveredWallets.push(walletIndex);
-          logger.info(`[WALLET-RECOVERED] Wallet${walletIndex} now has ${balanceInAvax.toFixed(8)} AVAX - re-enabled`);
+          logger.info(`[WALLET-RECOVERED] Wallet${walletIndex} now has ${balanceInEth.toFixed(8)} ETH - re-enabled`);
           
           // Send recovery notification
-          const msg = `✅ <b>WALLET RECOVERED</b>\n\nWallet${walletIndex}: ${balanceInAvax.toFixed(8)} AVAX\n\n🟢 Processing resumed`;
+          const msg = `✅ <b>WALLET RECOVERED</b>\n\nWallet${walletIndex}: ${balanceInEth.toFixed(8)} ETH\n\n🟢 Processing resumed`;
           await sendTelegramNotification(msg);
         }
       } catch (err) {
@@ -433,7 +433,7 @@ setInterval(async () => {
   if (validAdminIndices.length > 0) return;
   
   try {
-    const MIN_BALANCE_AVAX = 0.001; // Same working threshold (conservative)
+    const MIN_BALANCE_ETH = 0.001; // Same working threshold (conservative) for BOBA
     
     for (let walletIndex = 0; walletIndex < adminPrivateKeys.length; walletIndex++) {
       const privKey = adminPrivateKeys[walletIndex];
@@ -443,19 +443,19 @@ setInterval(async () => {
         const provider = getNextProvider();
         const wallet = new ethers.Wallet(privKey, provider);
         const balance = await provider.getBalance(wallet.address);
-        const balanceInAvax = parseFloat(ethers.utils.formatEther(balance));
+        const balanceInEth = parseFloat(ethers.utils.formatEther(balance));
         
-        if (balanceInAvax >= MIN_BALANCE_AVAX) {
+        if (balanceInEth >= MIN_BALANCE_ETH) {
           // Wallet has funds - re-enable it
           validAdminIndices.push(walletIndex);
           validAdminIndices.sort((a, b) => a - b);
           PARALLEL_WALLETS = Math.max(1, validAdminIndices.length);
           roundRobinIndex = 0;
           
-          logger.warn(`[CRITICAL-RECOVERY] Wallet${walletIndex} recovered with ${balanceInAvax.toFixed(6)} AVAX during emergency check`);
+          logger.warn(`[CRITICAL-RECOVERY] Wallet${walletIndex} recovered with ${balanceInEth.toFixed(6)} ETH during emergency check`);
           
           // Send urgent recovery alert
-          const msg = `🟢 <b>SYSTEM RECOVERED</b>\n\nWallet${walletIndex} is back online\n\n${balanceInAvax.toFixed(6)} AVAX available\n\nProcessing resumed!`;
+          const msg = `🟢 <b>SYSTEM RECOVERED</b>\n\nWallet${walletIndex} is back online\n\n${balanceInEth.toFixed(6)} ETH available\n\nProcessing resumed!`;
           sendTelegramNotification(msg).catch(() => {});
           
           break; // Re-enable one wallet and return, next iteration will find more
@@ -540,29 +540,28 @@ let adminPrivateKeys = [
   envConfigs.adminPrivatKey_avax14,
   envConfigs.adminPrivatKey_avax15,
   envConfigs.adminPrivatKey_avax16,
-]; // DO NOT filter - keep indices consistent
+]; // DO NOT filter - keep indices consistent (using AVAX keys on BOBA network)
 
-// Will be populated during initialization - only keys with balance > 0.0001 AVAX
+// Will be populated during initialization - only keys with balance > 0.0001 ETH (on BOBA)
 let validAdminIndices: number[] = [];
 
 const rpcProviders = [
-  envConfigs.provider_url_AVAX,
-  envConfigs.provider_url_AVAX1,
-  envConfigs.provider_url_AVAX2,
-  envConfigs.provider_url_AVAX3,
-  envConfigs.provider_url_AVAX4,
-  envConfigs.provider_url_AVAX5,
-  envConfigs.provider_url_AVAX6,
-  envConfigs.provider_url_AVAX7,
-  envConfigs.provider_url_AVAX8,
-  envConfigs.provider_url_AVAX9,
-  envConfigs.provider_url_AVAX10,
-  envConfigs.provider_url_AVAX11,
-  envConfigs.provider_url_AVAX12,
-  envConfigs.provider_url_AVAX13,
-  envConfigs.provider_url_AVAX14,
-  envConfigs.provider_url_AVAX15,
-];
+  envConfigs.provider_url_BOBA,
+  envConfigs.provider_url_BOBA1,
+  envConfigs.provider_url_BOBA2,
+  envConfigs.provider_url_BOBA3,
+  envConfigs.provider_url_BOBA4,
+  envConfigs.provider_url_BOBA5,
+  envConfigs.provider_url_BOBA6,
+  envConfigs.provider_url_BOBA7,
+  envConfigs.provider_url_BOBA8,
+  envConfigs.provider_url_BOBA9,
+  envConfigs.provider_url_BOBA10,
+  envConfigs.provider_url_BOBA11,
+  envConfigs.provider_url_BOBA12,
+  envConfigs.provider_url_BOBA13,
+  envConfigs.provider_url_BOBA14,
+]; // BOBA Ethereum Network RPC endpoints (using AVAX managed keys)
 
 function getRandomElement<T>(array: T[]): T {
   return array[Math.floor(Math.random() * array.length)];
@@ -1058,19 +1057,19 @@ async function processWalletBatch(
 
     // ========== CRITICAL FIX 1: CHECK WALLET BALANCE BEFORE SENDING ==========
     // Get wallet balance to ensure it can pay for gas
-    const MIN_GAS_REQUIRED = ethers.utils.parseUnits('2', 'gwei').mul(100000); // ~0.0002 AVAX
+    const MIN_GAS_REQUIRED = ethers.utils.parseUnits('2', 'gwei').mul(100000); // ~0.0002 ETH on BOBA
     const balance = await provider.getBalance(walletAddress);
     
     if (balance.lt(MIN_GAS_REQUIRED)) {
-      const balanceAvax = parseFloat(ethers.utils.formatEther(balance));
-      const requiredAvax = parseFloat(ethers.utils.formatEther(MIN_GAS_REQUIRED));
+      const balanceEth = parseFloat(ethers.utils.formatEther(balance));
+      const requiredEth = parseFloat(ethers.utils.formatEther(MIN_GAS_REQUIRED));
       
-      logger.error(`[WALLET${walletIndex}] INSUFFICIENT BALANCE for ${transactions.length} txs: have ${balanceAvax.toFixed(6)} AVAX, need ${requiredAvax.toFixed(6)} AVAX`);
+      logger.error(`[WALLET${walletIndex}] INSUFFICIENT BALANCE for ${transactions.length} txs: have ${balanceEth.toFixed(6)} ETH, need ${requiredEth.toFixed(6)} ETH`);
       totalTransactionsFailed += transactions.length;
       perSecondStats.failed += transactions.length;
       
       // Alert to Telegram immediately
-      const msg = `🔴 <b>WALLET OUT OF FUNDS</b>\n\nWallet${walletIndex}: ${balanceAvax.toFixed(6)} AVAX\n\n❌ ${transactions.length} transactions BLOCKED`;
+      const msg = `🔴 <b>WALLET OUT OF FUNDS</b>\n\nWallet${walletIndex}: ${balanceEth.toFixed(6)} ETH\n\n❌ ${transactions.length} transactions BLOCKED`;
       await sendTelegramNotification(msg);
       
       // All transactions fail - can't retry this wallet
@@ -1171,8 +1170,9 @@ async function processGlobalBatch() {
   };
 
   try {
-    const chainName = avalanche;
-    const contractAddress = envConfigs.contract_address_avax;
+    // BOBA Ethereum Network (Chain ID: 288)
+    const chainName = "BOBA"; // BOBA Ethereum Mainnet
+    const contractAddress = envConfigs.contract_address_avax; // Use existing AVAX config for now, migrate to BOBA config later
     const abi = [
       {
         "anonymous": false,
@@ -1251,7 +1251,7 @@ async function processGlobalBatch() {
           tx.userSnapshot.id!,
           tx.eventId,
           hash,
-          chainName.name,
+          chainName, // BOBA network name
           "0"
         ).catch(() => {})
       );
@@ -1824,30 +1824,30 @@ export default class User {
             const contractInterface = new ethers.Contract(contractAddress, abi, provider);
             // ========== CRITICAL FIX 14: CHECK BALANCE BEFORE ATTEMPTING SEND ==========
             // Don't waste a transaction attempt on a wallet with no balance
-            const MIN_GAS_BALANCE_AVAX = 0.001; // Minimum needed for gas (conservative threshold)
-            let preCheckBalanceAvax = 0;
+            const MIN_GAS_BALANCE_ETH = 0.001; // Minimum needed for gas (conservative threshold) on BOBA
+            let preCheckBalanceEth = 0;
             
             // ========== CRITICAL FIX 16b: USE CACHED BALANCE FIRST (INSTANT) ==========
             // Try to use cached balance first (updated every 3 seconds in background)
             const cachedBalance = getCachedBalance(walletIndex);
             
             if (cachedBalance !== null) {
-              preCheckBalanceAvax = cachedBalance;
-              logger.debug(`[PRE-CHECK-CACHED] Wallet${walletIndex}: ${preCheckBalanceAvax.toFixed(8)} AVAX (from cache)`);
+              preCheckBalanceEth = cachedBalance;
+              logger.debug(`[PRE-CHECK-CACHED] Wallet${walletIndex}: ${preCheckBalanceEth.toFixed(8)} ETH (from cache)`);
             } else {
               // Cache miss - check live (but this blocks the request)
               try {
                 const preCheckBalance = await provider.getBalance(walletAddress);
-                preCheckBalanceAvax = parseFloat(ethers.utils.formatEther(preCheckBalance));
-                logger.debug(`[PRE-CHECK-LIVE] Wallet${walletIndex}: ${preCheckBalanceAvax.toFixed(8)} AVAX (live)`);
+                preCheckBalanceEth = parseFloat(ethers.utils.formatEther(preCheckBalance));
+                logger.debug(`[PRE-CHECK-LIVE] Wallet${walletIndex}: ${preCheckBalanceEth.toFixed(8)} ETH (live)`);
               } catch (balanceErr) {
                 // RPC failed - log but continue
                 logger.warn(`[PRE-CHECK-RPC-ERROR] Wallet${walletIndex} balance check failed: ${balanceErr}`);
-                preCheckBalanceAvax = 0; // Assume zero if we can't check
+                preCheckBalanceEth = 0; // Assume zero if we can't check
               }
             }
             
-            if (preCheckBalanceAvax < MIN_GAS_BALANCE_AVAX) {
+            if (preCheckBalanceEth < MIN_GAS_BALANCE_ETH) {
               totalTransactionsRejected++;
               perSecondStats.rejected++;
               
@@ -1860,11 +1860,11 @@ export default class User {
                 roundRobinIndex = 0; // Reset if we removed a wallet
               }
               
-              logger.error(`🔴 [BLOCKED-NO-BALANCE] Wallet${walletIndex} has ${preCheckBalanceAvax.toFixed(8)} AVAX (needs ${MIN_GAS_BALANCE_AVAX}). PERMANENTLY REMOVED. Active: ${validAdminIndices.length}/17`);
+              logger.error(`🔴 [BLOCKED-NO-BALANCE] Wallet${walletIndex} has ${preCheckBalanceEth.toFixed(8)} ETH (needs ${MIN_GAS_BALANCE_ETH}). PERMANENTLY REMOVED. Active: ${validAdminIndices.length}/17`);
               
               // Send alert only if this was active before
               if (wasInValid && canSendAlert(`PRE_CHECK_${walletIndex}`)) {
-                const msg = `🔴 <b>WALLET OUT OF FUNDS - BLOCKED</b>\n\nWallet${walletIndex}: ${preCheckBalanceAvax.toFixed(8)} AVAX\n\nPermanently removed from rotation\n\nActive: ${validAdminIndices.length}/17`;
+                const msg = `🔴 <b>WALLET OUT OF FUNDS - BLOCKED</b>\n\nWallet${walletIndex}: ${preCheckBalanceEth.toFixed(8)} ETH\n\nPermanently removed from rotation\n\nActive: ${validAdminIndices.length}/17`;
                 sendTelegramNotification(msg).catch(() => {});
               }
               return;

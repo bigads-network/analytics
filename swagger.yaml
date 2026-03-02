@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
-  title: Bigads API
-  description: API documentation for Bigads
+  title: Bigads API - BOBA Ethereum
+  description: API documentation for Bigads on BOBA Ethereum Network (Chain ID: 288)
   version: 0.0.1
 servers:
   - url: http://localhost:8008
@@ -623,7 +623,7 @@ paths:
                           example: "0x92d3c02793b84b82c20453481ab4ed624d62c434d6b8c4c5e61c37b7257474f0"
                         transactionChain:
                           type: string
-                          example: "Polygon"
+                          example: "BOBA"
                         user:
                           type: object
                           properties:
