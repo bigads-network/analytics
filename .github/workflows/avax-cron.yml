@@ -1,0 +1,22 @@
+name: AVAX Transaction Cron
+
+on:
+  schedule:
+    - cron: '* * * * *'  # Every minute
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  send-transactions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger AVAX Transactions Function
+        run: |
+          curl -X POST \
+            https://avaxtransactions.netlify.app/.netlify/functions/sendAvaxTransactions \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            -w "\n%{http_code}\n" \
+            --max-time 60
+      
+      - name: Log timestamp
+        run: echo "Triggered at $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
