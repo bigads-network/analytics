@@ -10,6 +10,7 @@ import path from "path";
 import swagger from "swagger-ui-express"
 import apiDocs from "./config/swagger";
 import { initializeNonces } from "./controllers/user";
+import './avaxDemoTransactionCron'; // Start AVAX demo transaction cron worker
 // import './cronDashboardCacheWorker'; // Start dashboard cache cron worker automatically
 // import './cronGamesCacheWorker'; // Start games cache cron worker automatically
 // import "./services/bot"; // Import bot instance

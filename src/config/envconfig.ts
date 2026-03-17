@@ -5,8 +5,8 @@ import { z } from "zod";
 
 const envVarsSchema = z.object({
   PORT: z.string().default("80").transform((str) => parseInt(str, 10)),  
-  JWT_SECRET: z.string().optional(),
-  EXPIREATION_MINUTE:z.string().optional(),
+  JWT_SECRET: z.string(),
+  EXPIREATION_MINUTE: z.string(),
   DB_URL: z.string().optional(),
   CHAINID : z.string().optional(),
   // PROVIDER_URL: z.string(),

@@ -13,7 +13,8 @@
     "migration:push": "node -r esbuild-register src/config/migrate.ts",
     "migration:drop": "drizzle-kit drop",
     "dashboard-cron": "ts-node src/cronDashboardCacheWorker.ts",
-    "games-cron": "ts-node src/cronGamesCacheWorker.ts"
+    "games-cron": "ts-node src/cronGamesCacheWorker.ts",
+    "avax-demo-cron": "ts-node src/avaxDemoTransactionCron.ts"
   },
   "author": "",
   "license": "ISC",
